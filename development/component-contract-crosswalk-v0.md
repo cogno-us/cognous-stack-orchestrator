@@ -18,13 +18,12 @@
 
 | Domain | Component repository | Selected bounded V1 pin | Observed latest commit (one-time 2026-10-09 lookup) | Integration responsibility / maturity |
 |---|---|---|---|---|
-| 1 Knowledge & Provenance | `cogno-us/cognous-evidence-registry` | Not part of selected five-repo core | Unresolved — commit listing failed | Structured claims and epistemic state; not qualified into this orchestrator |
-| 1 Knowledge & Provenance | `cogno-us/cognous-evidence-attestation` | Not part of selected five-repo core | Unresolved — commit listing failed | Attestations/provenance; independent authenticity and current applicability still require qualification |
-| 2 Institutional Governance | `cogno-us/cognous-institutional-governance` | Not part of selected five-repo core | Unresolved — commit listing failed | Cognous Institutional Governance (Alvorada) supplies governance context; adopted grants require real institution/source |
+| 1 Knowledge & Provenance | `cogno-us/cognous-evidence-registry` | Not part of selected five-repo core | HEAD SHA not verified; renamed repository metadata verified | Structured claims and epistemic state; not qualified into this orchestrator |
+| 1 Knowledge & Provenance | `cogno-us/cognous-evidence-attestation` | Not part of selected five-repo core | HEAD SHA not verified; renamed repository metadata verified | Attestations/provenance; independent authenticity and current applicability still require qualification |
+| 2 Institutional Governance | `cogno-us/cognous-institutional-governance` | Not part of selected five-repo core | HEAD SHA not verified; renamed repository metadata verified | Cognous Institutional Governance (Alvorada) supplies governance context; adopted grants require real institution/source |
 | 3 Action Governance | `cogno-us/cognous-action-manifest` | `8d1572d4f926c968a8704cb912a6e9d49166f74a` | Same as selected pin | Declared action, tenant-aware proposal; declaration not grant |
 | 3 Action Governance | `cogno-us/cognous-control-plane` | `e66e5f163c5d5c112ff345a2f332b4c3893ee183` | `99bb62fff879a8d4e87d7badb0d7d8a17501e4c1` | Runtime authorization and effect-time checks; current HEAD has optional W5 Microsoft adapter merged and is NOT automatically the selected release pin |
-| 4 Governed Execution | `cogno-us/cognous-execution-runtime` | `da9f52900ee2596dab087ec6c249ba84915d2b13` | Same as selected pin | Effect identity, attempt/recovery, bounded local execution |
-| 4 Governed Execution | `cogno-us/cognous-execution-runtime` | Same repository as qualified runtime pin above | See qualified runtime row above | Formerly Moltbot Safe; do not treat as a separate current repository or duplicate dependency |
+| 4 Governed Execution | `cogno-us/cognous-execution-runtime` | `da9f52900ee2596dab087ec6c249ba84915d2b13` | Same as selected pin | Effect identity, attempt/recovery, bounded local execution; includes the formerly named Moltbot Safe repository identity |
 | 5 Evidence & Accountability | `cogno-us/cognous-replay-bundle` | `2069a0ba1398812c3a8669331a7d8b87c80c4a48` | Same as selected pin | Source-derived reconstruction, non-authorizing |
 | 5 Evidence & Accountability | `cogno-us/cognous-governance-evidence-pack` | `87293cfcbe8dfa2368d5bf77019945ba8ef1ae71` | Same as selected pin | Projection for review, non-authorizing |
 | 5 Evidence & Accountability | `cogno-us/open-decision-evidence-standard` | Optional; not part of selected core | `c5e9a0f3695ae836b803be06c46d2c669642ee03` | Independent decision-evidence exchange; README describes pder-v0.1 record schema under v0.2 narrative; no orchestrator conformance acceptance |
@@ -60,7 +59,7 @@
 
 ## Gaps and exact next gate
 
-1. Recover reliable immutable default-head SHAs and active API/schema surfaces for Cognous Evidence Registry, Cognous Evidence Attestation, Cognous Institutional Governance, and the former Moltbot Safe runtime identity (GitHub content/commit connector queries returned errors; repository existence was verified). Use source-owner confirmations, not invented pins.
+1. Verify exact default-head SHAs and current API/schema surfaces for Cognous Evidence Registry, Cognous Evidence Attestation and Cognous Institutional Governance (renamed repository metadata verified; commit lookup unresolved). Cognous Execution Runtime is one repository, not an additional former-Moltbot-Safe dependency. Use source-owner confirmations, not invented pins.
 2. Verify whether currently observed newer Control Plane revision changes the bounded core interfaces, or is strictly an optional adapter addition. **Do not auto-upgrade** the selected pin.
 3. Record actual schema names, canonicalization rules, source field mapping, and negative case fixture IDs for each new cross-domain edge.
 4. Obtain component-owner review on the [V0 Integration Contract](integration-contract-v0.md) before interpreting proposed envelopes/state transitions as accepted interfaces.

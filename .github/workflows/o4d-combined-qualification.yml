@@ -1,0 +1,39 @@
+name: O4d combined post-merge qualification
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/o4d-combined-qualification.yml'
+      - 'tests/**'
+      - 'orchestration/**'
+      - 'development/interfaces/**'
+      - 'development/acceptance/**'
+  workflow_dispatch:
+jobs:
+  combined:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'jsonschema>=4.20,<5'
+      - name: O3 reference schema
+        run: python -m unittest discover -s tests/contract -p 'test_*.py' -v
+      - name: O4 and O4b and O4c integrated boundary
+        run: python -m unittest discover -s tests/integration -p 'test_*.py' -v
+      - name: O4c Registry
+        run: python -m unittest discover -s tests/adapters/registry -p 'test_*.py' -v
+      - name: O4d-A Registry source qualification
+        run: python -m unittest discover -s tests/adapters/registry/authenticated_source -p 'test_*.py' -v
+      - name: O4c Attestation
+        run: python -m unittest discover -s tests/adapters/attestation -p 'test_*.py' -v
+      - name: O4d-B Attestation trust
+        run: python -m unittest discover -s tests/adapters/attestation/trust_qualification -p 'test_*.py' -v
+      - name: O4c Institutional mapping
+        run: python -m unittest discover -s tests/contracts/institutional -p 'test_*.py' -v
+      - name: O4c Exchange
+        run: python -m unittest discover -s tests/contracts/exchange -p 'test_*.py' -v
+      - name: O4d-C Owner acceptance matrix
+        run: python -m unittest discover -s tests/contracts/o4d -p 'test_*.py' -v

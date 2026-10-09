@@ -99,11 +99,27 @@ class ConnectedReplayQualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(m.QualificationError, "duplicate_effect_id"):
             m.qualify_connected_trace(source)
 
+    def test_duplicate_attempt_identifier_is_rejected(self):
+        source = trace()
+        source["events"].insert(6, event(6, "runtime_attempt", effect_id="effect-058", attempt_id="attempt-057", execution_state="refused"))
+        for i, e in enumerate(source["events"]):
+            e["sequence"] = i
+            e["event_id"] = f"evt-{i}" if i != 6 else "evt-runtime-attempt-dup"
+            e["provenance"]["source_record_id"] = f"source-{i}"
+        with self.assertRaisesRegex(m.QualificationError, "duplicate_attempt_id"):
+            m.qualify_connected_trace(source)
+
     def test_false_settlement_claim_is_rejected(self):
         source = trace()
         source["events"][8]["settlement"] = "settled"
         source["events"][8]["settlement_id"] = "fake-settlement-057"
         with self.assertRaisesRegex(m.QualificationError, "false_settlement_claim"):
+            m.qualify_connected_trace(source)
+
+    def test_non_independent_settlement_observer_is_rejected(self):
+        source = trace()
+        source["events"][8]["independent"] = False
+        with self.assertRaisesRegex(m.QualificationError, "settlement_observer_not_independent"):
             m.qualify_connected_trace(source)
 
     def test_transport_receipt_cannot_claim_settlement(self):

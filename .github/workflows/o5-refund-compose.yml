@@ -1,0 +1,19 @@
+name: O5 refund reference composition
+on:
+  pull_request:
+    paths:
+      - 'development/scenarios/customer_refunds/**'
+      - 'tests/scenarios/customer_refunds/**'
+      - '.github/workflows/o5-refund-compose.yml'
+  workflow_dispatch:
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s tests/scenarios/customer_refunds -p 'test_*.py' -v

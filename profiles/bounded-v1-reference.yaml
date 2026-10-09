@@ -1,0 +1,9 @@
+profile: cognous-bounded-v1-reference
+status: historical-qualified-reference-selection-pending
+owner: cogno-us/cognous-open-control-stack
+hub_accepted_commit: f7d03c719b9be3b9c3fe0fe300df642b0f408d98
+release_pr: https://github.com/cogno-us/cognous-open-control-stack/pull/63
+scope: trusted-host synthetic local SQLite refund
+chain: [declare, control, replay, evidence]
+production_deployment_authorized: false
+note: Informational pointer only; this is not a new lock and confers no release authority.

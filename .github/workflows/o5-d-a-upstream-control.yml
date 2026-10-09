@@ -1,0 +1,58 @@
+name: O5-D-A actual upstream control qualification
+
+on:
+  pull_request:
+    paths:
+      - 'development/scenarios/customer_refunds/live_components/control/**'
+      - 'tests/scenarios/customer_refunds/live_components/control/**'
+      - '.github/workflows/o5-d-a-upstream-control.yml'
+  workflow_dispatch:
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout orchestrator
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned Action Manifest
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-action-manifest
+          ref: 8d1572d4f926c968a8704cb912a6e9d49166f74a
+          path: .upstream/action-manifest
+          persist-credentials: false
+
+      - name: Checkout pinned Control Plane
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-control-plane
+          ref: e66e5f163c5d5c112ff345a2f332b4c3893ee183
+          path: .upstream/control-plane
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact-source packages and test runner
+        run: |
+          python -m pip install --disable-pip-version-check pytest
+          python -m pip install --no-deps -e .upstream/action-manifest
+          python -m pip install --no-deps -e .upstream/control-plane
+          python -m pip install 'pydantic>=2.0'
+
+      - name: Verify exact upstream heads
+        run: |
+          test "$(git -C .upstream/action-manifest rev-parse HEAD)" = "8d1572d4f926c968a8704cb912a6e9d49166f74a"
+          test "$(git -C .upstream/control-plane rev-parse HEAD)" = "e66e5f163c5d5c112ff345a2f332b4c3893ee183"
+
+      - name: Run O5-D-A scoped qualification
+        env:
+          COGNOUS_ACTION_MANIFEST_SRC: ${{ github.workspace }}/.upstream/action-manifest
+          COGNOUS_CONTROL_PLANE_SRC: ${{ github.workspace }}/.upstream/control-plane
+        run: |
+          python -m pytest -q tests/scenarios/customer_refunds/live_components/control/test_upstream_control.py

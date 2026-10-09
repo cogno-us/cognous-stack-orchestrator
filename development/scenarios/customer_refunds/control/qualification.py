@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 from copy import deepcopy
+from pathlib import Path
 
 ORCHESTRATOR_BASE = "0aaaa11d1795e4e0cbf081826e9e1d1b3d5ca850"
 MANIFEST_PIN = "8d1572d4f926c968a8704cb912a6e9d49166f74a"
@@ -22,31 +23,8 @@ REQUIREMENT_ID = "urn:cognous:authority-requirement:refund-routine-v1"
 PERMISSION = "refund.issue.routine"
 POLICY_REF = "urn:cognous:policy:refund-policy"
 
-# Minimal projection of the accepted upstream refund fixture, used only when the
-# upstream package is unavailable. It is deliberately labelled a fixture stub.
-FIXTURE_MANIFEST = {
-    "manifest_version": MANIFEST_VERSION,
-    "manifest_id": MANIFEST_ID,
-    "tools": [{"tool_name": "refund_adapter", "adapter_id": ADAPTER_ID}],
-    "actions": [{
-        "action_name": "refund_issue_routine",
-        "action_id": ACTION_ID,
-        "tool_name": "refund_adapter",
-        "action_type": "write",
-        "authority_required": [{"scope": PERMISSION, "required": True}],
-        "payload_policy": {
-            "required_fields": ["customer_id", "refund_reason"],
-            "optional_fields": [],
-            "forbidden_fields": [],
-        },
-        "target_policy": {"allowed_targets": [TARGET], "allow_any_target": False},
-        "effect_limits": {"max_amount": 100.0, "unit": "USD", "max_effects": 1},
-        "authority_context": {
-            "profile_ref": AUTHORITY_PROFILE,
-            "requirement_id": REQUIREMENT_ID,
-        },
-    }],
-}
+FIXTURE_PATH = Path(__file__).with_name("refund_integration_v1_1.manifest.json")
+FIXTURE_MANIFEST = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
 def _canonical(value: object) -> bytes:
@@ -202,13 +180,12 @@ def validate_with_available_components(proposal: dict) -> dict:
     }
 
     if availability["manifest"]:
-        from agent_action_manifest.models import AgentActionManifest, RuntimeActionProposal
+        from agent_action_manifest.models import AgentActionManifest, RuntimeActionProposalV12
         from agent_action_manifest.binding import proposal_mismatches
-        # The local fixture is a reduced projection, so only use actual package
-        # validation when it accepts the projection as a complete manifest.
+        # The copied fixture is byte-equivalent JSON content from the accepted pin.
         try:
             manifest = AgentActionManifest.model_validate(FIXTURE_MANIFEST)
-            model = RuntimeActionProposal.model_validate(proposal)
+            model = RuntimeActionProposalV12.model_validate(proposal)
             result["manifest_faults"] = proposal_mismatches(manifest, model)
             result["manifest"] = "actual_component"
         except Exception as exc:

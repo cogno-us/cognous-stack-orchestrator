@@ -6,10 +6,10 @@ Private orchestration and integration repository for Cognous's five functional d
 
 ## Domains
 
-1. **Knowledge & Provenance** — The Index and BitRep
-2. **Institutional Governance** — Alvorada
+1. **Knowledge & Provenance** — Cognous Evidence Registry and Cognous Evidence Attestation
+2. **Institutional Governance** — Cognous Institutional Governance (Alvorada)
 3. **Action Governance** — Action Manifest and Control Plane
-4. **Governed Execution** — Execution Runtime and Moltbot Safe
+4. **Governed Execution** — Cognous Execution Runtime
 5. **Evidence & Accountability** — Replay Bundle, Governance Evidence Pack, optional ODES exchange
 
 The bounded V1 reference chain, **Declare → Control → Replay → Evidence**, remains separately qualified within [cognous-open-control-stack](https://github.com/cogno-us/cognous-open-control-stack). This scaffold does not expand those claims.

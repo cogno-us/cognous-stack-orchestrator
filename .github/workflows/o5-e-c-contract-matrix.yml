@@ -1,0 +1,21 @@
+name: O5-E-C connected refund contract matrix
+on:
+  pull_request:
+    paths:
+      - 'development/scenarios/customer_refunds/connected/contracts/**'
+      - 'tests/scenarios/customer_refunds/connected/contracts/**'
+      - '.github/workflows/o5-e-c-contract-matrix.yml'
+  workflow_dispatch:
+jobs:
+  contract-matrix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'pytest>=8,<9'
+      - name: Connected refund trace contract and adversarial matrix
+        run: python -m pytest -q tests/scenarios/customer_refunds/connected/contracts/test_trace_contract.py

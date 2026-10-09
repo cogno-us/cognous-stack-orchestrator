@@ -186,3 +186,9 @@ The [source-derived field mapping review](field-mapping-review-v0.md) records ex
 - `cognous-evidence-registry/schema/claim.schema.json` remains a historical schema and is not established as the authoritative local-chain producer format. Its mapping is held pending exact protocol/event/indexer inspection.
 
 The G1 schema may only be proposed after these distinctions and the listed owner-owned source fields are reviewed and accepted. No C1–C8 amendment has been made.
+
+## 13. Evidence Registry event contract clarification (2026-10-09)
+
+The [authoritative local-chain mapping](evidence-registry-chain-mapping-v0.md) now identifies Solidity `Registered`, `EvidenceSubmitted`, `LifecycleChanged` events and the `reconstruct.mjs` log-indexer output at observed source head `2904a0694f3d0ecea9dbcfc72ddb2544de533b15`.
+
+Proposed V0 adapters must bind deployment domain and block provenance, preserve provisional/reorganization uncertainty and commit exact content bytes separately from evidence-submission assertions. A nonzero statement commitment is not an authenticated attestation; a wallet author is not an institutional grantor; a lifecycle value is not truth status. The legacy `schema/claim.schema.json` must not be used as a substitute event format. **Owner acceptance and machine-readable schema validation remain pending.**

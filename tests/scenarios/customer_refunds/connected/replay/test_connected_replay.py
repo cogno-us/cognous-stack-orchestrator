@@ -56,6 +56,8 @@ class ConnectedReplayQualificationTests(unittest.TestCase):
         self.assertEqual(result["source_revisions"]["replay"], m.REPLAY_REVISION)
         self.assertEqual(result["source_revisions"]["evidence_pack"], m.EVIDENCE_PACK_REVISION)
         self.assertTrue(result["evidence_pack_validation"]["valid"])
+        self.assertEqual(result["evidence_pack"]["deployment_context"]["environment"], "sandbox")
+        self.assertEqual(result["evidence_pack"]["metadata"]["o5_e_b_connected"]["source_nature"], "synthetic_connected_trace")
         b = result["boundary_summary"]
         self.assertEqual(b["authorization"], ["hold", "withdrawn"])
         self.assertEqual(b["refusal"], ["refused"])

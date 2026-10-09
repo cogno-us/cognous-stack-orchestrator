@@ -1,0 +1,133 @@
+{
+  "trajectory_id": "refund-denied-after-withdrawal-v1",
+  "tenant_id": "merchant-demo",
+  "request_id": "refund-req-001",
+  "generated_at": "2026-10-09T19:00:00Z",
+  "events": [
+    {
+      "event_id": "evt-000",
+      "kind": "intake",
+      "sequence": 0,
+      "recorded_at": "2026-10-09T19:00:00Z",
+      "tenant_id": "merchant-demo",
+      "request_id": "refund-req-001",
+      "issuer_state": "verified_issuer_only",
+      "source": {
+        "evidence_class": "producer_reported",
+        "reference": "fixture:intake:refund-req-001"
+      }
+    },
+    {
+      "event_id": "evt-001",
+      "kind": "policy_screen",
+      "sequence": 1,
+      "recorded_at": "2026-10-09T19:00:01Z",
+      "tenant_id": "merchant-demo",
+      "request_id": "refund-req-001",
+      "policy_version": "fixture-v1",
+      "screening": "eligible_for_review",
+      "source": {
+        "evidence_class": "locally_generated",
+        "reference": "fixture:screen:refund-req-001"
+      }
+    },
+    {
+      "event_id": "evt-002",
+      "kind": "hold",
+      "sequence": 2,
+      "recorded_at": "2026-10-09T19:00:02Z",
+      "tenant_id": "merchant-demo",
+      "request_id": "refund-req-001",
+      "decision_id": "decision-001",
+      "policy_version": "fixture-v1",
+      "source": {
+        "evidence_class": "producer_reported",
+        "reference": "fixture:decision:hold"
+      }
+    },
+    {
+      "event_id": "evt-003",
+      "kind": "transport_receipt",
+      "sequence": 3,
+      "recorded_at": "2026-10-09T19:00:03Z",
+      "tenant_id": "merchant-demo",
+      "request_id": "refund-req-001",
+      "transport_id": "transport-001",
+      "source": {
+        "evidence_class": "producer_reported",
+        "reference": "fixture:transport:001"
+      }
+    },
+    {
+      "event_id": "evt-004",
+      "kind": "approval_withdrawal",
+      "sequence": 4,
+      "recorded_at": "2026-10-09T19:00:04Z",
+      "tenant_id": "merchant-demo",
+      "request_id": "refund-req-001",
+      "decision_id": "decision-002",
+      "policy_version": "fixture-v1",
+      "authority_state": "withdrawn",
+      "source": {
+        "evidence_class": "producer_reported",
+        "reference": "fixture:approval:withdrawn"
+      }
+    },
+    {
+      "event_id": "evt-005",
+      "kind": "denial",
+      "sequence": 5,
+      "recorded_at": "2026-10-09T19:00:05Z",
+      "tenant_id": "merchant-demo",
+      "request_id": "refund-req-001",
+      "decision_id": "decision-003",
+      "policy_version": "fixture-v1",
+      "source": {
+        "evidence_class": "producer_reported",
+        "reference": "fixture:decision:deny"
+      }
+    },
+    {
+      "event_id": "evt-006",
+      "kind": "duplicate_suppressed",
+      "sequence": 6,
+      "recorded_at": "2026-10-09T19:00:06Z",
+      "tenant_id": "merchant-demo",
+      "request_id": "refund-req-001",
+      "duplicate_of_request_id": "refund-req-000",
+      "source": {
+        "evidence_class": "locally_generated",
+        "reference": "fixture:duplicate:suppressed"
+      }
+    },
+    {
+      "event_id": "evt-007",
+      "kind": "runtime_refusal",
+      "sequence": 7,
+      "recorded_at": "2026-10-09T19:00:07Z",
+      "tenant_id": "merchant-demo",
+      "request_id": "refund-req-001",
+      "effect_id": "effect-sim-001",
+      "attempt_id": "attempt-sim-001",
+      "execution_state": "refused",
+      "simulation": true,
+      "source": {
+        "evidence_class": "producer_reported",
+        "reference": "fixture:runtime:refusal"
+      }
+    },
+    {
+      "event_id": "evt-008",
+      "kind": "settlement_status",
+      "sequence": 8,
+      "recorded_at": "2026-10-09T19:00:08Z",
+      "tenant_id": "merchant-demo",
+      "request_id": "refund-req-001",
+      "settlement": "not_observed",
+      "source": {
+        "evidence_class": "locally_generated",
+        "reference": "fixture:settlement:not-observed"
+      }
+    }
+  ]
+}

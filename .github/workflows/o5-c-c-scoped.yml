@@ -1,0 +1,19 @@
+name: O5-C-C scoped qualification
+on:
+  pull_request:
+    paths:
+      - 'development/scenarios/customer_refunds/replay/**'
+      - 'tests/scenarios/customer_refunds/replay/**'
+      - '.github/workflows/o5-c-c-scoped.yml'
+  workflow_dispatch:
+jobs:
+  qualification:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s tests/scenarios/customer_refunds/replay -p 'test_*.py' -v

@@ -64,6 +64,10 @@ class ConnectedReplayQualificationTests(unittest.TestCase):
         self.assertEqual(b["effect_observation"], ["not_observed"])
         self.assertEqual(b["settlement"], ["not_observed"])
         self.assertFalse(b["independent_effect_verification"])
+        semantics = result["reconstruction"]["semantics"]
+        self.assertEqual(semantics["destination_observation"], "producer_reported")
+        self.assertFalse(semantics["independent_effect_verification"])
+        self.assertFalse(semantics["external_effect_execution"])
 
     def test_swapped_tenant_is_rejected(self):
         source = trace()

@@ -173,3 +173,16 @@ Governance tracking: [Engineering Dashboard #1](https://github.com/cogno-us/cogn
 - C1–C8 amendment: **none**.
 - ISS integration: **disabled placeholder**.
 - Production deployment: **not authorized**.
+
+## 12. Field-level reconciliation checkpoint (2026-10-09)
+
+The [source-derived field mapping review](field-mapping-review-v0.md) records exact inspected attestation, Authority Context and Governed Exchange fields, error boundaries and minimum negative vectors. **It is not a ratified contract.**
+
+**Important interface clarifications:**
+- The proposed orchestrator envelope in section 3 is a **cross-domain reference carrier**, not a replacement for the existing Governed Exchange transport envelope or the Control Plane decision schema.
+- Governed message `message_id` and delivery `transport_attempt_id` remain distinct from source-owned `effect_id` and `executor_attempt_id`.
+- The single illustrative `verification_status` in section 3 is **not authoritative as a unified verification state**; future schema work must separately report issuer-signature verification, exact-content binding, current authority, observed effect and any genuine independent verification. Do not implement that example as-is.
+- Authority Context `interface_status=proposed_pending_governor_review` is not an approved active grant. Actual institutional adoption and authenticated authority resolution remain prerequisites.
+- `cognous-evidence-registry/schema/claim.schema.json` remains a historical schema and is not established as the authoritative local-chain producer format. Its mapping is held pending exact protocol/event/indexer inspection.
+
+The G1 schema may only be proposed after these distinctions and the listed owner-owned source fields are reviewed and accepted. No C1–C8 amendment has been made.

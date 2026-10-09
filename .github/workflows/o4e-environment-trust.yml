@@ -1,0 +1,19 @@
+name: O4e example environment trust gate
+on:
+  pull_request:
+    paths:
+      - 'development/acceptance/o4e/**'
+      - 'tests/contracts/o4e/**'
+      - '.github/workflows/o4e-environment-trust.yml'
+  workflow_dispatch:
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s tests/contracts/o4e -p 'test_*.py' -v

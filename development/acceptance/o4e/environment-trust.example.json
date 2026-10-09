@@ -1,0 +1,30 @@
+{
+  "profile": "cognous-o4e-operator-trust/1",
+  "classification": "example_only",
+  "registry": {
+    "chain_id": 1,
+    "contract_address": "0x1111111111111111111111111111111111111111",
+    "runtime_bytecode_sha256": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "trusted_checkpoint": {
+      "block_number": 100,
+      "block_hash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "source": "independent_operator_checkpoint"
+    },
+    "rpc_authentication": "operator_configured_and_independently_verified",
+    "reorg_policy": "hold_on_conflict"
+  },
+  "attestation": {
+    "trust_snapshot_sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "trust_snapshot_owner": "operator_configured",
+    "trusted_time_source": "operator_controlled",
+    "key_lifecycle_policy": "reject_revoked_expired_unknown",
+    "audience": "example:audience",
+    "subject": "example:subject"
+  },
+  "controls": {
+    "mode": "qualification_only",
+    "effect_dispatch": "disabled",
+    "institutional_grants": "disabled",
+    "fail_closed": true
+  }
+}

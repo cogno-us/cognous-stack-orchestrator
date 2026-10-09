@@ -1,0 +1,153 @@
+{
+  "matrix_version": "o4d-c-owner-contracts/1",
+  "orchestrator_base": "3df758ec5e0a65af28f6f9f3be5c9263458ab83b",
+  "ratification": {
+    "o1_technical_ratification_2": "open",
+    "governor_gate_14": "open",
+    "self_ratified": false
+  },
+  "domains": [
+    {
+      "name": "registry",
+      "repository": "cogno-us/cognous-evidence-registry",
+      "revision": "d5e45d275cb301d9684b543e93b05997991d1cf2",
+      "source_paths": [
+        "chain/contracts/IndexProtocol.sol",
+        "chain/reconstruct.mjs",
+        "chain/PROTOCOL.md"
+      ],
+      "consumer_path": "orchestration/adapters/registry/observation.py",
+      "compatibility": "accepted_o4c_local_compatibility",
+      "owner_approval": "pending_attributable_owner_review",
+      "negative_examples": [
+        {
+          "case": "snapshot_absent",
+          "expected_status": "unknown",
+          "forbidden_inferences": [
+            "chain_state",
+            "truth",
+            "grant",
+            "consensus_finality"
+          ]
+        },
+        {
+          "case": "source_or_reorg_mismatch",
+          "expected_status": "rejected",
+          "forbidden_inferences": [
+            "source_authenticity",
+            "authority"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "attestation",
+      "repository": "cogno-us/cognous-evidence-attestation",
+      "revision": "5b5077dafde232a7801cb425c4efddcffb468723",
+      "source_paths": [
+        "models/verification.py",
+        "utils/trust.py",
+        "utils/verification.py"
+      ],
+      "consumer_path": "orchestration/adapters/attestation/verifier.py",
+      "compatibility": "accepted_o4c_local_compatibility",
+      "owner_approval": "pending_attributable_owner_review",
+      "negative_examples": [
+        {
+          "case": "trust_or_time_or_expected_binding_absent",
+          "expected_status": "unknown",
+          "forbidden_inferences": [
+            "caller_claim_fallback",
+            "issuer_authenticity",
+            "authority"
+          ]
+        },
+        {
+          "case": "signature_key_time_or_binding_mismatch",
+          "expected_status": "rejected",
+          "forbidden_inferences": [
+            "truth",
+            "grant",
+            "authority"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "institutional_governance",
+      "repository": "cogno-us/cognous-institutional-governance",
+      "revision": "1386fd236f13896029e5ab47ba5b9c3127509c3d",
+      "source_paths": [
+        "process/implementation/public-stack-v0.1/authority-context.schema.json",
+        "process/implementation/public-stack-v0.1/AUTHORITY_CONTEXT.md",
+        "testing/harness/authority_context.py"
+      ],
+      "consumer_path": "development/interfaces/institutional/authority_context_mapping.py",
+      "compatibility": "accepted_o4c_requirements_mapping",
+      "owner_approval": "pending_attributable_owner_and_adopting_institution_review",
+      "negative_examples": [
+        {
+          "case": "adoption_reference_present",
+          "expected_status": "unknown_authority_hold_effect",
+          "forbidden_inferences": [
+            "institutional_adoption",
+            "grant",
+            "permission"
+          ]
+        },
+        {
+          "case": "identity_issuer_or_required_evidence_mismatch",
+          "expected_status": "rejected_hold_effect",
+          "forbidden_inferences": [
+            "repair_by_assumption",
+            "authority"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "governed_exchange",
+      "repository": "cogno-us/cognous-governed-exchange",
+      "revision": "a1cbc7b28f702283b0e4f3192bb43e4a9e618ebf",
+      "source_paths": [
+        "experiments/governed_message_transport/profile.md",
+        "experiments/governed_message_transport/transport.py",
+        "tests/test_governed_message_transport.py"
+      ],
+      "consumer_path": "development/interfaces/exchange/reference_handoff.py",
+      "compatibility": "accepted_o4c_read_only_reference_mapping",
+      "owner_approval": "pending_attributable_owner_review",
+      "negative_examples": [
+        {
+          "case": "producer_reference_absent",
+          "expected_status": "unknown",
+          "forbidden_inferences": [
+            "decision",
+            "effect",
+            "authorization",
+            "verification"
+          ]
+        },
+        {
+          "case": "producer_reference_malformed",
+          "expected_status": "invalid",
+          "forbidden_inferences": [
+            "decision",
+            "effect",
+            "authorization"
+          ]
+        },
+        {
+          "case": "durable_receipt",
+          "expected_status": "receipt_only",
+          "forbidden_inferences": [
+            "institutional_authorization",
+            "execution",
+            "destination_observation",
+            "independent_verification"
+          ]
+        }
+      ]
+    }
+  ]
+}

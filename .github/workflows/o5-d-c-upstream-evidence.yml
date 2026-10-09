@@ -1,0 +1,44 @@
+name: O5-D-C upstream evidence qualification
+on:
+  pull_request:
+    paths:
+      - 'development/scenarios/customer_refunds/live_components/evidence/**'
+      - 'tests/scenarios/customer_refunds/live_components/evidence/**'
+      - '.github/workflows/o5-d-c-upstream-evidence.yml'
+  workflow_dispatch:
+
+jobs:
+  qualification:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout orchestrator
+        uses: actions/checkout@v4
+
+      - name: Checkout exact Replay pin
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-replay-bundle
+          ref: 2069a0ba1398812c3a8669331a7d8b87c80c4a48
+          path: .upstream/replay
+
+      - name: Checkout exact Evidence Pack pin
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-governance-evidence-pack
+          ref: 87293cfcbe8dfa2368d5bf77019945ba8ef1ae71
+          path: .upstream/evidence-pack
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install upstream runtime dependency
+        run: python -m pip install 'pydantic>=2.0'
+
+      - name: Run scoped qualification
+        env:
+          COGNOUS_REPLAY_ROOT: ${{ github.workspace }}/.upstream/replay
+          COGNOUS_EVIDENCE_PACK_ROOT: ${{ github.workspace }}/.upstream/evidence-pack
+        run: python -m unittest discover -s tests/scenarios/customer_refunds/live_components/evidence -p 'test_*.py' -v

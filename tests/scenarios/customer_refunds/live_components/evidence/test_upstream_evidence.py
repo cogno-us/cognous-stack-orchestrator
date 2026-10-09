@@ -1,12 +1,14 @@
 import importlib.util
 import os
 import pathlib
+import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[5]
 MODULE = ROOT / "development/scenarios/customer_refunds/live_components/evidence/qualification.py"
 spec = importlib.util.spec_from_file_location("o5dc_evidence", MODULE)
 m = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = m
 spec.loader.exec_module(m)
 
 

@@ -4,10 +4,10 @@ This repository is an orchestration surface, not a monolithic replacement for ow
 
 | Domain | Component roles | Integration posture |
 |---|---|---|
-| Knowledge & Provenance | The Index: claims and epistemic state; BitRep: attributable attestations | Proposed adapter; no qualified flow to authority |
-| Institutional Governance | Alvorada: institutional provisions and accountable authority procedures | Requirements mapping; no self-granting policy changes |
+| Knowledge & Provenance | Cognous Evidence Registry: claims and epistemic state; Cognous Evidence Attestation: attributable attestations | Proposed adapter; no qualified flow to authority |
+| Institutional Governance | Cognous Institutional Governance (Alvorada): institutional provisions and accountable authority procedures | Requirements mapping; no self-granting policy changes |
 | Action Governance | Action Manifest: declarations; Control Plane: effective authorization | Preserve both contracts and separate declaration from grant |
-| Governed Execution | Execution Runtime: exact effect/attempt protocol; Moltbot Safe: constrained worker profile | Environment-specific, tested claims only |
+| Governed Execution | Cognous Execution Runtime: exact effect/attempt protocol and constrained worker capability | Environment-specific, tested claims only |
 | Evidence & Accountability | Replay: reconstruction; Evidence Pack: review projection; ODES: optional portable evidence | Never infer effect verification or approval from record validation |
 
 ## Flow and boundaries

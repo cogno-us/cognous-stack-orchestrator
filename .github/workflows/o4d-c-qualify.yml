@@ -1,0 +1,18 @@
+name: O4d-C exact scoped qualification
+on:
+  pull_request:
+    paths:
+      - 'tests/contracts/o4d/**'
+      - '.github/workflows/o4d-c-qualify.yml'
+  workflow_dispatch:
+jobs:
+  scoped:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s tests/contracts/o4d -p 'test_*.py' -v

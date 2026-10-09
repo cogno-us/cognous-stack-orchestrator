@@ -1,0 +1,17 @@
+profile: cognous-five-domain-integrated-preview
+status: proposed_not_implemented
+mandatory_domains:
+  - knowledge-provenance
+  - institutional-governance
+  - action-governance
+  - governed-execution
+  - evidence-accountability
+optional_integrations:
+  iss:
+    enabled: false
+    qualification: not_started
+  odes:
+    enabled: false
+    qualification: not_started
+release_authorized: false
+production_deployment_authorized: false

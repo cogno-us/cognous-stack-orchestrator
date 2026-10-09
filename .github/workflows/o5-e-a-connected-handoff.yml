@@ -1,0 +1,60 @@
+name: O5-E-A connected handoff pinned-source qualification
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/o5-e-a-connected-handoff.yml'
+      - 'development/scenarios/customer_refunds/connected/handoff/**'
+      - 'tests/scenarios/customer_refunds/connected/handoff/**'
+  workflow_dispatch:
+jobs:
+  connected-handoff:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout orchestrator PR HEAD
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout accepted Action Manifest
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-action-manifest
+          ref: 8d1572d4f926c968a8704cb912a6e9d49166f74a
+          path: .upstream/action-manifest
+          persist-credentials: false
+      - name: Checkout accepted Control Plane
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-control-plane
+          ref: e66e5f163c5d5c112ff345a2f332b4c3893ee183
+          path: .upstream/control-plane
+          persist-credentials: false
+      - name: Checkout accepted Execution Runtime
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-execution-runtime
+          ref: da9f52900ee2596dab087ec6c249ba84915d2b13
+          path: .upstream/execution-runtime
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify exact source revisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C .upstream/action-manifest rev-parse HEAD)" = "8d1572d4f926c968a8704cb912a6e9d49166f74a"
+          test "$(git -C .upstream/control-plane rev-parse HEAD)" = "e66e5f163c5d5c112ff345a2f332b4c3893ee183"
+          test "$(git -C .upstream/execution-runtime rev-parse HEAD)" = "da9f52900ee2596dab087ec6c249ba84915d2b13"
+          echo "Orchestrator checked out $(git rev-parse HEAD)"
+      - name: Install pinned source package interfaces
+        run: |
+          python -m pip install 'pytest>=8,<9' 'pydantic>=2,<3'
+          python -m pip install --no-deps -e .upstream/action-manifest -e .upstream/control-plane
+      - name: Execute connected actual-source refund handoff
+        env:
+          COGNOUS_ACTION_MANIFEST_SRC: ${{ github.workspace }}/.upstream/action-manifest
+          COGNOUS_CONTROL_PLANE_SRC: ${{ github.workspace }}/.upstream/control-plane
+          COGNOUS_EXECUTION_RUNTIME_ROOT: ${{ github.workspace }}/.upstream/execution-runtime
+        run: python -m pytest -q tests/scenarios/customer_refunds/connected/handoff/test_connected_handoff.py

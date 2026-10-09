@@ -58,9 +58,9 @@ The verification result schema requires `outcome`, `reason`, `evaluated_at`, `ke
 
 The existing profile specifies a local recipient inbox transaction before `DURABLE_RECEIPT`, and separated sender/recipient durable transactions. It does not provide distributed exactly-once delivery.
 
-## 5. Evidence Registry mapping — hold
+## 5. Evidence Registry mapping — source mapping available; owner approval pending
 
-The inspected `schema/claim.schema.json` contains `id`, `subject`, `predicate`, `object`, `contributor_id`, `timestamp`, optional `evidence_refs`, `justification`, `status`, and legacy `provenance.attestation_id`. It still describes a historic Index claim format. The current README designates a **local blockchain claim/evidence-commitment contract and indexer** as the bounded authoritative path. Therefore **do not build an orchestrator adapter against this legacy JSON schema** without source-owner proof of its status. Next: inspect `chain/PROTOCOL.md`, emitted contract events and indexer fields at the accepted source revision.
+The inspected `schema/claim.schema.json` contains `id`, `subject`, `predicate`, `object`, `contributor_id`, `timestamp`, optional `evidence_refs`, `justification`, `status`, and legacy `provenance.attestation_id`. It still describes a historic Index claim format. The current README designates a **local blockchain claim/evidence-commitment contract and indexer** as the bounded authoritative path. Therefore **do not build an orchestrator adapter against this legacy JSON schema**. The authoritative current-source mapping is now documented in [Evidence Registry chain mapping](evidence-registry-chain-mapping-v0.md): `Registered`, `EvidenceSubmitted`, `LifecycleChanged`, the read-only log indexer and provisional/reorganization semantics. Owner approval and typed adapter schema are still pending.
 
 ## 6. Required corrections to V0 contract before acceptance
 
@@ -76,4 +76,4 @@ The inspected `schema/claim.schema.json` contains `id`, `subject`, `predicate`, 
 
 **Decision:** Accept as a *review candidate* field map, not an implemented interoperable adapter or C1-C8 amendment. Cross-domain integration remains **NOT QUALIFIED**.
 
-**Next:** review the actual local-chain event/indexer contract; obtain component-owner field endorsements; then revise and ratify CSO-IC-V0 on a reviewable PR. ISS stays disabled and ODES separately optional.
+**Next:** obtain component-owner field endorsements for the inspected local-chain event/indexer contract and other domains; then revise and ratify CSO-IC-V0 on a reviewable PR. ISS stays disabled and ODES separately optional.

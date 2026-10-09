@@ -1,0 +1,32 @@
+name: O4c combined qualification
+on:
+  pull_request:
+    paths:
+      - 'tests/**'
+      - 'orchestration/**'
+      - 'development/interfaces/**'
+      - '.github/workflows/o4c-combined-qualification.yml'
+  workflow_dispatch:
+jobs:
+  combined-regression:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'jsonschema>=4.20,<5'
+      - name: Reference schema
+        run: python -m unittest discover -s tests/contract -p 'test_*.py' -v
+      - name: Existing O4 and O4b and combined boundaries
+        run: python -m unittest discover -s tests/integration -p 'test_*.py' -v
+      - name: Registry tests
+        run: python -m unittest discover -s tests/adapters/registry -p 'test_*.py' -v
+      - name: Attestation bridge tests
+        run: python -m unittest discover -s tests/adapters/attestation -p 'test_*.py' -v
+      - name: Institutional mapping tests
+        run: python -m unittest discover -s tests/contracts/institutional -p 'test_*.py' -v
+      - name: Governed Exchange mapping tests
+        run: python -m unittest discover -s tests/contracts/exchange -p 'test_*.py' -v

@@ -122,6 +122,16 @@ def test_connected_runtime_rejects_tenant_and_request_substitution(tmp_path, mut
         changed_op = dataclasses.replace(op, payload=changed_payload)
     changed = dataclasses.replace(envelope, operation=changed_op)
 
+    if mutation == "payload":
+        # The pinned Runtime rejects a mutated payload before dispatch during
+        # snapshot validation. This is fail-closed, not a denied attempt row.
+        with pytest.raises(ValueError, match="payload commitment mismatch"):
+            executor.execute(envelope=changed, claim_id=claim.claim_id)
+        assert destination.claim_state(claim.claim_id) == "issued"
+        assert m.effect_rows(destination) == []
+        assert m.attempt_rows(destination) == []
+        return
+
     result = executor.execute(envelope=changed, claim_id=claim.claim_id)
     assert result.status == "denied"
     assert result.attempted is False

@@ -250,7 +250,17 @@ class PinnedUpstreamIntegrationTests(unittest.TestCase):
         got = self.run_bridge(att, trust, expected)
         self.assertEqual(
             (got["status"], got["reason"]),
-            ("rejected", "malformed_signature"),
+            ("rejected", "invalid_signature"),
+        )
+
+    def test_unsupported_statement_revision_rejected(self):
+        att, trust, expected = self.fixture(
+            statement_update={"protocol_version": "bitrep-attestation/2"}
+        )
+        got = self.run_bridge(att, trust, expected)
+        self.assertEqual(
+            (got["status"], got["reason"]),
+            ("rejected", "unsupported_version"),
         )
 
     def test_wrong_statement_digest_reference_rejected(self):

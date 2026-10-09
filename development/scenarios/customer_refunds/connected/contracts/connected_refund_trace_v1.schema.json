@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cognous:o5-e:connected-refund-trace:1.0.0",
+  "title": "Cognous O5-E connected synthetic refund trace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "trajectory_id", "tenant_id", "source_revisions", "request", "decision", "execution_attempt", "evidence", "transport", "settlement"],
+  "properties": {
+    "contract_version": {"const": "o5-e-connected-refund-trace/1.0.0"},
+    "trajectory_id": {"type": "string", "minLength": 1},
+    "tenant_id": {"type": "string", "minLength": 1},
+    "source_revisions": {"type": "object"},
+    "request": {"type": "object"},
+    "decision": {"type": "object"},
+    "execution_attempt": {"type": "object"},
+    "evidence": {"type": "object"},
+    "transport": {"type": "object"},
+    "settlement": {"type": "object"}
+  },
+  "description": "Shape declaration. Cross-field identity, exact source-pin, HOLD, anti-inference and adversarial invariants are enforced by trace_contract.validate_trace."
+}

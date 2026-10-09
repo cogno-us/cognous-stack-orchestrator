@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-stack-orchestrator/development/schemas/orchestration-reference-v0.schema.json",
+  "title": "Cognous Orchestration Reference Envelope V0 (proposal only)",
+  "description": "Non-authorizing correlation/reference carrier. Validation does NOT confer actor identity, grants, attestations, execution or independent observation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "workflow_id",
+    "correlation_id",
+    "step_id",
+    "source",
+    "artifact",
+    "recorded_state"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "cso-ref/0.1-draft"
+    },
+    "workflow_id": {
+      "$ref": "#/$defs/opaque_id"
+    },
+    "correlation_id": {
+      "$ref": "#/$defs/opaque_id"
+    },
+    "step_id": {
+      "$ref": "#/$defs/opaque_id"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "revision",
+        "schema_id"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^(cogno-us/[A-Za-z0-9._-]+|TurwinAI/COGNOUS-client)$",
+          "maxLength": 160
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "schema_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "reference",
+        "digest"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "claim_event",
+            "attestation_result",
+            "authority_context",
+            "action_proposal",
+            "control_decision",
+            "governed_message",
+            "delivery_receipt",
+            "effect_attempt",
+            "replay_bundle",
+            "evidence_pack",
+            "odes_record",
+            "iss_proposal"
+          ]
+        },
+        "reference": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "recorded_state": {
+      "enum": [
+        "source_unverified",
+        "source_verified",
+        "mapping_unknown",
+        "mapping_rejected"
+      ]
+    },
+    "tenant_binding_ref": {
+      "$ref": "#/$defs/nullable_id"
+    },
+    "actor_binding_ref": {
+      "$ref": "#/$defs/nullable_id"
+    },
+    "source_event_ref": {
+      "$ref": "#/$defs/nullable_id"
+    },
+    "transport_attempt_ref": {
+      "$ref": "#/$defs/nullable_id"
+    },
+    "decision_ref": {
+      "$ref": "#/$defs/nullable_id"
+    },
+    "effect_ref": {
+      "$ref": "#/$defs/nullable_id"
+    },
+    "executor_attempt_ref": {
+      "$ref": "#/$defs/nullable_id"
+    },
+    "observation_ref": {
+      "$ref": "#/$defs/nullable_id"
+    },
+    "independent_verification_ref": {
+      "$ref": "#/$defs/nullable_id"
+    },
+    "loss": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "missing_source_bytes",
+          "schema_unsupported",
+          "tenant_unresolved",
+          "actor_unresolved",
+          "authority_unresolved",
+          "commitment_mismatch",
+          "reorg_or_provisional",
+          "transport_outcome_unknown",
+          "effect_outcome_unknown",
+          "observation_missing",
+          "verification_not_established"
+        ]
+      }
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 512
+    }
+  },
+  "$defs": {
+    "opaque_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9:._/@+-]*$"
+    },
+    "nullable_id": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/opaque_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

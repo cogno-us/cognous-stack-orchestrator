@@ -58,11 +58,18 @@ def load_upstream():
     if not manifest_path.is_file():
         raise RuntimeError("pinned Action Manifest refund example is unavailable")
 
-    # Force the Control Plane helper to consume the Action Manifest repository's
-    # actual pinned example, never its own copied test fixture.
-    helper.FIXTURE = manifest_path
+    # Validate through the actual Action Manifest model, then make the pinned
+    # Control Plane helper consume that canonical model projection. This avoids
+    # treating the Control Plane repository's copied fixture bytes as proof of
+    # cross-repository integration.
     raw = json.loads(manifest_path.read_text(encoding="utf-8"))
     model = AgentActionManifest.model_validate(raw)
+    canonical_manifest = model.model_dump(mode="json", exclude_none=False)
+
+    def actual_manifest():
+        return json.loads(json.dumps(canonical_manifest))
+
+    helper.manifest = actual_manifest
 
     return {
         "manifest_repo": manifest_repo,

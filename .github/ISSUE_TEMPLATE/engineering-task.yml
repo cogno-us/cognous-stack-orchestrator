@@ -1,0 +1,42 @@
+name: Engineering task
+description: Scoped cross-repository change request for Governor triage
+title: "[ENG] "
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective and bounded outcome
+      description: One concrete behavior or document
+    validations:
+      required: true
+  - type: input
+    id: owner_repo
+    attributes:
+      label: Owning repository and proposed paths
+      placeholder: cogno-us/cognous-stack-orchestrator/development/
+    validations:
+      required: true
+  - type: textarea
+    id: contracts
+    attributes:
+      label: Trust boundaries, contracts and exclusions
+      description: C1-C8 impact, delegated authority, prohibited scope
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Accepted revisions and dependencies
+      description: Exact SHA or explicit to-be-confirmed
+  - type: textarea
+    id: tests
+    attributes:
+      label: Acceptance evidence
+      description: Positive and negative cases, CI, artifacts
+    validations:
+      required: true
+  - type: textarea
+    id: handoff
+    attributes:
+      label: Worker handoff / blockers
+      description: PR links, results, residual risks

@@ -12,10 +12,10 @@
 Coordinate the five Cognous domains while preserving component autonomy, release traceability and institutional authority. The orchestrator is a **workflow coordinator** and compatibility boundary, never the source of an action grant and never a second Control Plane.
 
 Domains:
-1. Knowledge & Provenance — The Index and BitRep
-2. Institutional Governance — Alvorada
+1. Knowledge & Provenance — Cognous Evidence Registry and Cognous Evidence Attestation
+2. Institutional Governance — Cognous Institutional Governance (Alvorada)
 3. Action Governance — Action Manifest and Control Plane
-4. Governed Execution — Execution Runtime and Moltbot Safe
+4. Governed Execution — Cognous Execution Runtime
 5. Evidence & Accountability — Replay Bundle, Governance Evidence Pack and optional ODES
 
 **V0 target:** one deliberately bounded, reproducible synthetic local refund journey, optionally enriched with attributable knowledge and institutional-context *references*. The already-qualified four-stage Declare → Control → Replay → Evidence workflow remains owned by the existing hub and its accepted pins. Cross-domain proof is **not yet available**.
@@ -30,7 +30,7 @@ Non-goals: production identity; remote execution assurance; generalized prompt-i
 4. This proposed orchestrator interface.
 5. Illustrations and examples.
 
-A lower-ranked artifact cannot silently override a higher-ranked authority. Alvorada is a governance framework, **not automatically a live approval authority** absent institutional adoption and a real grant issuer. BitRep attestations support provenance, not authorization. ISS reasoning output supports proposals, not permission.
+A lower-ranked artifact cannot silently override a higher-ranked authority. Cognous Institutional Governance (Alvorada) is a governance framework, **not automatically a live approval authority** absent institutional adoption and a real grant issuer. Cognous Evidence Attestation records support provenance, not authorization. ISS reasoning output supports proposals, not permission.
 
 ## 3. Canonical identifiers and bounded envelope (proposal)
 
@@ -129,10 +129,10 @@ Source: private `TurwinAI/COGNOUS-client`, described by its own README and archi
 | Layer | Contract owner | Source for accepted revision | V0 state |
 |---|---|---|---|
 | Reference release | cognous-open-control-stack hub | PR #63 and selected profile record | Separate release authority |
-| Knowledge/provenance | Index / BitRep owners | To be pinned by O2 | No accepted orchestrator adapter |
-| Institutional governance | Alvorada owner and adopting institution | To be pinned by O2 | No accepted authority integration |
+| Knowledge/provenance | Evidence Registry / Evidence Attestation owners | To be pinned by O2 | No accepted orchestrator adapter |
+| Institutional governance | Cognous Institutional Governance owner and adopting institution | To be pinned by O2 | No accepted authority integration |
 | Action governance | Manifest / Control Plane owners | Accepted hub C1–C8 pins | Existing bounded path only |
-| Governed execution | Runtime / Moltbot Safe owners | Accepted hub C1–C8 pins | Existing bounded path only |
+| Governed execution | Cognous Execution Runtime owner | Accepted hub C1–C8 pins | Existing bounded path only |
 | Evidence | Replay / Evidence Pack; ODES owner | Accepted hub C8 pins; optional ODES separately | Replay/Evidence bounded path only |
 | ISS | TurwinAI/COGNOUS-client owner | Private repo, pending API version | Placeholder disabled |
 

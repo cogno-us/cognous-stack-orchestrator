@@ -1,0 +1,26 @@
+name: O5-C postmerge refund qualification
+on:
+  pull_request:
+    paths:
+      - 'development/scenarios/customer_refunds/**'
+      - 'tests/scenarios/customer_refunds/**'
+      - '.github/workflows/o5-c-combined.yml'
+  workflow_dispatch:
+jobs:
+  combined:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: O5 original and composed refund screening
+        run: python -m unittest discover -s tests/scenarios/customer_refunds -p 'test_*.py' -v
+      - name: O5-C-A Manifest and Control Plane
+        run: python -m unittest discover -s tests/scenarios/customer_refunds/control -p 'test_*.py' -v
+      - name: O5-C-B runtime refusal and idempotency
+        run: python -m unittest discover -s tests/scenarios/customer_refunds/runtime -p 'test_*.py' -v
+      - name: O5-C-C Replay/Evidence
+        run: python -m unittest discover -s tests/scenarios/customer_refunds/replay -p 'test_*.py' -v

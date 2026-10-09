@@ -1,0 +1,20 @@
+name: O3 candidate reference schema tests
+on:
+  pull_request:
+    paths:
+      - 'development/schemas/**'
+      - 'tests/contract/**'
+      - '.github/workflows/o3-contract-schema.yml'
+  workflow_dispatch:
+jobs:
+  contract-shape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'jsonschema>=4.20,<5'
+      - run: python -m unittest discover -s tests/contract -p 'test_*.py' -v

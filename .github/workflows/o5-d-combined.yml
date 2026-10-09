@@ -1,0 +1,73 @@
+name: O5-D postmerge actual-component qualification
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/o5-d-combined.yml'
+      - 'development/scenarios/customer_refunds/live_components/**'
+      - 'tests/scenarios/customer_refunds/live_components/**'
+  workflow_dispatch:
+jobs:
+  pinned:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-action-manifest
+          ref: 8d1572d4f926c968a8704cb912a6e9d49166f74a
+          path: .upstream/action-manifest
+      - uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-control-plane
+          ref: e66e5f163c5d5c112ff345a2f332b4c3893ee183
+          path: .upstream/control-plane
+      - uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-execution-runtime
+          ref: da9f52900ee2596dab087ec6c249ba84915d2b13
+          path: .live/execution-runtime
+      - uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-replay-bundle
+          ref: 2069a0ba1398812c3a8669331a7d8b87c80c4a48
+          path: .upstream/replay
+      - uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-governance-evidence-pack
+          ref: 87293cfcbe8dfa2368d5bf77019945ba8ef1ae71
+          path: .upstream/evidence-pack
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'pytest>=8,<9' 'pydantic>=2,<3'
+      - run: python -m pip install --no-deps -e .upstream/action-manifest -e .upstream/control-plane
+      - name: Verify upstream pins
+        run: |
+          test "$(git -C .upstream/action-manifest rev-parse HEAD)" = "8d1572d4f926c968a8704cb912a6e9d49166f74a"
+          test "$(git -C .upstream/control-plane rev-parse HEAD)" = "e66e5f163c5d5c112ff345a2f332b4c3893ee183"
+          test "$(git -C .live/execution-runtime rev-parse HEAD)" = "da9f52900ee2596dab087ec6c249ba84915d2b13"
+          test "$(git -C .upstream/replay rev-parse HEAD)" = "2069a0ba1398812c3a8669331a7d8b87c80c4a48"
+          test "$(git -C .upstream/evidence-pack rev-parse HEAD)" = "87293cfcbe8dfa2368d5bf77019945ba8ef1ae71"
+      - name: Pinned Manifest and Control Plane
+        env:
+          COGNOUS_ACTION_MANIFEST_SRC: ${{ github.workspace }}/.upstream/action-manifest
+          COGNOUS_CONTROL_PLANE_SRC: ${{ github.workspace }}/.upstream/control-plane
+        run: python -m pytest -q tests/scenarios/customer_refunds/live_components/control/test_upstream_control.py
+      - name: Pinned Execution Runtime
+        env:
+          COGNOUS_EXECUTION_RUNTIME_ROOT: ${{ github.workspace }}/.live/execution-runtime
+          COGNOUS_CONTROL_PLANE_ROOT: ${{ github.workspace }}/.upstream/control-plane
+          PYTHONPATH: ${{ github.workspace }}/.live/execution-runtime:${{ github.workspace }}/.live/execution-runtime/tests:${{ github.workspace }}/.upstream/control-plane/src
+        run: python -m pytest -q tests/scenarios/customer_refunds/live_components/runtime/test_actual_runtime.py
+      - name: Pinned Replay and Evidence Pack
+        env:
+          COGNOUS_REPLAY_ROOT: ${{ github.workspace }}/.upstream/replay
+          COGNOUS_EVIDENCE_PACK_ROOT: ${{ github.workspace }}/.upstream/evidence-pack
+        run: python -m unittest discover -s tests/scenarios/customer_refunds/live_components/evidence -p 'test_*.py' -v
+      - name: O5-C sandbox regression
+        run: |
+          python -m unittest discover -s tests/scenarios/customer_refunds/control -p 'test_*.py' -v
+          python -m unittest discover -s tests/scenarios/customer_refunds/runtime -p 'test_*.py' -v
+          python -m unittest discover -s tests/scenarios/customer_refunds/replay -p 'test_*.py' -v

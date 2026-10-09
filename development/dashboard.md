@@ -7,7 +7,7 @@ Canonical live issue: [Engineering control board #1](https://github.com/cogno-us
 | P0 | Governance cockpit | Scaffolded; board initialized |
 | P0 | V0 integration contract | Proposed, review required |
 | P1 | Knowledge/provenance interface | Not scoped for implementation |
-| P1 | Alvorada authority interface | Not scoped for implementation |
+| P1 | Cognous Institutional Governance authority interface | Not scoped for implementation |
 | P1 | Action/execution/evidence composition | Requires contract acceptance |
 | P2 | ISS client connector | Disabled placeholder; private boundary |
 | P2 | ODES portability | Optional independent qualification |

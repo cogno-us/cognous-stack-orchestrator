@@ -1,5 +1,6 @@
 import importlib.util
 import pathlib
+import sys
 import tempfile
 import unittest
 
@@ -7,6 +8,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[4]
 MODULE = ROOT / "development/scenarios/customer_refunds/runtime/refund_runtime.py"
 SPEC = importlib.util.spec_from_file_location("refund_runtime", MODULE)
 runtime = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = runtime
 SPEC.loader.exec_module(runtime)
 
 

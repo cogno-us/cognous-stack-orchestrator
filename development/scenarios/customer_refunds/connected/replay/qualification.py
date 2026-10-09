@@ -228,7 +228,7 @@ def _reconstruction(source: dict[str, Any], events: list[dict[str, Any]]) -> dic
             "policy_reevaluation": False,
             "model_reexecution": False,
             "external_effect_execution": False,
-            "destination_observation": "source_record_only_not_independently_verified",
+            "destination_observation": "producer_reported",
             "independent_effect_verification": False,
             "notes": "Authorization, refusal, runtime attempt, transport receipt, effect observation and settlement observation remain distinct.",
         },

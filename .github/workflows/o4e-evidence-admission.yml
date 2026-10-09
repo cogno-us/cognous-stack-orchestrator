@@ -1,0 +1,19 @@
+name: O4e evidence admission contract
+on:
+  pull_request:
+    paths:
+      - 'development/acceptance/o4e/evidence_admission.py'
+      - 'tests/contracts/o4e/**'
+      - '.github/workflows/o4e-evidence-admission.yml'
+  workflow_dispatch:
+jobs:
+  admission:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s tests/contracts/o4e -p 'test_*.py' -v

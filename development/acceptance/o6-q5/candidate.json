@@ -1,0 +1,37 @@
+{
+  "profile": "cognous-o6-release-candidate-admission/1",
+  "hub_repository": "cogno-us/cognous-open-control-stack",
+  "hub_source_sha": "2a23a2fbb3f5469872170c07a11b57656c6c3d2f",
+  "selected": {
+    "moltbot_safe": "c3c3ee7188b9367cf70b08074b9c40a5c70c94ac",
+    "gax_imx_transport": "a1cbc7b28f702283b0e4f3192bb43e4a9e618ebf",
+    "bitrep": "5b5077dafde232a7801cb425c4efddcffb468723"
+  },
+  "candidate": {
+    "moltbot_safe": "1b0a9e32d010797711004ae612051a277b07912a",
+    "gax_imx_transport": "814927dac65a2078d5efee6bbf07c46091844822",
+    "bitrep": "5786b91696ffa276650c4f7b424c9662ebf96fac"
+  },
+  "engineering_evidence": {
+    "o6_q2": {
+      "orchestrator_merge": "2a7def42914de12f04d34bec8ec00d0a304bdd2e",
+      "run_id": 38046644074
+    },
+    "o6_q3": {
+      "orchestrator_merge": "7a892ad78d741a8b3746c3b71dd1531ea9a9bc1e",
+      "run_id": 38061972573
+    },
+    "o6_q4": {
+      "orchestrator_merge": "eb866109a42739919b8d345d523a4bf6438a0ca1",
+      "run_id": 38062399523
+    }
+  },
+  "operational_trust": {
+    "issue_url": "https://github.com/cogno-us/cognous-stack-orchestrator/issues/30",
+    "state": "not_established",
+    "independent_operator_evidence": null
+  },
+  "intent": "read_only_candidate_evidence",
+  "effects": "disabled",
+  "release_selection": "unchanged"
+}

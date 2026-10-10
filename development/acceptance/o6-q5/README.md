@@ -1,0 +1,9 @@
+# O6-Q5 candidate admission — explicitly HOLD
+
+[Issue #80](https://github.com/cogno-us/cognous-stack-orchestrator/issues/80). This is **not** a release proposal or a release lock update. The validator reads the exact hub `component-lock.json` at `2a23a2fbb3f5469872170c07a11b57656c6c3d2f` and compares each selected component revision to a separately frozen candidate manifest. It rejects pin drift in either the source lock or the manifest, altered evidence run IDs, a false operational readiness assertion, enabled effects or release selection. The only valid response is `status=hold`, `release_admission=not_authorized`, `effects=disabled`.
+
+The source accepted O6 merge SHAs (Runtime `1b0a9e32d010797711004ae612051a277b07912a`, GAX `814927dac65a2078d5efee6bbf07c46091844822`, Attestation `5786b91696ffa276650c4f7b424c9662ebf96fac`) are **candidate evidence only**. The current hub release still selects older source revisions. Accepted synthetic engineering runs: O6-Q2 38046644074, O6-Q3 38061972573 and O6-Q4 38062399523. This validator verifies their frozen references, **not** the live GitHub conclusion nor provenance authenticity of those runs.
+
+Operator-owned environment qualification [#30](https://github.com/cogno-us/cognous-stack-orchestrator/issues/30) remains independently unestablished; a changed local JSON field is not evidence of a trusted deployment. The gate deliberately has no automatic promotion mode. Real environment evidence would require a separately reviewed versioned contract, independent trust verification and explicit authorization. Nothing here issues institutional grants, modifies selected runtime semantics, activates optional profiles, claims live settlement or establishes C2/C3. C0 revalidation is not destination commit atomicity; C1 is optional same-host and unchanged.
+
+No component lock, release status, production effects or credentials are modified.

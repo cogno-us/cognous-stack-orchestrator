@@ -1,0 +1,21 @@
+name: Documentation entrypoint link check
+on:
+  pull_request:
+    paths:
+      - "README.md"
+      - "development/README.md"
+      - "development/documentation/**"
+      - ".github/workflows/docs-entrypoint-links.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Resolve local Markdown link targets
+        run: python development/documentation/check_links.py

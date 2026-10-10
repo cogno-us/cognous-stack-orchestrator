@@ -1,6 +1,6 @@
 # O5-E-A — connected Manifest → Control Plane → Execution Runtime refund handoff
 
-> **Historical baseline:** This is the original O5-E-A source-pin set; it remains reproducible at those exact revisions. The separately accepted [O6-Q4 synthetic integration](../../../acceptance/o6-q4/README.md) uses newer Runtime/GAX/Attestation source interfaces. Neither baseline changes the [hub component lock](https://github.com/cogno-us/cognous-open-control-stack/blob/main/component-lock.json) or qualifies production grants/settlement.
+> **Historical baseline:** This is the original O5-E-A source-pin set; it remains reproducible at those exact revisions. The separately accepted [O6-Q4 synthetic integration](../../../../acceptance/o6-q4/README.md) uses newer Runtime/GAX/Attestation source interfaces. Neither baseline changes the [hub component lock](https://github.com/cogno-us/cognous-open-control-stack/blob/main/component-lock.json) or qualifies production grants/settlement.
 
 
 Issue: `cogno-us/cognous-stack-orchestrator#56`

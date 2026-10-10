@@ -12,6 +12,10 @@ PAGES=[
     ROOT/"README.md",
     ROOT/"development/README.md",
     ROOT/"development/documentation/README.md",
+    ROOT/"tests/integration/README.md",
+    ROOT/"development/scenarios/customer_refunds/README.md",
+    ROOT/"development/scenarios/customer_refunds/connected/handoff/README.md",
+    ROOT/"development/scenarios/customer_refunds/connected/replay/README.md",
 ]
 errors=[]
 for page in PAGES:

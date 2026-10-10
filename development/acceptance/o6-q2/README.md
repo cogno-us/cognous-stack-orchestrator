@@ -17,3 +17,7 @@ Synthetic refund, no payment processor. No institutional grants, authority issua
 ## Evidence rule
 
 Do not declare this candidate passed until all three jobs complete with success at the exact PR head. Preserve the original selected release lock; record a workflow URL, head SHA, source SHAs, failing case (if any), and limitations in the Governor ledger.
+
+## Candidate pin guard and default compatibility
+
+The first O6-Q2 run failed during collection: the accepted O5-E handoff harness correctly rejected Runtime `1b0a9e32d010797711004ae612051a277b07912a` in place of its frozen default `da9f52900ee2596dab087ec6c249ba84915d2b13`. The failure was a source-pin mismatch, not a failing handoff assertion. A narrowly allowlisted `COGNOUS_O6_Q2_RUNTIME_CANDIDATE` now permits only the accepted O6 Runtime commit; unset means the original O5-E pin and its existing behavior are preserved. Arbitrary SHA values fail closed. Only the new O6-Q2 connected-handoff job selects the candidate. This is an explicit test configuration change, not a release lock amendment. The first failed workflow is [38046553076](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/38046553076). A new exact-head rerun is mandatory; previous source-level green jobs cannot qualify the updated head.

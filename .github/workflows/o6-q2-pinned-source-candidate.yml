@@ -57,6 +57,7 @@ jobs:
           test "$(git -C .upstream/evidence-pack rev-parse HEAD)" = "87293cfcbe8dfa2368d5bf77019945ba8ef1ae71"
       - name: Connected handoff on O6 runtime source
         env:
+          COGNOUS_O6_Q2_RUNTIME_CANDIDATE: 1b0a9e32d010797711004ae612051a277b07912a
           COGNOUS_ACTION_MANIFEST_SRC: ${{ github.workspace }}/.upstream/action-manifest
           COGNOUS_CONTROL_PLANE_SRC: ${{ github.workspace }}/.upstream/control-plane
           COGNOUS_EXECUTION_RUNTIME_ROOT: ${{ github.workspace }}/.upstream/execution-runtime

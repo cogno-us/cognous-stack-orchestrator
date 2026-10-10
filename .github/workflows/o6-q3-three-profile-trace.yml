@@ -1,0 +1,45 @@
+name: O6-Q3 connected optional profiles synthetic trace
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/o6-q3-three-profile-trace.yml"
+      - "tests/integration/o6_q3/**"
+      - "development/acceptance/o6-q3/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  three-profile-synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-execution-runtime
+          ref: 1b0a9e32d010797711004ae612051a277b07912a
+          path: .upstream/runtime
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-governed-exchange
+          ref: 814927dac65a2078d5efee6bbf07c46091844822
+          path: .upstream/gax
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-evidence-attestation
+          ref: 5786b91696ffa276650c4f7b424c9662ebf96fac
+          path: .upstream/attestation
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install bounded verification dependencies
+        run: python -m pip install -r .upstream/attestation/requirements.txt -r .upstream/attestation/requirements-dev.txt pytest==8.3.5
+      - name: Run actual pinned three-profile synthetic composition
+        env:
+          COGNOUS_O6_RUNTIME_ROOT: ${{ github.workspace }}/.upstream/runtime
+          COGNOUS_O6_GAX_ROOT: ${{ github.workspace }}/.upstream/gax
+          COGNOUS_O6_ATTEST_ROOT: ${{ github.workspace }}/.upstream/attestation
+        run: python -m pytest -q tests/integration/o6_q3/test_three_profile_trace.py

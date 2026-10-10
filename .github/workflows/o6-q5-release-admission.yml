@@ -1,0 +1,36 @@
+name: O6-Q5 read-only release candidate admission
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/o6-q5-release-admission.yml"
+      - "development/acceptance/o6-q5/**"
+      - "tests/integration/o6_q5/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pinned-candidate-hold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-open-control-stack
+          ref: 2a23a2fbb3f5469872170c07a11b57656c6c3d2f
+          path: .upstream/hub
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install focused test runner
+        run: python -m pip install pytest==8.3.5
+      - name: Assert exact hub checkout and fail-closed candidate admission
+        run: |
+          test "$(git -C .upstream/hub rev-parse HEAD)" = "2a23a2fbb3f5469872170c07a11b57656c6c3d2f"
+          python development/acceptance/o6-q5/admission.py --candidate development/acceptance/o6-q5/candidate.json --hub-root .upstream/hub | tee /tmp/o6-q5-result.json
+          python -c 'import json; r=json.load(open("/tmp/o6-q5-result.json")); assert r["status"] == "hold" and r["release_admission"] == "not_authorized" and r["effects"] == "disabled"'
+      - name: Run source-backed negative mutation controls
+        env:
+          COGNOUS_O6_Q5_HUB_ROOT: ${{ github.workspace }}/.upstream/hub
+        run: python -m pytest -q tests/integration/o6_q5/test_admission.py

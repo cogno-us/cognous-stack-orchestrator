@@ -5,6 +5,8 @@ on:
       - "README.md"
       - "development/README.md"
       - "development/documentation/**"
+      - "development/scenarios/customer_refunds/**"
+      - "tests/integration/README.md"
       - ".github/workflows/docs-entrypoint-links.yml"
   workflow_dispatch:
 permissions:

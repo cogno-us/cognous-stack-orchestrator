@@ -1,6 +1,6 @@
 # Engineering cockpit
 
-**Start here** for orchestrator and cross-repository development. The [control issue](https://github.com/cogno-us/cognous-stack-orchestrator/issues/1) is the dashboard, not a separate claim of acceptance. GitHub issues are the task queue; pull requests are the reviewable change records.
+**Start here** for orchestrator and cross-repository development. This guide describes the engineering process; the [root README](../README.md) explains the system and its qualification boundaries. The [control issue](https://github.com/cogno-us/cognous-stack-orchestrator/issues/1) is the dashboard, not a separate claim of acceptance. GitHub issues are the task queue; pull requests are the reviewable change records.
 
 ## One-command-by-conversation operating model
 
@@ -30,10 +30,16 @@ Issue ID; accountable worker/owner; repo/path boundaries; source HEAD SHA(s); ob
 
 Use **New issue** in this repository and select *Engineering task*; fill in the fields. The governor updates the pinned control issue's task table. For changes in subcomponents, link the source-repository issue/PR, not a parallel implementation in this orchestrator.
 
-## V0 sequence
+## How to reproduce a bounded test
 
-1. Engineering dashboard and templates (this phase)
-2. [V0 Integration Contract](integration-contract-v0.md) — proposed contract, not yet cross-repo ratified
-3. Contract review and version pins, with owners and tests agreed
-4. Smallest vertical integration pilot spanning agreed domain interfaces
-5. Only then broader features or ISS adapter implementation
+1. Identify an accepted test profile, for example [O6-Q4](acceptance/o6-q4/README.md), and note its exact source revisions.
+2. Read the corresponding `.github/workflows/o6-q4-authenticated-fence.yml` for precise environment variables, installs and commands. Its actual-source checkouts must match the recorded SHAs.
+3. Run only with synthetic fixtures in a disposable checkout. The resulting CI job proves precisely the named bounded tests, not production deployment or independently adopted authority.
+4. In a PR record the tested **PR head**, workflow URL/run ID, pass/fail, changed paths and unresolved trust limitations.
+5. Compare against the hub [component lock](https://github.com/cogno-us/cognous-open-control-stack/blob/main/component-lock.json) *separately*. Newer passing source tests never silently change the selected release.
+
+**Example failure handling:** if a refund attempt has a lost acknowledgment and the observer reports `unknown`, preserve the original effect/attempt and mark recovery HOLD; do not mint a new attempt because an observation is missing. See [Q6 recovery](acceptance/o6-q6/README.md).
+
+## Historical planning
+
+The [V0 integration contract](integration-contract-v0.md) and earlier scaffold plans are historical proposed context, **not current implementation status**. The accepted O5-E and O6-Q2–Q6 synthetic suites supersede the phrase “no integration qualified,” while [operator trust #30](https://github.com/cogno-us/cognous-stack-orchestrator/issues/30) remains unqualified.

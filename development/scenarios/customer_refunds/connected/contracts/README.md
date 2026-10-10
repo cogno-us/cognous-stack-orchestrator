@@ -1,5 +1,6 @@
 # O5-E-C connected refund contract
 
+> **Acceptance update:** This issue-58 interstage contract was initially provisional while the O5-E workers were compared. The combined synthetic connected qualification was subsequently accepted in [PR #64](https://github.com/cogno-us/cognous-stack-orchestrator/pull/64), merge `667589e8954c6a17195e4209e09f8d41860e4524`, [CI 38002063275](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/38002063275). The historical interface and exact worker pins below remain unchanged. This does **not** qualify real settlement, independent authority, production trust or the hub's newer selected source.
 Issue #58 freezes the provisional machine-checkable handoff contract used to compare workers O5-E-A and O5-E-B before Governor integration. It does **not** change C1-C8, issue authority, dispatch a refund, authenticate a merchant environment, or prove settlement.
 
 ## Frozen identities

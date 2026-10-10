@@ -21,5 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Resolve local Markdown link targets
+      - name: Verify paths, GitHub heading anchors and shell syntax (no execution)
         run: python development/documentation/check_links.py
+      - name: Verify negative controls for malformed docs
+        run: python -m unittest discover -s development/documentation -p 'test_check_links.py' -v

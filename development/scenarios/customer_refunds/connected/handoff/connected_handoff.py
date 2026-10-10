@@ -17,7 +17,13 @@ import sys
 
 ACTION_MANIFEST_PIN = "8d1572d4f926c968a8704cb912a6e9d49166f74a"
 CONTROL_PLANE_PIN = "e66e5f163c5d5c112ff345a2f332b4c3893ee183"
-EXECUTION_RUNTIME_PIN = "da9f52900ee2596dab087ec6c249ba84915d2b13"
+EXECUTION_RUNTIME_BASE_PIN = "da9f52900ee2596dab087ec6c249ba84915d2b13"
+EXECUTION_RUNTIME_CANDIDATE_PIN = "1b0a9e32d010797711004ae612051a277b07912a"
+# Candidate testing is strictly opt-in: no arbitrary SHA, branch, or fallback.
+_candidate_pin = os.environ.get("COGNOUS_O6_Q2_RUNTIME_CANDIDATE", "")
+if _candidate_pin not in ("", EXECUTION_RUNTIME_CANDIDATE_PIN):
+    raise RuntimeError("unsupported O6-Q2 runtime candidate pin")
+EXECUTION_RUNTIME_PIN = _candidate_pin or EXECUTION_RUNTIME_BASE_PIN
 
 
 def _head(path: Path) -> str:

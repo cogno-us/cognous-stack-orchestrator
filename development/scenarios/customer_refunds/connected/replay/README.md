@@ -31,6 +31,6 @@ Tests reject:
 
 ## Integration status and limitation
 
-The issue-57 trace shape is intentionally **provisional** because issue #58 independently owns the frozen O5-E interstage contract. Governor integration must compare and reconcile the #56, #57 and #58 outputs before any combined qualification. This worker does not modify C1-C8 or other worker paths.
+**Historical worker-stage note:** Issue #57 initially treated its trace as provisional pending issue #58's interstage contract review. That dependency was subsequently reconciled in the accepted [O5-E combined qualification PR #64](https://github.com/cogno-us/cognous-stack-orchestrator/pull/64), merge `667589e8954c6a17195e4209e09f8d41860e4524`, with [combined source-pinned CI](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/38002063275) successful. The source pins above remain the **historical O5-E** qualification inputs, not a claim about current hub selection or the newer [O6-Q4](../../../../acceptance/o6-q4/README.md) test. The original trace and C1-C8 boundary restrictions are unchanged.
 
 No payment processor, merchant credential, institutional grant, real funds, actual payment dispatch, destination settlement, or production trust is used or claimed. Governor #14 and operational trust #30 remain open.

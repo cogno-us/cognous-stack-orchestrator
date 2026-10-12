@@ -1,10 +1,10 @@
 # Synthetic recovery: proposed owner decisions
 
-Status: **PROPOSED / OWNER DISPOSITIONS PENDING**. Task [#95](https://github.com/cogno-us/cognous-stack-orchestrator/issues/95); integration gate [#94](https://github.com/cogno-us/cognous-stack-orchestrator/issues/94). This is a decision slate for [the recovery proposal](RECOVERY_RESOLUTION_PROPOSAL.md), not an amendment to accepted C1–C8 contracts or authorization to start integration.
+Status: **OPERATOR APPROVED / TECHNICAL COMPATIBILITY REVIEW PENDING**. Task [#95](https://github.com/cogno-us/cognous-stack-orchestrator/issues/95); integration gate [#94](https://github.com/cogno-us/cognous-stack-orchestrator/issues/94). This records the operator-approved decision slate for [the recovery proposal](RECOVERY_RESOLUTION_PROPOSAL.md). It does not amend accepted C1–C8 contracts or establish consumer compatibility.
 
 ## Recommended scope
 
-Qualify a **read-only synthetic inspection integration first**. It would preserve and inspect retained recovery evidence without admitting observations, retrying effects, resolving disputes, migrating v1 data, or asserting real settlement. This is a proposed narrowing of #94 for owner review, not an implicit scope change.
+Qualify a **read-only synthetic inspection integration first**. It would preserve and inspect retained recovery evidence without admitting observations, retrying effects, resolving disputes, migrating v1 data, or asserting real settlement. The operator explicitly approved this narrowing of #94 on 2026-10-11.
 
 Source anchors:
 - Orchestrator baseline: `06bb9245fcc9769f82c5b0347ae8a1f9fc147e76`.
@@ -18,7 +18,7 @@ These are proposed input anchors, not selected-release pins. Replay and Evidence
 
 ## Decisions to disposition
 
-Every row remains **pending**. The recommended choice is concrete enough to accept, reject, or amend individually.
+All ten choices below were **accepted by the project operator** for this bounded scope. Technical compatibility and consumer implementation acceptance remain separate, pending reviews.
 
 | ID | Recommended choice for this scope | Consequence / deferred work |
 | --- | --- | --- |
@@ -92,9 +92,20 @@ Using the private serializer here is an inspection technique, not a proposed sup
 For each RD row, record the accountable owner, accept/reject/amend disposition, exact document commit, rationale, conditions, and review date in the review record. Silence, a source merge, or green CI is not a disposition.
 
 Before implementation:
-- Runtime and orchestrator owners disposition all ten rows and explicitly agree whether #94 is narrowed to read-only inspection.
+- Operator disposition completed: RD-01–RD-10 and the read-only inspection scope approved; see the record below.
 - Applicable C4/C5/C8 owners review compatibility; any amendment follows the existing governance process.
 - Receiver owners agree exact native mapping versions, loss representation, and positive/negative cases. No fabricated decision or tenant payloads may satisfy existing importers.
 - Scope producer changes separately if owners require a complete rejection audit, authenticated admission, migration, or full conflicting-body retention. Those changes are not supplied by this document.
 
 Validation for this proposal is limited to source inspection, two serialization vectors, and documentation checks. Actual consumer integration and behavioral/production qualification remain unexecuted. C0 check-to-commit limits, optional same-host C1, no C2/C3, no real settlement, and operational [#30 HOLD](https://github.com/cogno-us/cognous-stack-orchestrator/issues/30) remain.
+
+## Operator disposition record
+
+- Decision maker: André de Lima, project operator, through this task conversation.
+- Decision date: 2026-10-11, America/Los_Angeles.
+- Reviewed decision revision: `7d6f84feb370286a18fe03a835e91b0aa84076b4` in PR #96.
+- Approval request: approve RD-01–RD-10 and the read-only synthetic integration scope, then proceed with the required compatibility review.
+- Response: “i approve”.
+- Disposition: accept all ten listed decisions and the read-only narrowing of #94. Each decision retains its stated consequence and deferred work; no broader admission, authority, settlement, or release permission is added.
+- Basis: explicit operator approval of the concrete decision slate. This is not an independent Runtime, Replay, Evidence Pack, or C4/C5/C8 technical review, and no such review is attributed to the operator.
+- Next gate: complete the technical compatibility assessment and resolve actual receiver mapping/version requirements before implementation; preserve all loss and assurance limits.

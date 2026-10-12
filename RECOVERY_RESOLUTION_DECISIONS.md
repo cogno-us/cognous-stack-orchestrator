@@ -109,3 +109,33 @@ Validation for this proposal is limited to source inspection, two serialization 
 - Disposition: accept all ten listed decisions and the read-only narrowing of #94. Each decision retains its stated consequence and deferred work; no broader admission, authority, settlement, or release permission is added.
 - Basis: explicit operator approval of the concrete decision slate. This is not an independent Runtime, Replay, Evidence Pack, or C4/C5/C8 technical review, and no such review is attributed to the operator.
 - Next gate: complete the technical compatibility assessment and resolve actual receiver mapping/version requirements before implementation; preserve all loss and assurance limits.
+
+## Technical compatibility assessment — 2026-10-11
+
+Method: source and contract inspection by the implementation agent, not independent consumer-owner acceptance. No model or connected integration run was performed for this assessment. Earlier preflight execution remains separately recorded in #94.
+
+Inspected current consumer sources:
+
+| Repository | Exact revision | Relevant source blobs |
+| --- | --- | --- |
+| Replay | `6a5ef9ccfbf3da23cbad74a9278820c7642d6981` | `reconstruction.py: dae0aa6feac3e81f6026cdb139eeb12fc1e654d0`; `importers.py: 3d9e5238e91b8ee6c7dbaa9c62b56bda7d1591dc` |
+| Evidence Pack | `4172a0d535ff861a9f6f6cfee0b684bae63ca445` | `models.py: ce0ced76d63a7d069da60ba2fcc3cf48f5d31e47`; `importer.py: b91d9b778c1b082aeb3a6a1ea7145d5d775aaafd` |
+
+Replay's two inspected code blobs and Evidence Pack's model blob match the earlier preflight sources. Current source acceptance has not supplied a recovery-successor mapping in these interfaces. The selected hub at `3efe456d10a37dcdd2277b4a37d9034403380f09` still documents Replay `459e4ba62fca49364aebb0050cd5fb2dd5a71bfa`, Evidence Pack `b4baccd823d2a73be276c1de745b19cf7c56a0d6`, Reconstruction Bundle 0.2.0 and transformation `agep-manifest-reconstruction-import/0.3.2`. Those selected historical combinations remain unchanged.
+
+| Boundary | Inspected basis | Assessment and implementation requirement |
+| --- | --- | --- |
+| C4 failure semantics | Control Plane `11a4c6417a97e97e9b99bec01018d5b9d4478957`, `docs/w0-c1-c2-c4-c6-contracts.md` | The candidate addendum names bounded-path failure classes and dispatch stages. Recovery intake exceptions have no retained equivalent record. Preserve this absence; do not relabel an inspection-format rejection as a historical policy denial, dispatch error, or proof of no effect. A future inspection importer needs its own clearly attributed import finding. |
+| C5 observation/recovery | Runtime source above, `docs/w0-c3-c5-c7-contracts.md` and implementation | Preserve original effect/attempt, observed state, recorded freshness evaluation, synthetic finality, and uncertainty. Current read-only scope issues no retry or new effect, so it need not redefine admission or dispatch. It cannot claim authenticated destination scope or independently established finality. |
+| C8 Replay | Replay source above, `docs/reconstruction_import.md` and `docs/w0-c8-compatibility-contract.md` | Existing bounded importer requires Control Plane records and explicitly supported producer pairs. The recovery inspection export is neither. Generic model parsing is not a mapping. Add a separately named native inspection import/validation API with exact dispatch and loss representation; retain historical importer behavior. |
+| C8 Evidence Pack | Evidence Pack source above, `importer.py` and `docs/w0-c8-compatibility-contract.md` | Current manifest/reconstruction import checks native producer profiles, accepted revisions, and runtime decision semantics. Do not fabricate a manifest, decision, tenant, or old executor profile to pass it. A separate native inspection transformation must consume the actual qualified Replay output and carry its unsupported/unavailable findings. |
+
+The W0 addenda explicitly label themselves candidate contracts. They are design-review context, not proof that their proposals are accepted, implemented, or satisfied. This assessment proposes no amendment to selected contracts and does not grant an independent C4/C5/C8 owner signoff.
+
+### Required downstream work
+
+1. Scope Replay's optional read-only inspection mapping in the Replay repository. Preserve full retained JSON, original byte commitments where available, record identity, receipt versus current-state distinctions, collision-body unavailability, and a per-field loss report. Choose an exact API/profile version in that owning change; do not reserve a version here.
+2. Scope Evidence Pack's corresponding inspection transformation in its repository, dependent on the accepted Replay implementation/version. It must show synthetic resolution separately from verification/settlement and must not route inspection output through the historical manifest importer.
+3. Only then qualify orchestrator #94 with actual pinned Runtime, Replay and Evidence Pack implementations. Require positive retained-history and conflict-gap cases, and negative wrong-profile, changed-identity, lost-event, altered-commitment and false-settlement cases. A commitment with no retained preimage remains explicitly unverified, not an automatic integrity pass or invented payload.
+
+Assessment result: **no direct compatibility demonstrated; separate native consumer mappings required**. Operator decisions are complete. Owning-repository API acceptance and composed qualification remain open. Inspection can preserve unavailable evidence without claiming full-payload reconstruction; any required mapping loss must remain blocking under the approved RD-09 rule.

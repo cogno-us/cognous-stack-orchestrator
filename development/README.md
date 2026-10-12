@@ -40,6 +40,12 @@ Use **New issue** in this repository and select *Engineering task*; fill in the 
 
 **Example failure handling:** if a refund attempt has a lost acknowledgment and the observer reports `unknown`, preserve the original effect/attempt and mark recovery HOLD; do not mint a new attempt because an observation is missing. See [Q6 recovery](acceptance/o6-q6/README.md).
 
+## Inspect an existing recovery export
+
+For the optional supplied-snapshot path, use the [recovery inspection guide](../acceptance/recovery-resolution-inspection/README.md). It documents exact dependency pins, the supported API, reproduction command and retained evidence gaps. Unlike the Q6 intake profile, this adapter accepts an existing export without opening Runtime databases or admitting observations. Its `resolved` producer state remains synthetic-only; inspection cannot authorize retry or establish independent settlement.
+
+The [completed PR #97 review](https://github.com/cogno-us/cognous-stack-orchestrator/pull/97) records 33 CI passes with no failures or skips and inspection of all nine scenario artifacts. This is implementation-agent review, not independent assurance. Selected-release adoption and operator trust #30 remain separate gates.
+
 ## Historical planning
 
 The [V0 integration contract](integration-contract-v0.md) and earlier scaffold plans are historical proposed context, **not current implementation status**. The accepted O5-E and O6-Q2–Q6 synthetic suites supersede the phrase “no integration qualified,” while [operator trust #30](https://github.com/cogno-us/cognous-stack-orchestrator/issues/30) remains unqualified.

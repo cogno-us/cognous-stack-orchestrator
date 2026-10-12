@@ -1,6 +1,6 @@
 # Optional recovery inspection chain 0.1
 
-Status: **candidate; local qualification executed; CI and governor disposition recorded in the PR**. Owning issue: [#94](https://github.com/cogno-us/cognous-stack-orchestrator/issues/94). This is an isolated read-only integration under the [operator-approved decisions](../../RECOVERY_RESOLUTION_DECISIONS.md), not a replacement for Q6, O5-E-B, or the selected release.
+Status: **merged optional source integration; local and CI qualification executed**. [PR #97](https://github.com/cogno-us/cognous-stack-orchestrator/pull/97) merged at `45b8b1bbd311887eaf8a4fb59c185b44088d6740` under operator authorization after implementation-agent review, not independent assurance. Owning issue: [#94](https://github.com/cogno-us/cognous-stack-orchestrator/issues/94). This is an isolated read-only integration under the [operator-approved decisions](../../RECOVERY_RESOLUTION_DECISIONS.md), not a replacement for Q6, O5-E-B, or the selected release.
 
 ## Source selection
 
@@ -76,7 +76,9 @@ COGNOUS_RUNTIME_SOURCE=/absolute/path/to/runtime COGNOUS_REPLAY_SOURCE=/absolute
 
 The optional qualification file is explicitly selected; it fails on missing fixture configuration rather than silently skipping. Existing default test selection and dependency generations are unchanged.
 
-Workflow `.github/workflows/recovery-resolution-inspection.yml` checks out all three exact dependencies, verifies their Git heads, installs actual native consumers, and uploads nine synthetic scenario JSON files plus JUnit and `artifact-manifest.json`. The manifest records actual checkout revisions (including the tested orchestrator checkout) and per-file SHA-256. A retained artifact or successful upload alone is not a passing test result. At initial publication, remote artifact contents have not been inspected; record the exact run/head and inspection outcome in the PR after CI.
+Workflow `.github/workflows/recovery-resolution-inspection.yml` checks out all three exact dependencies, verifies their Git heads, installs actual native consumers, and uploads nine synthetic scenario JSON files plus JUnit and `artifact-manifest.json`. The manifest records actual checkout revisions (including the tested orchestrator checkout) and per-file SHA-256. A retained artifact or successful upload alone is not a passing test result. At initial publication remote artifacts were uninspected. The completed review subsequently downloaded artifact `11720268698` from [run 38188291791](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/38188291791), verified archive SHA-256 `8bc13d79bd01ad962e44cd8585f2dbe3483a616c44cb35ddb0e12b95666bfb92` and all ten manifest-listed file digests, and inspected the nine scenario JSON files plus JUnit and the manifest. JUnit records 33 tests, zero errors/failures/skips, 2.442 seconds. All five PR workflows passed.
+
+The tested candidate was `89fd03aec326f20cc28b640faa76f3855add6080`; CI tested synthetic merge checkout `2cecd535c5d3e5e83ab6aaa6c820e5b0d233f25c`, whose parents were verified as that candidate and baseline `2e493beff0a2425c408f8412bd2bf58fe1d50c6f`. Manifest component pins match the table above. These results qualify that source generation, not every later repository revision.
 
 ## Limits and next gate
 
@@ -84,4 +86,4 @@ This establishes only the executed synthetic read-only mapping at these pins. Su
 
 Full unrelated orchestrator suites were not run locally. Independent review, operational trust and selected-release adoption remain separate decisions. No private ISS, AoM or IGPG material is used. Preserve C0 check-to-commit limits, optional same-host C1, no C2/C3, no real settlement, and operational #30 HOLD.
 
-Next gate: exact-head scoped CI and attributable review of this candidate and its retained artifacts. A merge accepts only the bounded source change; it does not activate a production effect or update the selected hub lock.
+Completed gate: exact-head scoped CI and attributable implementation-agent review of the source and retained artifacts, followed by merge. Independent assurance, operational trust and any selected-release adoption remain separate outstanding gates. The merge accepts only the bounded source change; it does not activate a production effect or update the selected hub lock.

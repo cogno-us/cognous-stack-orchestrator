@@ -1,0 +1,77 @@
+name: Synthetic recovery inspection chain
+on:
+  pull_request:
+    paths:
+      - development/recovery/recovery_resolution/**
+      - tests/integration/recovery_resolution/**
+      - acceptance/recovery-resolution-inspection/**
+      - .github/workflows/recovery-resolution-inspection.yml
+  push:
+    branches: [main]
+    paths:
+      - development/recovery/recovery_resolution/**
+      - tests/integration/recovery_resolution/**
+      - acceptance/recovery-resolution-inspection/**
+      - .github/workflows/recovery-resolution-inspection.yml
+permissions:
+  contents: read
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: orchestrator
+      - uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-execution-runtime
+          ref: 8e7d634cf0a22b6f3c1fc6d93afe92c7414fa243
+          path: runtime
+      - uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-replay-bundle
+          ref: 696e7bc2432fc7b5cf2d6e6c5f0b944b2d9a265f
+          path: replay
+      - uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-governance-evidence-pack
+          ref: bc20a65c0452b85333f9b036853d77aad0b08964
+          path: evidence
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify exact component sources
+        run: |
+          test "$(git -C runtime rev-parse HEAD)" = "8e7d634cf0a22b6f3c1fc6d93afe92c7414fa243"
+          test "$(git -C replay rev-parse HEAD)" = "696e7bc2432fc7b5cf2d6e6c5f0b944b2d9a265f"
+          test "$(git -C evidence rev-parse HEAD)" = "bc20a65c0452b85333f9b036853d77aad0b08964"
+      - name: Install actual native consumers
+        run: python -m pip install -e 'replay[dev]' -e evidence
+      - name: Qualify read-only recovery inspection
+        working-directory: orchestrator
+        env:
+          COGNOUS_RUNTIME_SOURCE: ${{ github.workspace }}/runtime
+          COGNOUS_REPLAY_SOURCE: ${{ github.workspace }}/replay
+          COGNOUS_EVIDENCE_SOURCE: ${{ github.workspace }}/evidence
+          RECOVERY_INSPECTION_ARTIFACTS: ${{ github.workspace }}/orchestrator/artifacts/recovery-inspection
+        run: python -m pytest -q tests/integration/recovery_resolution/inspection_checks.py --junitxml=artifacts/recovery-inspection/junit.xml
+      - name: Retain actual pins and artifact digests
+        if: always()
+        working-directory: orchestrator
+        run: |
+          python - <<'PY'
+          import hashlib, json, subprocess
+          from pathlib import Path
+          root = Path('artifacts/recovery-inspection')
+          root.mkdir(parents=True, exist_ok=True)
+          pins = {name: subprocess.check_output(['git', '-C', '../' + directory, 'rev-parse', 'HEAD'], text=True).strip()
+                  for name, directory in [('orchestrator', 'orchestrator'), ('runtime', 'runtime'), ('replay', 'replay'), ('evidence_pack', 'evidence')]}
+          digests = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(root.glob('*')) if p.is_file()}
+          (root / 'artifact-manifest.json').write_text(json.dumps({'actual_checkout_revisions': pins, 'artifact_sha256': digests}, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recovery-inspection-${{ github.sha }}
+          path: orchestrator/artifacts/recovery-inspection/
+          if-no-files-found: error

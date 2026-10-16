@@ -82,6 +82,26 @@ class RefundRuntimeQualification(unittest.TestCase):
         self.assertEqual(r["reason"], "permit_binding_mismatch_tenant_id")
         self.assertEqual(self.destination.state()["intents"], [])
 
+    def test_permit_binding_mismatch_refuses_amount_or_currency(self):
+        i = intent()
+        for field, value in (
+            ("amount_minor", 999_999),
+            ("amount_minor", 2500.0),
+            ("currency", "EUR"),
+        ):
+            with self.subTest(field=field, value=value):
+                p = self.permit(i)
+                p[field] = value
+                r = self.destination.execute(i, permit=p, attempt_id=f"attempt-{field}-{value}")
+                self.assertEqual(r["status"], "refused")
+                self.assertEqual(r["reason"], "permit_binding_mismatch_" + field)
+                self.assertEqual(self.destination.state()["intents"], [])
+        p = self.permit(i)
+        del p["amount_minor"]
+        r = self.destination.execute(i, permit=p, attempt_id="attempt-amount-absent")
+        self.assertEqual(r["reason"], "permit_binding_mismatch_amount_minor")
+        self.assertEqual(self.destination.state()["intents"], [])
+
     def test_synthetic_success_never_claims_processor_call_or_settlement(self):
         i = intent()
         r = self.destination.execute(i, permit=self.permit(i), attempt_id="attempt-ok")

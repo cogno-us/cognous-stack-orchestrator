@@ -69,6 +69,8 @@ def fixture_control_plane_permit(intent: RefundIntent, *, decision_id: str = "de
         "request_id": intent.request_id,
         "order_ref": intent.order_ref,
         "payment_ref": intent.payment_ref,
+        "amount_minor": intent.amount_minor,
+        "currency": intent.currency,
         "authority_current": True,
     }
 
@@ -167,9 +169,12 @@ class SyntheticRefundRuntime:
             "order_ref": intent.order_ref,
             "payment_ref": intent.payment_ref,
             "effect_id": intent.effect_id,
+            "amount_minor": intent.amount_minor,
+            "currency": intent.currency,
         }
         for field, value in expected.items():
-            if permit.get(field) != value:
+            permitted = permit.get(field)
+            if type(permitted) is not type(value) or permitted != value:
                 return "permit_binding_mismatch_" + field, decision_id
         if not isinstance(decision_id, str) or not decision_id:
             return "missing_decision_id", None

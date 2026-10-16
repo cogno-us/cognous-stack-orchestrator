@@ -116,6 +116,7 @@ class AuthenticatedRegistryTests(unittest.TestCase):
         self.assertEqual(got["verified_log_count"], 1)
         self.assertEqual(got["trust_model"], "operator-configured-rpc+independent-checkpoint")
         self.assertEqual(got["independent_verification"], "checkpoint_anchor_only")
+        self.assertIn("checkpoint_not_linked_to_observed_block", got["limitations"])
         self.assertEqual(got["authority"], "not_established")
         self.assertEqual(got["effect"], "not_established")
 
@@ -166,6 +167,27 @@ class AuthenticatedRegistryTests(unittest.TestCase):
             trusted=trusted(), rpc=FakeRpc(receipt_value=bad_receipt)
         )
         self.assertIn("log_missing_from_receipt", got["reasons"])
+
+    def test_receipt_log_with_same_identity_but_different_content_rejected(self):
+        cases = {
+            "receipt_log_contract_mismatch": log_entry(address=OTHER_ADDRESS),
+            "receipt_log_content_mismatch": log_entry(topics=["0x" + "77" * 32]),
+        }
+        for reason, receipt_log in cases.items():
+            with self.subTest(reason=reason):
+                got = module.observe_authenticated_registry(
+                    trusted=trusted(), rpc=FakeRpc(receipt_value=receipt(logs=[receipt_log]))
+                )
+                self.assertEqual(got["status"], "failed")
+                self.assertIn(reason, got["reasons"])
+        for field, value in (("data", "0x01"), ("removed", True)):
+            with self.subTest(field=field):
+                got = module.observe_authenticated_registry(
+                    trusted=trusted(),
+                    rpc=FakeRpc(receipt_value=receipt(logs=[log_entry(**{field: value})])),
+                )
+                self.assertEqual(got["status"], "failed")
+                self.assertIn("receipt_log_content_mismatch", got["reasons"])
 
     def test_log_block_hash_mismatch_rejected(self):
         got = module.observe_authenticated_registry(

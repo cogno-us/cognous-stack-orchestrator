@@ -2,8 +2,11 @@
 
 Authentication is deliberately bounded: an operator chooses a trusted deployment
 and RPC endpoint, and may additionally pin an independently obtained block
-checkpoint. Receipt/log/block consistency is checked against that trust root. A
-successful result is not consensus finality, truth, an attestation result, an
+checkpoint. Receipt/log/block consistency is checked against that trust root.
+The checkpoint is checked only by hash equality at its own height through the
+same RPC endpoint; it is not linked to the observed block by parent hashes or
+any proof, so it detects an endpoint that misreports that one block but does
+not anchor the observation. A successful result is not consensus finality, truth, an attestation result, an
 institutional grant, or an execution authorization.
 
 Pinned upstream source:
@@ -93,7 +96,14 @@ class TrustedRegistrySource:
 
 
 class UrlJsonRpcClient:
-    """Minimal read-only JSON-RPC transport. Credentials are not embedded or logged."""
+    """Minimal read-only JSON-RPC transport. Credentials are not embedded or logged.
+
+    The URL is passed to urllib unchanged: no scheme, host, redirect or
+    certificate-pinning policy is enforced here, so ``http://`` URLs and URLs
+    carrying userinfo (``user:pass@host``) are accepted as given. Endpoint and
+    transport policy is part of operational trust (issue #30, HOLD) and is not
+    established by this adapter.
+    """
 
     def __init__(self, url: str, *, timeout_seconds: float = 10.0):
         self._url = url
@@ -195,6 +205,21 @@ def _log_identity(log: Mapping[str, Any]) -> tuple[str, str, int] | None:
     if block_hash is None or tx_hash is None:
         return None
     return block_hash, tx_hash, log_index
+
+
+def _log_content(log: Mapping[str, Any]) -> tuple[str | None, tuple[str, ...] | None, str | None, Any]:
+    topics = log.get("topics")
+    if isinstance(topics, list) and all(isinstance(t, str) for t in topics):
+        normalized_topics: tuple[str, ...] | None = tuple(t.lower() for t in topics)
+    else:
+        normalized_topics = None
+    data = log.get("data")
+    return (
+        _address(log.get("address")),
+        normalized_topics,
+        data.lower() if isinstance(data, str) else None,
+        log.get("removed", False),
+    )
 
 
 def observe_authenticated_registry(*, trusted: TrustedRegistrySource, rpc: JsonRpc) -> dict[str, Any]:
@@ -330,15 +355,23 @@ def observe_authenticated_registry(*, trusted: TrustedRegistrySource, rpc: JsonR
             if not isinstance(receipt_logs, list):
                 errors.append("receipt_logs_unavailable")
                 continue
-            receipt_ids = {
-                candidate
+            receipt_matches = [
+                item
                 for item in receipt_logs
-                if isinstance(item, Mapping)
-                for candidate in [_log_identity(item)]
-                if candidate is not None
-            }
-            if identity not in receipt_ids:
+                if isinstance(item, Mapping) and _log_identity(item) == identity
+            ]
+            if not receipt_matches:
                 errors.append("log_missing_from_receipt")
+            else:
+                raw_content = _log_content(raw)
+                if raw_content[1] is None or raw_content[2] is None:
+                    errors.append("malformed_log_content")
+                for item in receipt_matches:
+                    item_content = _log_content(item)
+                    if item_content[0] != trusted.contract_address.lower():
+                        errors.append("receipt_log_contract_mismatch")
+                    if item_content[1:] != raw_content[1:]:
+                        errors.append("receipt_log_content_mismatch")
 
             verified_logs.append(
                 {
@@ -399,7 +432,12 @@ def observe_authenticated_registry(*, trusted: TrustedRegistrySource, rpc: JsonR
                 "confirmation_depth_is_not_consensus_finality",
                 "receipt_log_and_block_consistency_does_not_establish_truth_or_institutional_authority",
                 "no_grants_or_effects_are_issued",
-            ],
+            ]
+            + (
+                ["checkpoint_not_linked_to_observed_block"]
+                if trusted.checkpoint is not None
+                else []
+            ),
         }
     except RegistryObservationError as exc:
         return _unknown(str(exc), trust_model=trust_model)

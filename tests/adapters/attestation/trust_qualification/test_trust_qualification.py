@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[4]
 MODULE_PATH = (
@@ -200,6 +201,29 @@ class OperatorTrustQualificationTests(unittest.TestCase):
             ("unknown", "trust_snapshot_pin_mismatch"),
         )
         self.assertEqual(bridge.calls, [])
+
+    def test_bridge_rechecks_snapshot_digest_after_qualification_read(self):
+        accepted = qualification.accepted_bridge
+        with tempfile.TemporaryDirectory() as td:
+            path, digest = _write_snapshot(td, _snapshot())
+            config = _config(path, digest)
+            seen = []
+
+            def swap_then_verify(**kwargs):
+                # Snapshot is replaced after qualification hashed its first read.
+                seen.append(kwargs)
+                path.write_text(json.dumps(_snapshot(key_id="key:2")), encoding="utf-8")
+                return accepted.verify_attestation_binding(**kwargs)
+
+            with mock.patch.object(accepted, "_copy_pinned_source") as copy_source:
+                got = self.run_qualified(config, bridge=swap_then_verify)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0].get("trust_snapshot_sha256"), digest)
+        self.assertEqual(
+            (got["status"], got["reason"]),
+            ("unknown", "trust_snapshot_pin_mismatch"),
+        )
+        copy_source.assert_not_called()
 
     def test_rotation_requires_explicit_new_snapshot_pin_and_key_identity(self):
         with tempfile.TemporaryDirectory() as td:

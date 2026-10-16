@@ -82,6 +82,26 @@ class RefundRuntimeQualification(unittest.TestCase):
         self.assertEqual(r["reason"], "permit_binding_mismatch_tenant_id")
         self.assertEqual(self.destination.state()["intents"], [])
 
+    def test_permit_binding_mismatch_refuses_amount_or_currency(self):
+        i = intent()
+        for field, value in (
+            ("amount_minor", 999_999),
+            ("amount_minor", 2500.0),
+            ("currency", "EUR"),
+        ):
+            with self.subTest(field=field, value=value):
+                p = self.permit(i)
+                p[field] = value
+                r = self.destination.execute(i, permit=p, attempt_id=f"attempt-{field}-{value}")
+                self.assertEqual(r["status"], "refused")
+                self.assertEqual(r["reason"], "permit_binding_mismatch_" + field)
+                self.assertEqual(self.destination.state()["intents"], [])
+        p = self.permit(i)
+        del p["amount_minor"]
+        r = self.destination.execute(i, permit=p, attempt_id="attempt-amount-absent")
+        self.assertEqual(r["reason"], "permit_binding_mismatch_amount_minor")
+        self.assertEqual(self.destination.state()["intents"], [])
+
     def test_synthetic_success_never_claims_processor_call_or_settlement(self):
         i = intent()
         r = self.destination.execute(i, permit=self.permit(i), attempt_id="attempt-ok")
@@ -117,9 +137,32 @@ class RefundRuntimeQualification(unittest.TestCase):
         first = intent(effect_id="effect-original")
         self.destination.execute(first, permit=self.permit(first), attempt_id="attempt-first")
         changed = intent(effect_id="effect-substituted")
-        r = self.destination.execute(changed, permit=self.permit(changed), attempt_id="attempt-second")
+        substituted_permit = runtime.fixture_control_plane_permit(
+            changed, decision_id="decision-substituted"
+        )
+        r = self.destination.execute(changed, permit=substituted_permit, attempt_id="attempt-second")
         self.assertEqual(r["reason"], "duplicate_intent")
-        self.assertEqual(len(self.destination.state()["intents"]), 1)
+        self.assertEqual(r["effect_id"], "effect-original")
+        self.assertEqual(r["decision_id"], "decision-1")
+        state = self.destination.state()
+        self.assertEqual(len(state["intents"]), 1)
+        suppressed = [a for a in state["attempts"] if a["attempt_id"] == "attempt-second"]
+        self.assertEqual(len(suppressed), 1)
+        self.assertEqual(suppressed[0]["outcome"], "suppressed")
+        self.assertEqual(suppressed[0]["effect_id"], "effect-original")
+        self.assertEqual(suppressed[0]["decision_id"], "decision-1")
+
+        # An invalid permit for the same business scope records no attempt.
+        bad = runtime.fixture_control_plane_permit(changed, decision_id="decision-bad")
+        bad["authenticated_control_plane_permit"] = False
+        r = self.destination.execute(changed, permit=bad, attempt_id="attempt-invalid")
+        self.assertEqual(r["status"], "refused")
+        self.assertEqual(r["reason"], "unauthenticated_control_plane_permit")
+        state = self.destination.state()
+        self.assertEqual(len(state["intents"]), 1)
+        self.assertEqual(
+            [a["attempt_id"] for a in state["attempts"]], ["attempt-first", "attempt-second"]
+        )
 
     def test_cancel_before_execution_wins_and_no_effect_is_created(self):
         i = intent()

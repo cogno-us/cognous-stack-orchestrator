@@ -69,6 +69,8 @@ def fixture_control_plane_permit(intent: RefundIntent, *, decision_id: str = "de
         "request_id": intent.request_id,
         "order_ref": intent.order_ref,
         "payment_ref": intent.payment_ref,
+        "amount_minor": intent.amount_minor,
+        "currency": intent.currency,
         "authority_current": True,
     }
 
@@ -167,9 +169,12 @@ class SyntheticRefundRuntime:
             "order_ref": intent.order_ref,
             "payment_ref": intent.payment_ref,
             "effect_id": intent.effect_id,
+            "amount_minor": intent.amount_minor,
+            "currency": intent.currency,
         }
         for field, value in expected.items():
-            if permit.get(field) != value:
+            permitted = permit.get(field)
+            if type(permitted) is not type(value) or permitted != value:
                 return "permit_binding_mismatch_" + field, decision_id
         if not isinstance(decision_id, str) or not decision_id:
             return "missing_decision_id", None
@@ -249,6 +254,21 @@ class SyntheticRefundRuntime:
                 "SELECT * FROM intents WHERE attempt_key=?", (intent.attempt_key,)
             ).fetchone()
             if duplicate is not None:
+                if permit_reason:
+                    # An invalid permit never writes audit rows against the
+                    # committed effect; it is refused on its own terms.
+                    conn.execute("COMMIT")
+                    return self._result(
+                        status="refused",
+                        reason=permit_reason,
+                        attempted=False,
+                        simulated_effect=False,
+                        intent=intent,
+                        attempt_id=attempt_id,
+                        decision_id=decision_id,
+                    )
+                # Suppression is recorded against the persisted effect identity,
+                # never a caller-substituted effect_id/decision_id.
                 conn.execute(
                     """INSERT OR IGNORE INTO attempts
                     (attempt_id,attempt_key,effect_id,decision_id,outcome,reason)
@@ -256,22 +276,24 @@ class SyntheticRefundRuntime:
                     (
                         attempt_id,
                         intent.attempt_key,
-                        intent.effect_id,
-                        decision_id,
+                        duplicate["effect_id"],
+                        duplicate["decision_id"],
                         "suppressed",
                         "duplicate_intent",
                     ),
                 )
                 conn.execute("COMMIT")
-                return self._result(
+                result = self._result(
                     status="refused",
                     reason="duplicate_intent",
                     attempted=False,
                     simulated_effect=False,
                     intent=intent,
                     attempt_id=attempt_id,
-                    decision_id=decision_id,
+                    decision_id=duplicate["decision_id"],
                 )
+                result["effect_id"] = duplicate["effect_id"]
+                return result
 
             if conn.execute(
                 "SELECT 1 FROM cancellations WHERE attempt_key=?", (intent.attempt_key,)

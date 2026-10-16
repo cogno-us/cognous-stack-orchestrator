@@ -32,7 +32,9 @@ upstream verifier and the accepted bridge.
 
 - exact accepted verifier repository and revision;
 - absolute operator-selected trust snapshot path;
-- raw SHA-256 of the snapshot bytes;
+- raw SHA-256 of the snapshot bytes (checked on the qualification read, then
+  passed to the accepted bridge, which rechecks it against the bytes it reads
+  and copies into its isolated verifier directory);
 - explicit operator trust-source marker;
 - explicit trusted-clock source marker;
 - expected issuer, key ID and deployment audience.
@@ -56,6 +58,7 @@ configured snapshot and trusted time. Qualification always reports
 | verifier repository/revision substitution | unknown; bridge not called |
 | relative, missing or symlinked trust path | unknown; bridge not called |
 | snapshot bytes changed under an old digest pin | unknown `trust_snapshot_pin_mismatch` |
+| snapshot bytes replaced after qualification read, before bridge read | unknown `trust_snapshot_pin_mismatch` from the bridge recheck; upstream verifier not run |
 | snapshot audience differs from deployment audience | unknown |
 | configured issuer/key absent or duplicated in snapshot | unknown |
 | attestation issuer/key differs from deployment identity | rejected |
@@ -84,7 +87,9 @@ verifier when `COGNOUS_EVIDENCE_ATTESTATION_ROOT` points to revision
 
 - This package does not authenticate how the operator obtains or provisions the
   snapshot file; the raw digest pin only prevents unnoticed substitution after
-  configuration.
+  configuration. The pin is enforced on each read of the snapshot path
+  (qualification and bridge); the bytes given to the upstream verifier are the
+  bridge's own digest-checked read.
 - Trusted time is supplied by the deployment caller and labeled by configured
   provenance; secure clock hardware, NTP hardening and clock-attestation are
   outside this issue.

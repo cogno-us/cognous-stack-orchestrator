@@ -195,6 +195,7 @@ def qualify_attestation_trust(
         trusted_time=trusted_time,
         attestation=attestation,
         expected=expected,
+        trust_snapshot_sha256=snapshot["raw_sha256"],
     )
     if not isinstance(result, dict):
         return _base(status="failure", reason="accepted_bridge_output_invalid")

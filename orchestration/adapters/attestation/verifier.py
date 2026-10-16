@@ -114,12 +114,16 @@ def verify_attestation_binding(
     attestation: Mapping[str, Any],
     expected: Mapping[str, Any],
     timeout_seconds: float = 10.0,
+    trust_snapshot_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Verify a signed attestation and independently bind what the consumer uses.
 
     trust_snapshot_path and trusted_time are operator configuration. The
     attestation is untrusted wire input. expected must come from an independent
     consumer/source reference; caller-supplied verification JSON is never used.
+    trust_snapshot_sha256, when given, is the operator-pinned raw digest
+    ("sha256:<hex>") of the snapshot; the bytes read here must match it before
+    they are handed to the upstream verifier.
     """
     if verifier_revision != ATTESTATION_REVISION:
         return _base(status="rejected", reason="unsupported_verifier_revision")
@@ -142,6 +146,11 @@ def verify_attestation_binding(
         return _base(status="unknown", reason="trusted_snapshot_unavailable")
     if len(trust_bytes) > 1024 * 1024:
         return _base(status="failure", reason="trusted_snapshot_too_large")
+    if (
+        trust_snapshot_sha256 is not None
+        and "sha256:" + hashlib.sha256(trust_bytes).hexdigest() != trust_snapshot_sha256
+    ):
+        return _base(status="unknown", reason="trust_snapshot_pin_mismatch")
 
     try:
         attestation_bytes = json.dumps(

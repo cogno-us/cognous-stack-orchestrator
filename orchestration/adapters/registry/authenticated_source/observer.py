@@ -197,6 +197,21 @@ def _log_identity(log: Mapping[str, Any]) -> tuple[str, str, int] | None:
     return block_hash, tx_hash, log_index
 
 
+def _log_content(log: Mapping[str, Any]) -> tuple[str | None, tuple[str, ...] | None, str | None, Any]:
+    topics = log.get("topics")
+    if isinstance(topics, list) and all(isinstance(t, str) for t in topics):
+        normalized_topics: tuple[str, ...] | None = tuple(t.lower() for t in topics)
+    else:
+        normalized_topics = None
+    data = log.get("data")
+    return (
+        _address(log.get("address")),
+        normalized_topics,
+        data.lower() if isinstance(data, str) else None,
+        log.get("removed", False),
+    )
+
+
 def observe_authenticated_registry(*, trusted: TrustedRegistrySource, rpc: JsonRpc) -> dict[str, Any]:
     """Observe one deployment without producing grants, effects, or truth status."""
 
@@ -330,15 +345,23 @@ def observe_authenticated_registry(*, trusted: TrustedRegistrySource, rpc: JsonR
             if not isinstance(receipt_logs, list):
                 errors.append("receipt_logs_unavailable")
                 continue
-            receipt_ids = {
-                candidate
+            receipt_matches = [
+                item
                 for item in receipt_logs
-                if isinstance(item, Mapping)
-                for candidate in [_log_identity(item)]
-                if candidate is not None
-            }
-            if identity not in receipt_ids:
+                if isinstance(item, Mapping) and _log_identity(item) == identity
+            ]
+            if not receipt_matches:
                 errors.append("log_missing_from_receipt")
+            else:
+                raw_content = _log_content(raw)
+                if raw_content[1] is None or raw_content[2] is None:
+                    errors.append("malformed_log_content")
+                for item in receipt_matches:
+                    item_content = _log_content(item)
+                    if item_content[0] != trusted.contract_address.lower():
+                        errors.append("receipt_log_contract_mismatch")
+                    if item_content[1:] != raw_content[1:]:
+                        errors.append("receipt_log_content_mismatch")
 
             verified_logs.append(
                 {

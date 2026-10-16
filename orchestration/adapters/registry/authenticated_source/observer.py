@@ -2,8 +2,11 @@
 
 Authentication is deliberately bounded: an operator chooses a trusted deployment
 and RPC endpoint, and may additionally pin an independently obtained block
-checkpoint. Receipt/log/block consistency is checked against that trust root. A
-successful result is not consensus finality, truth, an attestation result, an
+checkpoint. Receipt/log/block consistency is checked against that trust root.
+The checkpoint is checked only by hash equality at its own height through the
+same RPC endpoint; it is not linked to the observed block by parent hashes or
+any proof, so it detects an endpoint that misreports that one block but does
+not anchor the observation. A successful result is not consensus finality, truth, an attestation result, an
 institutional grant, or an execution authorization.
 
 Pinned upstream source:
@@ -93,7 +96,14 @@ class TrustedRegistrySource:
 
 
 class UrlJsonRpcClient:
-    """Minimal read-only JSON-RPC transport. Credentials are not embedded or logged."""
+    """Minimal read-only JSON-RPC transport. Credentials are not embedded or logged.
+
+    The URL is passed to urllib unchanged: no scheme, host, redirect or
+    certificate-pinning policy is enforced here, so ``http://`` URLs and URLs
+    carrying userinfo (``user:pass@host``) are accepted as given. Endpoint and
+    transport policy is part of operational trust (issue #30, HOLD) and is not
+    established by this adapter.
+    """
 
     def __init__(self, url: str, *, timeout_seconds: float = 10.0):
         self._url = url
@@ -422,7 +432,12 @@ def observe_authenticated_registry(*, trusted: TrustedRegistrySource, rpc: JsonR
                 "confirmation_depth_is_not_consensus_finality",
                 "receipt_log_and_block_consistency_does_not_establish_truth_or_institutional_authority",
                 "no_grants_or_effects_are_issued",
-            ],
+            ]
+            + (
+                ["checkpoint_not_linked_to_observed_block"]
+                if trusted.checkpoint is not None
+                else []
+            ),
         }
     except RegistryObservationError as exc:
         return _unknown(str(exc), trust_model=trust_model)

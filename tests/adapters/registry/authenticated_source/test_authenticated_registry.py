@@ -116,6 +116,7 @@ class AuthenticatedRegistryTests(unittest.TestCase):
         self.assertEqual(got["verified_log_count"], 1)
         self.assertEqual(got["trust_model"], "operator-configured-rpc+independent-checkpoint")
         self.assertEqual(got["independent_verification"], "checkpoint_anchor_only")
+        self.assertIn("checkpoint_not_linked_to_observed_block", got["limitations"])
         self.assertEqual(got["authority"], "not_established")
         self.assertEqual(got["effect"], "not_established")
 

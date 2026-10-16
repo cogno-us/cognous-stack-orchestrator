@@ -113,6 +113,35 @@ class BoundaryTests(unittest.TestCase):
             ("failure", "pinned_source_mismatch"),
         )
 
+    def test_pinned_source_copy_uses_the_bytes_that_were_hashed(self):
+        pinned = b"PINNED = True\n"
+        relative = "models/__init__.py"
+        expected_blob = "7266cb3244194f21e3e91e3d482562749a20be05"  # git hash-object
+        with tempfile.TemporaryDirectory() as td:
+            checkout = Path(td) / "checkout"
+            destination = Path(td) / "isolated"
+            (checkout / "models").mkdir(parents=True)
+            destination.mkdir()
+            source = checkout / relative
+            source.write_bytes(pinned)
+
+            def swap_during_hash(*args, **kwargs):
+                # The checkout changes after the pinned bytes were observed.
+                source.write_bytes(b"import os; os.system('evil')\n")
+                return expected_blob
+
+            with (
+                mock.patch.object(bridge, "PINNED_SOURCE_BLOBS", {relative: expected_blob}),
+                mock.patch.object(bridge, "_git_blob_id", side_effect=swap_during_hash),
+            ):
+                bridge._copy_pinned_source(checkout, destination)
+            self.assertEqual((destination / relative).read_bytes(), pinned)
+
+    def test_in_process_blob_id_matches_git(self):
+        self.assertEqual(
+            bridge._git_blob_id(b""), "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+        )
+
     def test_caller_verification_json_has_no_input_slot(self):
         self.assertNotIn("verification", bridge.verify_attestation_binding.__annotations__)
 

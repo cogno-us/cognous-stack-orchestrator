@@ -6,10 +6,10 @@ issuer signature.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -63,21 +63,16 @@ def _base(*, status: str, reason: str) -> dict[str, Any]:
     }
 
 
-def _git_blob_id(path: Path) -> str:
-    try:
-        proc = subprocess.run(
-            ["git", "hash-object", "--no-filters", str(path)],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            env={"PATH": os.environ.get("PATH", "")},
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError("source_hash_unavailable") from exc
-    if proc.returncode != 0:
-        raise RuntimeError("source_hash_failed")
-    return proc.stdout.strip()
+def _git_blob_id(data: bytes, *, object_format: str = "sha1") -> str:
+    """Return the Git blob ID of ``data`` (same result as ``git hash-object``).
+
+    Computed in-process over bytes that were already read, so the bytes that are
+    hashed are exactly the bytes that are later copied.
+    """
+    if object_format not in ("sha1", "sha256"):
+        raise RuntimeError("source_hash_unavailable")
+    header = b"blob " + str(len(data)).encode("ascii") + b"\0"
+    return hashlib.new(object_format, header + data).hexdigest()
 
 
 def _copy_pinned_source(checkout: Path, destination: Path) -> None:
@@ -85,11 +80,16 @@ def _copy_pinned_source(checkout: Path, destination: Path) -> None:
         source = checkout / relative
         if not source.is_file() or source.is_symlink():
             raise RuntimeError("pinned_source_missing")
-        if _git_blob_id(source) != expected_blob:
+        try:
+            data = source.read_bytes()
+        except OSError as exc:
+            raise RuntimeError("pinned_source_missing") from exc
+        object_format = "sha256" if len(expected_blob) == 64 else "sha1"
+        if _git_blob_id(data, object_format=object_format) != expected_blob:
             raise RuntimeError("pinned_source_mismatch")
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
+        target.write_bytes(data)
 
 
 def _valid_expected(expected: Mapping[str, Any]) -> bool:

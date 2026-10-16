@@ -254,6 +254,21 @@ class SyntheticRefundRuntime:
                 "SELECT * FROM intents WHERE attempt_key=?", (intent.attempt_key,)
             ).fetchone()
             if duplicate is not None:
+                if permit_reason:
+                    # An invalid permit never writes audit rows against the
+                    # committed effect; it is refused on its own terms.
+                    conn.execute("COMMIT")
+                    return self._result(
+                        status="refused",
+                        reason=permit_reason,
+                        attempted=False,
+                        simulated_effect=False,
+                        intent=intent,
+                        attempt_id=attempt_id,
+                        decision_id=decision_id,
+                    )
+                # Suppression is recorded against the persisted effect identity,
+                # never a caller-substituted effect_id/decision_id.
                 conn.execute(
                     """INSERT OR IGNORE INTO attempts
                     (attempt_id,attempt_key,effect_id,decision_id,outcome,reason)
@@ -261,22 +276,24 @@ class SyntheticRefundRuntime:
                     (
                         attempt_id,
                         intent.attempt_key,
-                        intent.effect_id,
-                        decision_id,
+                        duplicate["effect_id"],
+                        duplicate["decision_id"],
                         "suppressed",
                         "duplicate_intent",
                     ),
                 )
                 conn.execute("COMMIT")
-                return self._result(
+                result = self._result(
                     status="refused",
                     reason="duplicate_intent",
                     attempted=False,
                     simulated_effect=False,
                     intent=intent,
                     attempt_id=attempt_id,
-                    decision_id=decision_id,
+                    decision_id=duplicate["decision_id"],
                 )
+                result["effect_id"] = duplicate["effect_id"]
+                return result
 
             if conn.execute(
                 "SELECT 1 FROM cancellations WHERE attempt_key=?", (intent.attempt_key,)

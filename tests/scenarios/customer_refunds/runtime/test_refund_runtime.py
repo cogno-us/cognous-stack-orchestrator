@@ -137,9 +137,32 @@ class RefundRuntimeQualification(unittest.TestCase):
         first = intent(effect_id="effect-original")
         self.destination.execute(first, permit=self.permit(first), attempt_id="attempt-first")
         changed = intent(effect_id="effect-substituted")
-        r = self.destination.execute(changed, permit=self.permit(changed), attempt_id="attempt-second")
+        substituted_permit = runtime.fixture_control_plane_permit(
+            changed, decision_id="decision-substituted"
+        )
+        r = self.destination.execute(changed, permit=substituted_permit, attempt_id="attempt-second")
         self.assertEqual(r["reason"], "duplicate_intent")
-        self.assertEqual(len(self.destination.state()["intents"]), 1)
+        self.assertEqual(r["effect_id"], "effect-original")
+        self.assertEqual(r["decision_id"], "decision-1")
+        state = self.destination.state()
+        self.assertEqual(len(state["intents"]), 1)
+        suppressed = [a for a in state["attempts"] if a["attempt_id"] == "attempt-second"]
+        self.assertEqual(len(suppressed), 1)
+        self.assertEqual(suppressed[0]["outcome"], "suppressed")
+        self.assertEqual(suppressed[0]["effect_id"], "effect-original")
+        self.assertEqual(suppressed[0]["decision_id"], "decision-1")
+
+        # An invalid permit for the same business scope records no attempt.
+        bad = runtime.fixture_control_plane_permit(changed, decision_id="decision-bad")
+        bad["authenticated_control_plane_permit"] = False
+        r = self.destination.execute(changed, permit=bad, attempt_id="attempt-invalid")
+        self.assertEqual(r["status"], "refused")
+        self.assertEqual(r["reason"], "unauthenticated_control_plane_permit")
+        state = self.destination.state()
+        self.assertEqual(len(state["intents"]), 1)
+        self.assertEqual(
+            [a["attempt_id"] for a in state["attempts"]], ["attempt-first", "attempt-second"]
+        )
 
     def test_cancel_before_execution_wins_and_no_effect_is_created(self):
         i = intent()

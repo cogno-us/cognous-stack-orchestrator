@@ -11,7 +11,7 @@ Accepted Execution Runtime contract pin: `cogno-us/cognous-execution-runtime@da9
 This directory qualifies an **orchestrator-local synthetic adapter** for the refund scenario. It mirrors only the accepted runtime boundaries needed by the issue:
 
 - a durable attempt key scoped to tenant, request, order and payment references;
-- refusal when an authenticated Control Plane permit fixture is absent, unauthenticated, non-permitting, non-current or mismatched;
+- refusal when an authenticated Control Plane permit fixture is absent, unauthenticated, non-permitting, non-current or mismatched on tenant, request, order, payment, effect ID, amount or currency;
 - SQLite `BEGIN IMMEDIATE` linearization for duplicate suppression, cancellation and authority-withdrawal ordering;
 - stable effect identity with distinct attempt identity;
 - durable duplicate/retry suppression after a simulated effect is committed;
@@ -25,7 +25,7 @@ Cancellation and authority withdrawal participate in the same local SQLite seria
 
 - If cancellation or authority withdrawal commits first, a later execution attempt refuses and creates no effect row.
 - If the simulated effect commits first, later cancellation/withdrawal is recorded but does not rewrite history or claim rollback.
-- A duplicate request after commit is suppressed and cannot create another effect row.
+- A duplicate request after commit is suppressed and cannot create another effect row. The suppression row records the persisted effect and decision identity, not caller-substituted values; a duplicate carrying an invalid permit is refused without an attempt row.
 - Refusal attempts are durable audit rows but are not processor dispatches.
 
 These are same-host synthetic ordering tests. They do not establish distributed transactionality, remote revocation propagation or external exactly-once behavior.

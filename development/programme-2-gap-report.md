@@ -15,17 +15,18 @@ editing any pin. Revisions under test:
 |---|---|---|---|
 | Control Plane | `128eaa5e` | `e66e5f16` | `5f5ae03f` |
 | Execution Runtime | `d90a2cae` | `da9f5290` (O6 suites: `1b0a9e32`) | `10a11d03` |
-| Independent verifier (`cognous-verify`) | `07c2eb86` (first run: `867402f3`) | none | n/a |
-| ODES validators | `56edb3f9` | none | n/a |
+| Independent verifier (`cognous-verify`) | `5ed1ffb` (earlier runs: `867402f3`, `07c2eb86`) | none | n/a |
+| ODES validators | `7bc7903` (earlier runs: `56edb3f9`) | none | n/a |
 | Replay | `d0e7b368` | `2069a0ba` | n/a |
 | Evidence Pack | `fa7cd7e` | `87293cfc` | n/a |
 | Action Manifest | `8d1572d4` (unchanged pin) | `8d1572d4` | n/a |
 
 Result of the overlay at these revisions: **29 tests, 29 passed**, under Python 3.11 and 3.13, locally and in the dispatched workflow
-(run [39090210798](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39090210798), main `b71b38b3`, both Python
-versions green). Passing means the stated behaviour and the known-finding patterns below were observed; it does not mean the findings
-are resolved. The verifier moved while this work ran (`867402f3` to `07c2eb86`) and one outcome changed with it (F-2): the overlay
-fails on any refusal outside a named finding, which is how that change was noticed.
+(run [39091527071](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39091527071), workflow from commit `9273e6b7`, verifier input
+`5ed1ffbaf52ce3c999f6574f13fe2e43bd5bf88f`, other inputs `main`, both Python versions green; the earlier run
+[39090210798](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39090210798) was at verifier `07c2eb86`). Passing means the stated behaviour and the known-finding
+patterns below were observed; it does not mean the findings are resolved. The verifier moved while this work ran (`867402f3`, then `07c2eb86`, then `5ed1ffb`) and the F-1 and F-2 outcomes changed with it: the overlay
+fails on any refusal outside a named finding and now pins the exact abstentions, which is how those changes were noticed.
 
 ## Programme-2 pieces and what exercises them across components
 
@@ -54,12 +55,12 @@ records (applied, held), 8 profile-on records, 2 delayed-commit default records.
 `verification-report` validator (not the verifier's own copy) and its denominators checked to add up (checks = confirmed + could not check + refuted). The
 verifier is run as a subprocess and imports nothing from the stack.
 
-- **Default-path records, no ledger (6 records, verifier `07c2eb86`):** 0 refuted. 26, 24, 26, 26 checks for the four atomic-route
+- **Default-path records, no ledger (6 records, verifier `5ed1ffb`; the same counts at `07c2eb86`):** 0 refuted. 26, 24, 26, 26 checks for the four atomic-route
   records (19, 17, 19, 19 confirmed, 7 could not check each) and 32 and 28 for the journal-mode pair (25 and 21 confirmed, 7 could not
   check); exit 3 (abstain) because no ledger was supplied. At `867402f3` the same records gave 24/22/24/24 and 30/26 checks, 0 refuted.
-- **Atomic-route records with a ledger projected from the runtime SQLite rows (4 records):** see F-2. The projection is the
+- **Atomic-route records with a ledger projected from the runtime SQLite rows (4 records):** 3 abstain on one check, 0 refuted; see F-2. The projection is the
   orchestrator's own, field for field; the verifier documents the Control Plane's local destination state as its ledger.
-- **Adapter-route records with a projected ledger (4 records, 8 runs with and without the `operation_digest` member):** see F-1.
+- **Adapter-route records with a projected ledger (4 records, 8 runs with and without the `operation_digest` member):** projection A abstains on one check (3 records), projection B is refused at `ledger_shape` (3 records), the held record is accepted in both; see F-1.
 - **Profile-on records (8 of 8):** all refused at `v1.structure` (codes `schema_violation`, `undeclared_member`; `undeclared_member` only for `rule_revision`), 24 of
   the 26 checks could not be made (the delegated groups report `earlier_rules_refuted`). See F-3.
 
@@ -84,17 +85,23 @@ check about operations, because the verifier cannot know an operation id exists;
 Each is reproducible with the overlay at the revisions above. None is a claim that a component is wrong in isolation; they are places
 where two components do not yet meet.
 
-- **F-1 (verifier / runtime, adapter route).** The runtime's destination observation carries `operation_digest` inside
-  `destination_state`; the verifier's ledger row shape is closed and has no such member, and `v4.ledger.observations-agree` demands
-  `destination_state` equal the ledger row. Any adapter-route record with an `applied` observation can satisfy only one of the two:
-  omit the member and `observations-agree` refuses (`observation_differs_from_ledger_row`); include it and `v1.structure.ledger`
-  refuses (`ledger_shape`). Ran: 4 records, 8 runs; the 3 records with an effect are refused in both variants (6 of 8 runs), the held record is
-  accepted in both (2 of 8). Not seen with the Control Plane's own local destination, whose observation has the seven declared members.
-- **F-2 (route / verifier).** On the orchestrator's accepted route (Atomic claim) the Control Plane record has **no attempt row**; the
-  attempt lives only in the runtime SQLite destination. Verifier `07c2eb86` (`v4.ledger.rows-agree-with-attempts`, from `2597196`) refuses these
-  records with a projected ledger on `ledger_row_without_attempt`: 3 of 4 refused (applied, lost acknowledgement, duplicate), the held record accepted.
-  At `867402f3` the same 4 were accepted (23, 17, 23, 23 of as many checks confirmed). The same root shows in the witness: the
-  atomic-route record gives the witness only `decisions` and `resolution_checks` to cover.
+- **F-1 (verifier / runtime, adapter route; narrowed by verifier PR #9, `5ed1ffb`).** The runtime's destination observation carries `operation_digest`
+  inside `destination_state`; the verifier's ledger row shape is closed and has no such member. Ran at `5ed1ffb`, 4 records, 8 runs:
+  - Projection A (ledger row omits the member): the 3 records with an effect now **abstain** (exit 3, 0 refutations): `v4.ledger.observations-agree` is
+    `could_not_check`, reason `destination_state_has_members_outside_ledger_row` (1 check abstained, 31 or 32 of 32 or 33 confirmed). At `07c2eb86` the same 3 were refused
+    (`observation_differs_from_ledger_row`).
+  - Projection B (ledger row keeps the member): the same 3 are still **refused** at `v1.structure.ledger` / `ledger_shape` (exit 1; 25 confirmed, 7 could not check,
+    1 refuted), by design, because the ledger row shape is closed.
+  - The held record (empty ledger) is accepted in both projections (22 of 22 confirmed, exit 0).
+  So the verifier no longer refuses the orchestrator's honest projection, but it cannot compare the runtime's observation with the ledger either: the
+  members the runtime adds to `destination_state` have no place in the verifier's ledger model. Not seen with the Control Plane's own local destination,
+  whose observation has the seven declared members.
+- **F-2 (route / verifier; narrowed by verifier PR #9, `5ed1ffb`).** On the orchestrator's accepted route (Atomic claim) the Control Plane record has **no attempt row**; the
+  attempt lives only in the runtime SQLite destination. History: accepted at `867402f3` (23, 17, 23, 23 of as many checks confirmed), refused from `2597196` on
+  `ledger_row_without_attempt` (3 of 4, `07c2eb86`), and at `5ed1ffb` **abstained**: for the 3 records with an effect, `v4.ledger.rows-agree-with-attempts` is
+  `could_not_check`, reason `attempt_rows_not_in_record`, 0 refutations (exit 3; 24 of 25 checks confirmed); the held record is fully confirmed (18 of 18, exit 0).
+  The abstention is the honest outcome: the record cannot show an attempt for the ledger row. The same root shows in the witness: the atomic-route record gives the witness
+  only `decisions` and `resolution_checks` to cover.
 - **F-3 (ODES journal / verifier, expected).** The verifier refuses every profile-on record at `v1.structure` because its vendored
   journal contract declares none of the profile members (8 of 8). Until the journal contract declares them (ODES J1), the verifier cannot
   check any record produced with an opt-in profile, so independent verification of programme-2 behaviour is not available yet.

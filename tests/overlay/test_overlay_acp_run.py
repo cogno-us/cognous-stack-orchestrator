@@ -15,16 +15,9 @@ import sys
 import pytest
 
 from conftest import section
-from test_overlay_verifier import FIXED, assert_report_denominators, odes, tally, verify  # noqa: F401  (odes is a fixture)
+from test_overlay_verifier import FIXED, acp, assert_report_denominators, odes, tally, verify  # noqa: F401  (odes is a fixture)
 
 CASES = {"authorized": 0, "held": 1}  # case -> acp run exit code (0 applied, 1 held)
-
-
-def acp(overlay, *argv: str) -> subprocess.CompletedProcess:
-    cp = pathlib.Path(overlay.paths["control_plane"])
-    code = "import sys; sys.path.insert(0, sys.argv[1]); from agent_control_plane.cli import main; sys.exit(main(sys.argv[2:]))"
-    return subprocess.run([sys.executable, "-I", "-c", code, str(cp / "src"), *argv], capture_output=True, text=True, timeout=300,
-                          env={"PATH": "", "HOME": ""})
 
 
 @pytest.mark.parametrize("case", sorted(CASES))

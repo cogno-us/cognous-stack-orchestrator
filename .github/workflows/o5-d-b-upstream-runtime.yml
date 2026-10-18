@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: cogno-us/cognous-execution-runtime
-          ref: da9f52900ee2596dab087ec6c249ba84915d2b13
+          ref: 11de097c450d3ad4d89f9add41b00e38e7cc2c7c
           path: .live/execution-runtime
           persist-credentials: false
 
@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: cogno-us/cognous-control-plane
-          ref: e66e5f163c5d5c112ff345a2f332b4c3893ee183
+          ref: 3cd17ead6b24301290ad1e50ae4b22bbd93c12fb
           path: .live/control-plane
           persist-credentials: false
 
@@ -44,8 +44,8 @@ jobs:
       - name: Verify exact upstream source revisions
         shell: bash
         run: |
-          test "$(git -C .live/execution-runtime rev-parse HEAD)" = "da9f52900ee2596dab087ec6c249ba84915d2b13"
-          test "$(git -C .live/control-plane rev-parse HEAD)" = "e66e5f163c5d5c112ff345a2f332b4c3893ee183"
+          test "$(git -C .live/execution-runtime rev-parse HEAD)" = "11de097c450d3ad4d89f9add41b00e38e7cc2c7c"
+          test "$(git -C .live/control-plane rev-parse HEAD)" = "3cd17ead6b24301290ad1e50ae4b22bbd93c12fb"
 
       - name: Exercise actual pinned Runtime refund interfaces
         env:

@@ -20,14 +20,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: cogno-us/cognous-replay-bundle
-          ref: 2069a0ba1398812c3a8669331a7d8b87c80c4a48
+          ref: 46e8bd7c263f5075cac3a7a9defcb265384f40e9
           path: .upstream/replay
 
       - name: Checkout exact Evidence Pack pin
         uses: actions/checkout@v4
         with:
           repository: cogno-us/cognous-governance-evidence-pack
-          ref: 87293cfcbe8dfa2368d5bf77019945ba8ef1ae71
+          ref: 4fbbd34418f8dce7a536879d7bd0378737179f47
           path: .upstream/evidence-pack
 
       - uses: actions/setup-python@v5

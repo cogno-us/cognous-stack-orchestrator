@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 ACTION_MANIFEST_PIN = "8d1572d4f926c968a8704cb912a6e9d49166f74a"
-CONTROL_PLANE_PIN = "e66e5f163c5d5c112ff345a2f332b4c3893ee183"
+CONTROL_PLANE_PIN = "3cd17ead6b24301290ad1e50ae4b22bbd93c12fb"
 
 
 def _head(path: Path) -> str:

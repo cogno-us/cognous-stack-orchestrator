@@ -1,0 +1,158 @@
+name: Candidate component overlay (opt-in, report only)
+
+# Manual only. Runs tests/overlay against candidate component revisions chosen by the inputs below. It does not edit or replace any
+# pin used by the default workflows, is not triggered by pull requests or pushes, and its result selects nothing: no authority, no
+# effect, not release evidence. Operational deployment assurance (issue #30) is unchanged: HOLD.
+on:
+  workflow_dispatch:
+    inputs:
+      control_plane_ref:
+        description: Control Plane revision to test (branch, tag or SHA of cogno-us/cognous-control-plane)
+        default: main
+      runtime_ref:
+        description: Execution Runtime revision to test (cogno-us/cognous-execution-runtime)
+        default: main
+      verifier_ref:
+        description: Independent verifier revision to test (cogno-us/cognous-open-control-stack-verifier)
+        default: main
+      odes_ref:
+        description: ODES revision supplying the contract validators (cogno-us/open-decision-evidence-standard)
+        default: main
+      replay_ref:
+        description: Replay revision (cogno-us/cognous-replay-bundle)
+        default: main
+      evidence_pack_ref:
+        description: Evidence Pack revision (cogno-us/cognous-governance-evidence-pack)
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  overlay:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.13']
+    steps:
+      - name: Checkout orchestrator (the overlay tests and harness)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Pinned inputs the overlay never moves: the accepted Action Manifest, plus the two comparison points below.
+      - name: Checkout accepted Action Manifest (orchestrator pin, unchanged)
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-action-manifest
+          ref: 8d1572d4f926c968a8704cb912a6e9d49166f74a
+          path: .overlay/action-manifest
+          persist-credentials: false
+      - name: Checkout candidate Control Plane
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-control-plane
+          ref: ${{ inputs.control_plane_ref }}
+          path: .overlay/control-plane
+          persist-credentials: false
+      - name: Checkout candidate Execution Runtime
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-execution-runtime
+          ref: ${{ inputs.runtime_ref }}
+          path: .overlay/runtime
+          persist-credentials: false
+      - name: Checkout candidate independent verifier
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-open-control-stack-verifier
+          ref: ${{ inputs.verifier_ref }}
+          path: .overlay/verifier
+          persist-credentials: false
+      - name: Checkout ODES (contract validators)
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/open-decision-evidence-standard
+          ref: ${{ inputs.odes_ref }}
+          path: .overlay/odes
+          persist-credentials: false
+      - name: Checkout candidate Replay
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-replay-bundle
+          ref: ${{ inputs.replay_ref }}
+          path: .overlay/replay
+          persist-credentials: false
+      - name: Checkout candidate Evidence Pack
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-governance-evidence-pack
+          ref: ${{ inputs.evidence_pack_ref }}
+          path: .overlay/evidence-pack
+          persist-credentials: false
+      # Comparison points. Baseline: the programme-2 starting revisions (default-path byte comparison). Pins: the orchestrator's own.
+      - name: Checkout programme-2 baseline Control Plane
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-control-plane
+          ref: 5f5ae03ff65055cba61dfe7a85b09abc86d3aa4b
+          path: .overlay/baseline-control-plane
+          persist-credentials: false
+      - name: Checkout programme-2 baseline Execution Runtime
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-execution-runtime
+          ref: 10a11d03ead26e16fb31dacec52c55e8de71e349
+          path: .overlay/baseline-runtime
+          persist-credentials: false
+      - name: Checkout the orchestrator's pinned Control Plane
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-control-plane
+          ref: e66e5f163c5d5c112ff345a2f332b4c3893ee183
+          path: .overlay/pin-control-plane
+          persist-credentials: false
+      - name: Checkout the orchestrator's pinned Execution Runtime
+        uses: actions/checkout@v4
+        with:
+          repository: cogno-us/cognous-execution-runtime
+          ref: da9f52900ee2596dab087ec6c249ba84915d2b13
+          path: .overlay/pin-runtime
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install test dependencies (no component is installed; sources are imported by path)
+        run: python -m pip install 'pytest>=8,<9' 'pydantic>=2.12,<3' 'cryptography>=43'
+      - name: Record the exact revisions under test
+        run: |
+          for d in action-manifest control-plane runtime verifier odes replay evidence-pack baseline-control-plane baseline-runtime pin-control-plane pin-runtime; do
+            echo "$d $(git -C .overlay/$d rev-parse HEAD)"
+          done | tee overlay-revisions.txt
+      - name: Run the overlay (no network is used by any test)
+        env:
+          COGNOUS_OVERLAY_REQUIRE: '1'
+          COGNOUS_OVERLAY_ACTION_MANIFEST: ${{ github.workspace }}/.overlay/action-manifest
+          COGNOUS_OVERLAY_CONTROL_PLANE: ${{ github.workspace }}/.overlay/control-plane
+          COGNOUS_OVERLAY_RUNTIME: ${{ github.workspace }}/.overlay/runtime
+          COGNOUS_OVERLAY_VERIFIER: ${{ github.workspace }}/.overlay/verifier
+          COGNOUS_OVERLAY_ODES: ${{ github.workspace }}/.overlay/odes
+          COGNOUS_OVERLAY_REPLAY: ${{ github.workspace }}/.overlay/replay
+          COGNOUS_OVERLAY_EVIDENCE_PACK: ${{ github.workspace }}/.overlay/evidence-pack
+          COGNOUS_OVERLAY_BASELINE_CONTROL_PLANE: ${{ github.workspace }}/.overlay/baseline-control-plane
+          COGNOUS_OVERLAY_BASELINE_RUNTIME: ${{ github.workspace }}/.overlay/baseline-runtime
+          COGNOUS_OVERLAY_PIN_CONTROL_PLANE: ${{ github.workspace }}/.overlay/pin-control-plane
+          COGNOUS_OVERLAY_PIN_RUNTIME: ${{ github.workspace }}/.overlay/pin-runtime
+          COGNOUS_OVERLAY_REPORT_DIR: ${{ runner.temp }}/overlay-report
+        run: |
+          mkdir -p "$COGNOUS_OVERLAY_REPORT_DIR"
+          python -m pytest -q -p no:cacheprovider -rs tests/overlay
+      - name: Keep the report (denominators and findings; not a certification)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: overlay-report-py${{ matrix.python-version }}
+          path: |
+            ${{ runner.temp }}/overlay-report/overlay-report.json
+            overlay-revisions.txt
+          if-no-files-found: warn

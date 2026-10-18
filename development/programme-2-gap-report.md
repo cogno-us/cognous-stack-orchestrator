@@ -113,11 +113,15 @@ where two components do not yet meet.
   Pack then refuses that bundle (`retained Replay import_reports differs from accepted reconstruction`). The orchestrator's atomic-route
   records are refused under P4 (`resolution journal missing`) and accepted only under pre-journal labels. So the freshness block (#39) cannot be reached end to
   end and P3 (retention of profile members) is not on Replay main.
-- **F-5 (runtime route).** The opt-in operation-identity and delayed-commit destinations are reachable only through the Control Plane adapter
+- **F-5 (runtime route; adapter-route probe added, atomic route still unprobed).** The opt-in operation-identity and delayed-commit destinations are reachable only through the Control Plane adapter
   route (`PinnedControlPlaneExecutor`). The orchestrator's accepted route (`AtomicLocalControlPlaneExecutor` with
   `AtomicAuthorityEffectDestination`) has no operation-id parameter, is not an operation-identity or delayed-commit class, and its lost
-  acknowledgement uses `simulate="lost_ack"` instead. So the renewal race that profile closes on the adapter route is **untested** on the orchestrator's
-  route (not run; whether it double-commits there is unknown, and the per-grant cap may mask it).
+  acknowledgement uses `simulate="lost_ack"` instead. Probed on the adapter route with the runtime's own destination classes (synthetic, no network), two new overlay tests
+  beyond the existing renewal race: (a) r1's commit deferred (acknowledgement lost), grant renewed, r2 attempted while r1 is outstanding, r1 lands late: **profile off, 2 effects** for
+  one operation; **operation identity on, 1 effect** (r2 commits; r1's late landing is refused by the destination guard, `PermissionError: operation_already_committed`). The control plane does
+  not hold r2 while r1 is outstanding; the destination guard is the only barrier. (b) r1 lands late, then the grant is renewed and the operation decided again: **profile off, 2 effects**;
+  **identity on, 1 effect** (r2 fails `operation_already_committed`). No double commit with the identity profile on, so no new finding; the profile-off double commit is the legacy gap the profile exists
+  to close. Still **not run** on the orchestrator's atomic route (whether the renewal race double-commits there, with the per-grant cap possibly masking it, is unknown).
 - **F-6 (runtime pin move, orchestrator side; fixed in the orchestrator, no pin moved).** Runtime `2ee2e525` ("Move cross-component tests and harnesses to cognous-stack-qualification") removed
   `tests/test_local_authority_effect.py`, `tests/test_refund_intent.py`, `tests/test_safe_executor.py` and `tests/test_w2_stop_recovery.py` (they now live under
   `suites/cognous-execution-runtime/tests/` in `cognous-stack-qualification`). `tests/scenarios/customer_refunds/live_components/runtime/test_actual_runtime.py` imported

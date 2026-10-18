@@ -21,9 +21,10 @@ editing any pin. Revisions under test:
 | Evidence Pack | `fa7cd7e` | `87293cfc` | n/a |
 | Action Manifest | `8d1572d4` (unchanged pin) | `8d1572d4` | n/a |
 
-Result of the overlay at these revisions: **29 tests, 29 passed**, under Python 3.11 and 3.13, locally and in the dispatched workflow
-(run [39091527071](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39091527071), workflow from commit `9273e6b7`, verifier input
-`5ed1ffbaf52ce3c999f6574f13fe2e43bd5bf88f`, other inputs `main`, both Python versions green; the earlier run
+Result of the overlay at these revisions: **31 tests, 31 passed**, under Python 3.11 and 3.13, locally and in the dispatched workflow
+(run [39091816327](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39091816327), workflow from commit `af347196`, verifier input
+`5ed1ffbaf52ce3c999f6574f13fe2e43bd5bf88f`, other inputs `main`, both Python versions green; the 29-test run
+[39091527071](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39091527071) preceded the F-5 probes, and
 [39090210798](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39090210798) was at verifier `07c2eb86`). Passing means the stated behaviour and the known-finding
 patterns below were observed; it does not mean the findings are resolved. The verifier moved while this work ran (`867402f3`, then `07c2eb86`, then `5ed1ffb`) and the F-1 and F-2 outcomes changed with it: the overlay
 fails on any refusal outside a named finding and now pins the exact abstentions, which is how those changes were noticed.

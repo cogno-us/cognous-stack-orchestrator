@@ -303,8 +303,15 @@ def _bundle(kind: str, name: str, candidate_handoff, candidate_journal, candidat
     return {"handoff": candidate_handoff, "journal": candidate_journal, "destinations": candidate_destinations}[kind] / name
 
 
+V3_CHECK_IDS = {"v3.witness.records", "v3.witness.digest-recompute", "v3.witness.chain", "v3.witness.run-id",
+                "v3.witness.ledger-heads", "v3.witness.coverage"}
+
+
 def _v3(report: dict) -> list[dict]:
-    return report["extensions"]["x-tier-v3"]["checks"]
+    """Tier V3 is reported as ordinary `v3.*` checks listed in scope.tiers_run (verifier #12); the old extensions["x-tier-v3"] block is gone."""
+    assert "x-tier-v3" not in report.get("extensions", {}), "the old x-tier-v3 extension shape is not produced by this verifier"
+    assert "V3" in report["scope"]["tiers_run"], report["scope"]
+    return [c for c in report["checks"] if c["check_id"].startswith("v3.")]
 
 
 def test_witness_tier_v3_over_acp_witness_publish_of_the_retained_records(overlay, odes, candidate_handoff, candidate_journal, candidate_destinations):
@@ -329,7 +336,8 @@ def test_witness_tier_v3_over_acp_witness_publish_of_the_retained_records(overla
         assert odes["verification-report"].validate(report) == [], f"{kind}/{name}: report does not validate"
         assert_report_denominators(report)
         v3 = _v3(report)
-        assert v3 and report["extensions"]["x-tier-v3"]["requested"] is True
+        assert v3 and "V3" in report["scope"]["tiers_run"]  # tier V3 was requested and ran
+        assert {c["check_id"] for c in v3} == V3_CHECK_IDS, [c["check_id"] for c in v3]
         assert all(c["verdict"] == "confirmed" for c in v3), f"{kind}/{name}: V3 not all confirmed: {[(c['check_id'], c['verdict']) for c in v3]}\n{out}"
         # No ledger is supplied here, so the V4 ledger checks stay could-not-check exactly as without --witness (exit 3, abstain);
         # tier V3 adds no abstention and no refusal.

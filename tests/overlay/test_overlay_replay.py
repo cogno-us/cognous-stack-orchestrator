@@ -1,8 +1,9 @@
 """Replay and the Evidence Pack importer over the overlay's records (report only; Replay and pack are not pinned by this overlay).
 
 Replay chooses its profile from a Control Plane revision LABEL supplied by the caller. The nearest label for the candidate Control
-Plane is Replay's newest listed generation (P4, 26a7e659); under the candidate's own revision Replay refuses everything
-('unsupported Control Plane revision'). All statements here are about these synthetic records on the named revisions.
+Plane used to be Replay's newest listed generation (P4, 26a7e659). Replay 46e8bd7c lists the candidate's own revision (3cd17ead), so
+the candidate label is accepted for journal-mode records and refused with a typed profile error for the orchestrator's atomic-route
+records ('resolution journal missing'). All statements here are about these synthetic records on the named revisions.
 """
 from __future__ import annotations
 
@@ -19,12 +20,30 @@ def test_replay_and_pack_accept_the_default_journal_record_under_the_p4_label(re
     assert not r["retained"]["rule_revisions_rows"] and not r["retained"]["attempt_joins_rows"]
 
 
-def test_replay_refuses_the_candidate_revision_label(replay_probe):
-    """Replay's supported set does not list any programme-2 Control Plane revision: labelled with the candidate's own revision every
-    record is refused. (Replay's label is a claim by the caller, not derived from the record.)"""
+ATOMIC_ROUTE_RECORDS = ("candidate-handoff/applied", "candidate-handoff/held_no_grant")
+JOURNAL_MODE_RECORDS = ("off/applied", "identity/applied", "freshness/applied", "rule_revision/applied", "full/applied")
+
+
+def test_replay_candidate_revision_label_outcomes_are_exact(replay_probe):
+    """Replay 46e8bd7c lists the programme-2 Control Plane revision, so its label is no longer refused as unsupported. Replaces the
+    earlier assertion that every record was refused with 'unsupported Control Plane revision' (the stale P4 behaviour). The outcome
+    is asserted exactly for EVERY record, in both directions:
+      * the atomic-route records (no resolution journal) are refused with exactly
+        'ImportContractError: typed refusal profile: resolution journal missing' and are not accepted under the candidate label;
+      * every journal-mode record is accepted under the candidate label, and appears in accepted_under for it;
+      * no record has any other outcome, and the 'unsupported Control Plane revision' refusal appears nowhere.
+    (Replay's label is a claim by the caller, not derived from the record.)"""
+    assert set(replay_probe) == set(ATOMIC_ROUTE_RECORDS) | set(JOURNAL_MODE_RECORDS), sorted(replay_probe)
     for name, r in replay_probe.items():
         label = next(k for k in r["replay_by_label"] if k.startswith(CANDIDATE_LABEL_PREFIX))
-        assert r["replay_by_label"][label] == "ImportContractError: unsupported Control Plane revision", name
+        outcome = r["replay_by_label"][label]
+        assert "unsupported Control Plane revision" not in outcome, (name, outcome)
+        if name in ATOMIC_ROUTE_RECORDS:
+            assert outcome == "ImportContractError: typed refusal profile: resolution journal missing", (name, outcome)
+            assert label not in r["accepted_under"], name
+        else:
+            assert outcome == "accepted", (name, outcome)
+            assert label in r["accepted_under"], name
 
 
 def test_orchestrator_atomic_route_records_are_not_p4_records(replay_probe):

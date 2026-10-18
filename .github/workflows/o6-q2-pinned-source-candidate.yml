@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cogno-us/cognous-control-plane
-          ref: 3cd17ead6b24301290ad1e50ae4b22bbd93c12fb
+          ref: 6093aca7b945698e89c0d8ac7c75306375e1a298
           path: .upstream/control-plane
           persist-credentials: false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -36,13 +36,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cogno-us/cognous-replay-bundle
-          ref: 46e8bd7c263f5075cac3a7a9defcb265384f40e9
+          ref: c8e665bd1936e4da90f6a324b486a320934c4bff
           path: .upstream/replay
           persist-credentials: false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cogno-us/cognous-governance-evidence-pack
-          ref: 4fbbd34418f8dce7a536879d7bd0378737179f47
+          ref: cde3f1f1cf517d5663afb33ce88c123aae779757
           path: .upstream/evidence-pack
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -53,10 +53,10 @@ jobs:
       - name: Verify exact frozen source pins
         run: |
           test "$(git -C .upstream/action-manifest rev-parse HEAD)" = "8d1572d4f926c968a8704cb912a6e9d49166f74a"
-          test "$(git -C .upstream/control-plane rev-parse HEAD)" = "3cd17ead6b24301290ad1e50ae4b22bbd93c12fb"
+          test "$(git -C .upstream/control-plane rev-parse HEAD)" = "6093aca7b945698e89c0d8ac7c75306375e1a298"
           test "$(git -C .upstream/execution-runtime rev-parse HEAD)" = "1b0a9e32d010797711004ae612051a277b07912a"
-          test "$(git -C .upstream/replay rev-parse HEAD)" = "46e8bd7c263f5075cac3a7a9defcb265384f40e9"
-          test "$(git -C .upstream/evidence-pack rev-parse HEAD)" = "4fbbd34418f8dce7a536879d7bd0378737179f47"
+          test "$(git -C .upstream/replay rev-parse HEAD)" = "c8e665bd1936e4da90f6a324b486a320934c4bff"
+          test "$(git -C .upstream/evidence-pack rev-parse HEAD)" = "cde3f1f1cf517d5663afb33ce88c123aae779757"
       - name: Connected handoff on O6 runtime source
         env:
           COGNOUS_O6_Q2_RUNTIME_CANDIDATE: 1b0a9e32d010797711004ae612051a277b07912a

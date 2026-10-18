@@ -33,7 +33,7 @@ Update at verifier `adb8927` (PR #11, with tier V3 from PR #10, `05afab84`): the
 test runs `cognous-verify --witness` over `acp witness publish` of 8 retained default-path records (4 atomic-route, 2 journal, 2 destination): all 48 of 48 tier V3 checks
 confirmed on the clean records (6 per record); after one value in the first `decisions` row is changed, with the witness untouched, 8 of 8 records are refused by
 `v3.witness.ledger-heads` with exactly `witness_ledger_head_mismatch` (on 4 of them the changed field is an enumerated one, so `v1.structure` also refuses with `unknown_enum_value`). Tier V3 shows
-the records match a digest that was published; not who published it, nor that it was in time. Dispatched workflow run: RUN_ID_PLACEHOLDER.
+the records match a digest that was published; not who published it, nor that it was in time. Dispatched workflow run: [39095381057](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39095381057) (workflow from the PR branch; inputs: control plane `128eaa5e`, runtime `fc034d14`, verifier `adb8927f`, ODES `fe705e87`, Replay `d0e7b368`, evidence pack `fa7cd7eb`, all as full SHAs; Python 3.11 and 3.13 both green).
 
 ## Programme-2 pieces and what exercises them across components
 

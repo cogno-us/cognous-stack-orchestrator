@@ -58,6 +58,25 @@ def _dump(path: Path, doc) -> None:
     path.write_text(json.dumps(doc, indent=1, ensure_ascii=False, sort_keys=True, default=str) + "\n", encoding="utf-8")
 
 
+# The only wall-clock column the destination writes: `failure_records_v1.created_at` (time.time() at the refusal; it differs between two
+# runs of the same revision). Masked to the string "<wall-clock>" and nothing else is masked.
+WALL_CLOCK_COLUMNS = {("failure_records_v1", "created_at")}
+
+
+def _tables(destination) -> dict:
+    """Every row of every table in the atomic destination's database (raw values, insertion order; wall-clock columns masked)."""
+    import sqlite3
+    with sqlite3.connect(destination.path) as conn:
+        names = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+        out: dict = {"_schema": [r[0] for r in conn.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name")]}
+        for n in names:
+            cols = [c[1] for c in conn.execute(f'PRAGMA table_info("{n}")')]
+            masked = [(n, c) in WALL_CLOCK_COLUMNS for c in cols]
+            out[n] = [[("<wall-clock>" if m else v) for v, m in zip(r, masked)]
+                      for r in conn.execute(f'SELECT * FROM "{n}" ORDER BY rowid')]  # noqa: S608 - names come from sqlite_master
+        return out
+
+
 def _result(res) -> dict:
     keys = ("status", "attempted", "acknowledged", "observed_state", "error", "decision_id", "effect_id", "attempt_id")
     out = {k: getattr(res, k, None) for k in keys}
@@ -92,6 +111,7 @@ def run(out: Path) -> dict:
         extra["effect_rows"] = ns["effect_rows"](destination)
         extra["attempt_rows"] = ns["attempt_rows"](destination)
         _dump(d / "result.json", extra)
+        _dump(d / "atomic-tables.json", _tables(destination))
         summary[name] = {"effects": len(extra["effect_rows"]), "attempts": len(extra["attempt_rows"])}
 
     # applied

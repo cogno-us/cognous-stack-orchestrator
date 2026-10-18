@@ -2,7 +2,9 @@
 
 A runner, not a test (subprocess; candidate revisions only, because the destinations do not exist at the orchestrator's pins).
 Inputs are the orchestrator's: the pinned Action Manifest example and the tenant-bound proposal. The route is Control Plane
-BoundedAuthorizationWorkflow -> Runtime PinnedControlPlaneExecutor (not the orchestrator's atomic-claim route; see the gap report).
+BoundedAuthorizationWorkflow -> Runtime PinnedControlPlaneExecutor, plus (atomic_renewal) the orchestrator's atomic-claim route; with the
+Control Plane profile sets `identity` and `full` the atomic probes use the opt-in `AtomicLocalControlPlaneExecutor(operation_identity=True)`
+and `OperationIdentityAtomicAuthorityEffectDestination` (runtime fc034d14); with `off` they use the default classes unchanged.
 
     COGNOUS_ACTION_MANIFEST_SRC=... COGNOUS_CONTROL_PLANE_SRC=... COGNOUS_EXECUTION_RUNTIME_ROOT=... \
         python tests/overlay/_destination_runner.py OUTDIR
@@ -14,7 +16,8 @@ Scenarios (each reports what happened; assertions are in test_overlay_destinatio
   renewal_during_lost_ack[identity=..]  r1's commit is deferred (acknowledgement lost, unknown), the grant is renewed, r2 is attempted
                                         while r1 is outstanding, then r1 lands late (F-5 probe, adapter route).
   renewal_after_landing[identity=..]    r1 lands late, then the grant is renewed and a decision for the same operation is attempted.
-  atomic_route_surface                  whether the orchestrator's accepted atomic route can carry an operation id at all.
+  atomic_route_surface                  what the atomic route carries: the executor's `operation_identity` parameter (default off) and the
+                                        destination's `operation_id` parameter (runtime fc034d14, R2); `execute` still takes none (derived).
   atomic_renewal[profile=..,cap=..,case=..]
                                         F-5 probe on the ATOMIC route (AtomicLocalControlPlaneExecutor + AtomicAuthorityEffectDestination,
                                         the route the orchestrator accepts). Control Plane profile sets off | identity | full, per-grant
@@ -162,8 +165,13 @@ def _atomic_world(work, profile_set: str, cap: int):
     from engine.local_authority_effect import AtomicAuthorityEffectDestination
     flow = J.Flow(work, profile_set, wide=(cap == 2))
     assert flow.d1.result == "authorized", flow.d1.reasons
-    dest = AtomicAuthorityEffectDestination(work / "atomic", clock=lambda: flow.NOW)
-    executor = AtomicLocalControlPlaneExecutor(workflow=flow.f, destination=dest, policy=flow.executor.policy)
+    if profile_set in ("identity", "full"):  # opt-in (runtime fc034d14): the operation id is derived from the persisted decision
+        from engine.operation_identity_atomic_destination import OperationIdentityAtomicAuthorityEffectDestination
+        dest = OperationIdentityAtomicAuthorityEffectDestination(work / "atomic", clock=lambda: flow.NOW)
+        executor = AtomicLocalControlPlaneExecutor(workflow=flow.f, destination=dest, policy=flow.executor.policy, operation_identity=True)
+    else:  # profile off: the default atomic route, unchanged
+        dest = AtomicAuthorityEffectDestination(work / "atomic", clock=lambda: flow.NOW)
+        executor = AtomicLocalControlPlaneExecutor(workflow=flow.f, destination=dest, policy=flow.executor.policy)
     return flow, dest, executor
 
 
@@ -237,7 +245,8 @@ def atomic_renewal(work, profile_set: str, cap: int, case: str, out: pathlib.Pat
     if case == "outstanding":
         out_doc["r1_late"] = _atomic_try(lambda: executor.execute(envelope=env1, claim_id=claim1.claim_id))
     out_doc.update({"ledger_final": _atomic_ledger(dest), "budget": dest.budget_state(f"grant:{grant_id}"),
-                    "claim1_state": dest.claim_state(claim1.claim_id), **_joins(flow)})
+                    "claim1_state": dest.claim_state(claim1.claim_id),
+                    "claim2_state": dest.claim_state(claim2.claim_id) if claim2 is not None else None, **_joins(flow)})
     tag = f"atomic_renewal_{profile_set}_cap{cap}_{case}"
     flow.keep(out, tag, {"decision": flow.d1.result})
     return out_doc
@@ -246,13 +255,20 @@ def atomic_renewal(work, profile_set: str, cap: int, case: str, out: pathlib.Pat
 def atomic_route_surface() -> dict:
     from engine.atomic_local_control_plane_executor import AtomicLocalControlPlaneExecutor
     from engine.local_authority_effect import AtomicAuthorityEffectDestination
+    from engine.operation_identity_atomic_destination import OperationIdentityAtomicAuthorityEffectDestination
     from engine.operation_identity_destination import OperationIdentityDestination
     from engine.safe_executor import DurableRefundDestination
     execute_params = list(inspect.signature(AtomicLocalControlPlaneExecutor.execute).parameters)
+    executor_init_params = list(inspect.signature(AtomicLocalControlPlaneExecutor.__init__).parameters)
+    init_default = inspect.signature(AtomicLocalControlPlaneExecutor.__init__).parameters.get("operation_identity")
     atomic_params = list(inspect.signature(AtomicAuthorityEffectDestination.execute_claim_atomic).parameters)
     return {
         "atomic_executor_execute_params": execute_params,
+        "atomic_executor_init_params": executor_init_params,
+        "atomic_executor_operation_identity_default": None if init_default is None else init_default.default,
         "atomic_destination_execute_claim_atomic_params": atomic_params,
+        "operation_identity_atomic_destination_subclasses_atomic": issubclass(OperationIdentityAtomicAuthorityEffectDestination, AtomicAuthorityEffectDestination),
+        "operation_identity_atomic_destination_capability": getattr(OperationIdentityAtomicAuthorityEffectDestination, "operation_identity_capability", None),
         "atomic_destination_has_operation_identity_capability": hasattr(AtomicAuthorityEffectDestination, "operation_identity_capability"),
         "atomic_destination_subclasses_durable": issubclass(AtomicAuthorityEffectDestination, DurableRefundDestination),
         "atomic_destination_subclasses_operation_identity": issubclass(AtomicAuthorityEffectDestination, OperationIdentityDestination),

@@ -3,7 +3,8 @@ delayed-commit/0.1), driven with the orchestrator's inputs (pinned Action Manife
 
 Synthetic only; no network; the destinations are CI/local SQLite and have no authority of their own. Passing shows the stated
 behaviour on the candidate revisions; it does not show provider-side behaviour or anything about a deployment. The orchestrator's
-accepted route (atomic claim) cannot reach these destinations; `test_atomic_route_cannot_carry_an_operation_id` records that as data.
+accepted route (atomic claim) reaches the operation guard only through the opt-in classes of runtime fc034d14 (R2); the default atomic
+route cannot carry an operation id: `test_atomic_route_carries_an_operation_id_only_on_the_opt_in_path` records that as data.
 """
 from __future__ import annotations
 
@@ -97,17 +98,24 @@ def test_renewal_after_late_landing_adapter_route_f5_probe(candidate_destination
                                                             "effects_identity_on": len(on["ledger_final"])})
 
 
-def test_atomic_route_cannot_carry_an_operation_id(candidate_destinations):
-    """The orchestrator's accepted route (AtomicLocalControlPlaneExecutor + AtomicAuthorityEffectDestination) has no operation id
-    parameter and its destination is not an OperationIdentityDestination or delayed-commit class. Recorded as a finding, not a defect
-    claim: the opt-in profiles were built on the adapter route (PinnedControlPlaneExecutor)."""
+def test_atomic_route_carries_an_operation_id_only_on_the_opt_in_path(candidate_destinations):
+    """Runtime fc034d14 (R2). The accepted atomic route can now carry an operation id, opt-in only:
+    - `AtomicLocalControlPlaneExecutor.__init__` has an `operation_identity` parameter, default False; `execute` still has NO operation id
+      parameter (the id is derived from the persisted Control Plane decision, never supplied by the caller);
+    - `AtomicAuthorityEffectDestination.execute_claim_atomic` takes an optional `operation_id`; the base class is NOT an operation-identity
+      class and has no capability (default path unchanged);
+    - `OperationIdentityAtomicAuthorityEffectDestination` subclasses it and declares `operation-identity/0.1`;
+    - no delayed-commit surface on the atomic route (the atomic commit has no in-flight state)."""
     s = results(candidate_destinations)["atomic_route_surface"]
-    assert "operation_id" not in s["atomic_executor_execute_params"]
-    assert "operation_id" not in s["atomic_destination_execute_claim_atomic_params"]
-    assert s["atomic_destination_has_operation_identity_capability"] is False
+    assert "operation_identity" in s["atomic_executor_init_params"] and s["atomic_executor_operation_identity_default"] is False
+    assert "operation_id" not in s["atomic_executor_execute_params"], "the id is derived, not caller-supplied"
+    assert "operation_id" in s["atomic_destination_execute_claim_atomic_params"]
+    assert s["atomic_destination_has_operation_identity_capability"] is False, "the base atomic destination stays a plain destination"
     assert s["atomic_destination_subclasses_operation_identity"] is False
+    assert s["operation_identity_atomic_destination_subclasses_atomic"] is True
+    assert s["operation_identity_atomic_destination_capability"] == "operation-identity/0.1"
     assert s["atomic_destination_has_delayed_commit_surface"] is False
-    assert s["atomic_executor_mentions_operation_id"] is False and s["atomic_destination_mentions_operation_id"] is False
+    assert s["atomic_executor_mentions_operation_id"] is True and s["atomic_destination_mentions_operation_id"] is True
     section("atomic_route_surface", s)
 
 
@@ -115,7 +123,7 @@ def test_atomic_route_cannot_carry_an_operation_id(candidate_destinations):
 #
 # Setup common to these tests: the same orchestrator inputs; Control Plane profile set `off`, `identity` (operation identity on) or `full`;
 # a per-grant effect cap of 1 (the shipped manifest) or 2 (a grant that legitimately allows two effects). The atomic destination has no
-# operation id, no delayed-commit mode and no dedupe: it commits claim, budget, attempt and effect in one SQLite transaction, so there
+# operation id by default, no delayed-commit mode and no dedupe: it commits claim, budget, attempt and effect in one SQLite transaction, so there
 # is no "in flight" state to renew into. The renewal re-approves under a new approval reference and moves the authority row to
 # revision 2 through the destination's own writer (`set_grant_status`); `landed_same_approval` renews without a new approval reference.
 
@@ -143,7 +151,7 @@ def test_atomic_route_stale_claim_is_refused_after_renewal(candidate_destination
 
 def test_atomic_route_cap_of_one_blocks_the_second_effect_after_landing(candidate_destinations):
     """Renewal after claim 1 committed (acknowledged or acknowledgement lost): with the shipped cap of 1 the shared per-grant budget
-    refuses r2, so one effect. This is the cap acting, not an operation guard: see the known-gap test below for cap 2."""
+    refuses r2, so one effect. This is the cap acting, not an operation guard: see the cap-2 tests below."""
     r = results(candidate_destinations)
     for profile in ATOMIC_SETS:
         for case in ("landed", "lost_ack"):
@@ -159,37 +167,54 @@ def test_atomic_route_cap_of_one_blocks_the_second_effect_after_landing(candidat
     section("atomic_renewal_cap_one", {"variants": 6, "effects_each": 1, "barrier": "per-grant budget"})
 
 
-def test_KNOWN_GAP_atomic_route_double_commits_after_renewal_when_the_cap_allows_two(candidate_destinations):
-    """KNOWN GAP (F-5, atomic route): two effects for ONE operation, including with operation identity ON.
+def test_atomic_route_profile_off_still_double_commits_after_renewal_at_cap_two(candidate_destinations):
+    """Legacy behaviour, still asserted (F-5 stays OPEN with the key off): the default atomic route (`AtomicAuthorityEffectDestination`,
+    executor without `operation_identity`) commits TWO effects for ONE operation when the grant allows two effects.
 
-    The accepted atomic route has no operation id (see test_atomic_route_cannot_carry_an_operation_id). After claim 1 has committed
-    (acknowledged, or acknowledgement lost), a renewal gives a new grant revision, a new effect_id and a new claim; the destination's
-    only cross-revision barrier is the shared per-grant budget (`grant:<grant_id>`). With a grant that allows two effects the budget has
-    room, so r2 commits a second effect. The Control Plane's operation identity profile is on in `identity` and `full`, the renewal is
-    recorded (1 operation), and the atomic destination still commits: nothing writes an attempt join on this route (0 joins), so the
-    Control Plane cannot know the first effect landed.
-
-    This test asserts today's behaviour so the overlay stays green; any change (a guard on this route, a changed budget key) FAILS it and
-    must be recorded in the gap report. It is not a claim that the route is wrong for a single-effect grant: with cap 1 see above.
-    """
+    After claim 1 has committed (acknowledged, or acknowledgement lost) a renewal gives a new revision, effect_id and claim; the only
+    cross-revision barrier is the shared per-grant budget, and with a cap of 2 it has room. Nothing was changed on this route by the
+    opt-in key. Any change here (a guard appearing without the key) FAILS this test and must be recorded in the gap report."""
     r = results(candidate_destinations)
-    for profile in ATOMIC_SETS:
+    for case in ("landed", "lost_ack"):
+        s = atomic(r, "off", 2, case)
+        assert s["d2_result"] == "authorized" and s["d2_effect_id"] != s["d1_effect_id"]
+        assert s["provision2"]["raised"] is None
+        assert s["r2"]["status"] == "executed" and s["r2"]["acknowledged"] is True
+        assert sorted(s["ledger_final"]) == sorted([s["d1_effect_id"], s["d2_effect_id"]]), "profile off: two effects for one operation"
+        assert s["budget"] == {"max_effects": 2, "used_effects": 2}
+        assert s["attempt_joins"] == 0 and s["operations"] == 0
+        if case == "lost_ack":
+            assert s["retry1"]["status"] == "denied" and s["retry1"]["error"] == "execution claim is not usable"
+    section("atomic_renewal_profile_off_double_commit_remains", {"effects_for_one_operation_profile_off": 2, "cap1_effects": 1})
+
+
+def test_CLOSED_F5_atomic_route_with_the_operation_key_refuses_the_second_effect_at_cap_two(candidate_destinations):
+    """F-5 CLOSED on the opt-in path (runtime fc034d14, R2): `AtomicLocalControlPlaneExecutor(operation_identity=True)` with
+    `OperationIdentityAtomicAuthorityEffectDestination`, Control Plane profile sets `identity` and `full`, grant cap 2.
+
+    After claim 1 committed (acknowledged, or acknowledgement lost) the renewal is authorized and claim 2 is provisioned, but the
+    destination refuses the second effect for the same operation inside the commit transaction: `operation_already_committed`, the
+    effect is not written, the budget is not consumed (1 of 2), and claim 2 stays `issued`. One effect. A second effect here would be a
+    new finding and fails this test."""
+    r = results(candidate_destinations)
+    for profile in ("identity", "full"):
         for case in ("landed", "lost_ack"):
             s = atomic(r, profile, 2, case)
-            assert s["d2_result"] == "authorized" and s["d2_effect_id"] != s["d1_effect_id"]
-            assert s["provision2"]["raised"] is None
-            assert s["r2"]["status"] == "executed" and s["r2"]["acknowledged"] is True
-            assert sorted(s["ledger_final"]) == sorted([s["d1_effect_id"], s["d2_effect_id"]]), "KNOWN GAP: two effects for one operation"
-            assert s["budget"] == {"max_effects": 2, "used_effects": 2}
-            assert s["attempt_joins"] == 0, "the atomic route writes no attempt join"
-            assert s["operations"] == (1 if profile in ("identity", "full") else 0)
+            assert s["ledger_before_renewal"] == [s["d1_effect_id"]]
+            assert s["d2_result"] == "authorized" and s["d2_effect_id"] != s["d1_effect_id"] and s["provision2"]["raised"] is None
+            assert s["r2"]["status"] == "denied" and s["r2"]["error"] == "operation_already_committed"
+            assert s["r2"]["acknowledged"] is False and s["r2"]["raised"] is None
+            assert len(s["ledger_final"]) == 1 and s["ledger_final"] == [s["d1_effect_id"]], "DOUBLE COMMIT with the operation key on (FINDING)"
+            assert s["budget"] == {"max_effects": 2, "used_effects": 1}
+            assert s["claim1_state"] == "consumed" and s["claim2_state"] == "issued"
+            assert s["operations"] == 1
             if case == "lost_ack":
                 assert s["retry1"]["status"] == "denied" and s["retry1"]["error"] == "execution claim is not usable"
     on = atomic(r, "identity", 2, "landed")
-    section("atomic_renewal_KNOWN_GAP_F5", {"effects_for_one_operation_profile_off": len(atomic(r, "off", 2, "landed")["ledger_final"]),
-                                           "effects_for_one_operation_identity_on": len(on["ledger_final"]),
-                                           "effects_for_one_operation_full": len(atomic(r, "full", 2, "landed")["ledger_final"]),
-                                           "cap1_effects": 1, "attempt_joins_identity_on": on["attempt_joins"]})
+    section("atomic_renewal_F5_closed_opt_in", {"effects_for_one_operation_identity_on": len(on["ledger_final"]),
+                                               "effects_for_one_operation_full": len(atomic(r, "full", 2, "landed")["ledger_final"]),
+                                               "effects_for_one_operation_profile_off": len(atomic(r, "off", 2, "landed")["ledger_final"]),
+                                               "r2_error": on["r2"]["error"], "claim2_state": on["claim2_state"], "cap1_effects": 1})
 
 
 def test_atomic_route_renewal_without_a_new_approval_cannot_be_provisioned(candidate_destinations):

@@ -6,6 +6,8 @@ test is skipped (set COGNOUS_OVERLAY_REQUIRE=1 to turn a missing variable into a
 Required:  COGNOUS_OVERLAY_ACTION_MANIFEST, COGNOUS_OVERLAY_CONTROL_PLANE, COGNOUS_OVERLAY_RUNTIME,
            COGNOUS_OVERLAY_VERIFIER, COGNOUS_OVERLAY_ODES   (paths to git checkouts; the candidate revisions)
 Optional:  COGNOUS_OVERLAY_BASELINE_CONTROL_PLANE / _RUNTIME  (the programme-2 starting revisions: default-path byte comparison)
+           COGNOUS_OVERLAY_PRIOR_RUNTIME                       (runtime d90a2cae, the last revision before the opt-in atomic operation key:
+                                                                byte comparison of the default atomic route with the key off)
            COGNOUS_OVERLAY_PIN_CONTROL_PLANE / _RUNTIME        (the orchestrator's own pins: report-only comparison)
            COGNOUS_OVERLAY_REPORT_DIR                          (where overlay-report.json and the bundles are kept)
 """
@@ -31,6 +33,7 @@ REQUIRED = {
 OPTIONAL = {
     "baseline_control_plane": "COGNOUS_OVERLAY_BASELINE_CONTROL_PLANE",
     "baseline_runtime": "COGNOUS_OVERLAY_BASELINE_RUNTIME",
+    "prior_runtime": "COGNOUS_OVERLAY_PRIOR_RUNTIME",
     "pin_control_plane": "COGNOUS_OVERLAY_PIN_CONTROL_PLANE",
     "pin_runtime": "COGNOUS_OVERLAY_PIN_RUNTIME",
 }
@@ -107,6 +110,18 @@ def baseline(overlay: Overlay):
     overlay.run_runner("_handoff_runner.py", str(handoff), control_plane=cp, runtime=rt)
     overlay.run_runner("_journal_runner.py", str(journal), "off", control_plane=cp, runtime=rt)
     return {"handoff": handoff, "journal": journal}
+
+
+@pytest.fixture(scope="session")
+def prior_runtime_handoff(overlay: Overlay, candidate_handoff):
+    rt = overlay.optional.get("prior_runtime")
+    if not rt:
+        if os.environ.get("COGNOUS_OVERLAY_REQUIRE") == "1":
+            pytest.fail("prior runtime (d90a2cae) required but not supplied")
+        pytest.skip("prior runtime revision not supplied")
+    out = overlay.out / "prior-runtime-handoff"
+    overlay.run_runner("_handoff_runner.py", str(out), runtime=rt)  # same Control Plane, same inputs, only the runtime differs
+    return out
 
 
 @pytest.fixture(scope="session")

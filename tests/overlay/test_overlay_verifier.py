@@ -107,10 +107,24 @@ def test_default_path_records_are_accepted_or_abstained_never_refuted(overlay, o
     section("verifier_default_path_no_ledger", {"records": len(bundles), "rows": rows})
 
 
-def test_runtime_route_records_with_an_orchestrator_projected_ledger(overlay, odes, candidate_handoff):
-    """Handoff bundles with the orchestrator's SQLite-to-ledger projection: the V4 receipt checks now run.
+def _refusals(report: dict) -> dict[str, set[str]]:
+    return {c["check_id"]: {f["code"] for f in c.get("findings", [])} for c in report["checks"] if c["verdict"] == "refuted"}
 
-    4 records; the held record has no effect rows (an empty ledger). Report-only on the outcome, strict on 'not refuted'.
+
+# FINDING F-2 (verifier main from 2597196, "a ledger row needs an attempt"). On the orchestrator's accepted route (Atomic claim) the
+# Control Plane record carries no attempt row: the runtime keeps the attempt in its own SQLite destination. A ledger row projected from
+# that destination therefore has "no attempt row in the record". Before 2597196 the verifier accepted these records with the
+# projected ledger (23 of 23 checks confirmed on 867402f); from 2597196 it refuses them on exactly this check. Neither is wrong
+# on its own terms; the route and the verifier's ledger model do not yet meet.
+KNOWN_F2 = {"v4.ledger.rows-agree-with-attempts": {"ledger_row_without_attempt"}}
+
+
+def test_runtime_route_records_with_an_orchestrator_projected_ledger(overlay, odes, candidate_handoff):
+    """Handoff (atomic route) bundles with the orchestrator's SQLite-to-ledger projection: the V4 receipt checks now run.
+
+    4 records; the held record has no effect rows (an empty ledger). The report must validate and add up. Refusals are tolerated ONLY
+    as exactly the F-2 pattern (and never on the held record); any other refusal is a new finding and fails. The rows record what the
+    verifier did at the revision under test.
     """
     rows = []
     for sc in HANDOFF:
@@ -119,13 +133,17 @@ def test_runtime_route_records_with_an_orchestrator_projected_ledger(overlay, od
         ledger.write_text(json.dumps(ledger_projection(bundle / "result.json", json.loads((bundle / "result.json").read_text())),
                                      indent=1, sort_keys=True) + "\n", encoding="utf-8")
         code, report, out = verify(overlay, bundle, ledger=ledger)
-        assert code != 4, out
+        assert code in (0, 1, 3), out
         assert odes["verification-report"].validate(report) == []
         assert_report_denominators(report)
-        refuted = [c["check_id"] for c in report["checks"] if c["verdict"] == "refuted"]
-        rows.append({"bundle": sc, "exit": code, "refuted_checks": refuted, **tally(report)})
-        assert refuted == [], f"{sc}: the verifier refuted a real orchestrator record against its own runtime ledger (FINDING): {refuted}\n{out}"
-    section("verifier_runtime_route_with_projected_ledger", {"records": len(rows), "rows": rows})
+        refusals = _refusals(report)
+        for check_id, codes in refusals.items():
+            assert check_id in KNOWN_F2 and codes <= KNOWN_F2[check_id], f"{sc}: NEW finding {check_id} {codes}\n{out}"
+        if sc == "held_no_grant":
+            assert refusals == {}, "the held record has no ledger rows and must not be refused"
+        rows.append({"bundle": sc, "exit": code, "refused": {k: sorted(v) for k, v in refusals.items()}, **tally(report)})
+    section("verifier_runtime_route_with_projected_ledger_F2", {"records": len(rows), "rows": rows,
+                                                                "f2_observed": any(r["refused"] for r in rows)})
 
 
 def test_profile_on_records_report_only(overlay, odes, candidate_journal):
@@ -195,10 +213,6 @@ def test_odes_operation_identity_sidecar_over_the_identity_records(odes, candida
 # demands destination_state == ledger row. So an adapter-route record whose observations are `applied` can satisfy only one of
 # the two: omit the member and `v4.ledger.observations-agree` refuses, include it and `v1.structure.ledger` refuses.
 KNOWN_F1 = {"v4.ledger.observations-agree": {"observation_differs_from_ledger_row"}, "v1.structure.ledger": {"ledger_shape"}}
-
-
-def _refusals(report: dict) -> dict[str, set[str]]:
-    return {c["check_id"]: {f["code"] for f in c.get("findings", [])} for c in report["checks"] if c["verdict"] == "refuted"}
 
 
 def test_adapter_route_records_with_projected_ledger_finding_f1(overlay, odes, candidate_journal, candidate_destinations):

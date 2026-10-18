@@ -25,7 +25,7 @@ Result of the overlay at these revisions: **31 tests, 31 passed**, under Python 
 (run [39091816327](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39091816327), workflow from commit `af347196`, verifier input
 `5ed1ffbaf52ce3c999f6574f13fe2e43bd5bf88f`, other inputs `main`, both Python versions green; the 29-test run
 [39091527071](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39091527071) preceded the F-5 probes, and
-[39090210798](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39090210798) was at verifier `07c2eb86`). Passing means the stated behaviour and the known-finding
+[39090210798](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39090210798) was at verifier `07c2eb86`). With the four atomic-route F-5 tests added (35 tests), the dispatched workflow run [39092765782](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39092765782) (commit `a49b3a1c`, verifier input `5ed1ffba`, other inputs `main`) was green on both Python versions; locally 33 passed and 2 skipped (the optional baseline and pin comparisons not supplied). Passing means the stated behaviour and the known-finding
 patterns below were observed; it does not mean the findings are resolved. The verifier moved while this work ran (`867402f3`, then `07c2eb86`, then `5ed1ffb`) and the F-1 and F-2 outcomes changed with it: the overlay
 fails on any refusal outside a named finding and now pins the exact abstentions, which is how those changes were noticed.
 

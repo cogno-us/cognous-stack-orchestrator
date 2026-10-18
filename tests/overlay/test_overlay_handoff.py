@@ -90,6 +90,21 @@ def test_default_path_is_byte_identical_to_the_programme_2_baseline(candidate_ha
     assert different == [], f"default-path bytes changed on the candidate: {different}"
 
 
+def test_atomic_default_path_with_the_key_off_is_byte_identical_between_runtime_d90a2cae_and_the_candidate(candidate_handoff, prior_runtime_handoff):
+    """R2 (runtime fc034d14) added an opt-in operation key to the atomic route. With the key off (the default executor and the base
+    `AtomicAuthorityEffectDestination`, which is what these four scenarios use), nothing may change: run record, result, and every row and
+    the schema of the destination database are compared byte for byte between runtime d90a2cae (the revision before R2) and the candidate,
+    same Control Plane, same inputs. The one masked value is the destination's wall-clock `failure_records_v1.created_at`.
+    4 scenarios x 3 files = 12 pairs."""
+    pairs = [(prior_runtime_handoff / sc / name, candidate_handoff / sc / name)
+             for sc in HANDOFF_SCENARIOS for name in ("run-record.json", "result.json", "atomic-tables.json")]
+    assert len(pairs) == 12
+    different = [str(b.relative_to(b.parents[1])) for b, c in pairs if b.read_bytes() != c.read_bytes()]
+    section("atomic_default_path_byte_identity_runtime_d90a2cae_vs_candidate", {"file_pairs": len(pairs), "identical": len(pairs) - len(different),
+                                                                              "different": different})
+    assert different == [], f"atomic default path (key off) changed between d90a2cae and the candidate: {different}"
+
+
 def test_orchestrator_pins_versus_candidate_default_path_is_additive_only(candidate_handoff, pinned):
     """Report-only: what moving the orchestrator's control-plane and runtime pins would change on the DEFAULT path.
 

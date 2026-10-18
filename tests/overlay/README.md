@@ -31,6 +31,7 @@ Python 3.11+, `pytest`, `pydantic>=2.12`, `cryptography>=43`. Check out the revi
 | `COGNOUS_OVERLAY_VERIFIER`, `_ODES` | cognous-open-control-stack-verifier; open-decision-evidence-standard (validators) |
 | `COGNOUS_OVERLAY_REPLAY`, `_EVIDENCE_PACK` | Replay and Evidence Pack (probe only) |
 | `COGNOUS_OVERLAY_BASELINE_CONTROL_PLANE`, `_RUNTIME` | optional: the programme-2 starting revisions (`5f5ae03f`, `10a11d03`) for the byte comparison |
+| `COGNOUS_OVERLAY_PRIOR_RUNTIME` | optional: the runtime before the opt-in atomic operation key (`d90a2cae`), for the key-off byte comparison of the default atomic route |
 | `COGNOUS_OVERLAY_PIN_CONTROL_PLANE`, `_RUNTIME` | optional: the orchestrator's own pins, for the report-only pin-move delta |
 | `COGNOUS_OVERLAY_REPORT_DIR` | where `overlay-report.json` (denominators, outcomes) and the retained bundles are written |
 
@@ -44,7 +45,7 @@ python -m pytest -q -p no:cacheprovider tests/overlay
 |---|---|
 | `_handoff_runner.py` | The orchestrator's accepted route (Atomic claim) with its own harness: applied, held (no grant), lost acknowledgement then reconcile, duplicate dispatch |
 | `_journal_runner.py` | Control Plane journal mode through the Runtime's Control Plane adapter, tenant-bound orchestrator inputs, profile sets `off`, `identity`, `freshness`, `rule_revision`, `full` |
-| `_destination_runner.py` | Lost acknowledgement then late landing, the renewal race, and renewal during a lost acknowledgement or after late landing (F-5 probe), on the Runtime's delayed-commit and operation-identity destinations; what the atomic route can carry |
+| `_destination_runner.py` | Lost acknowledgement then late landing, the renewal race, and renewal during a lost acknowledgement or after late landing (F-5 probe), on the Runtime's delayed-commit and operation-identity destinations; on the atomic route, the default classes (key off) and the opt-in `operation_identity=True` executor with `OperationIdentityAtomicAuthorityEffectDestination` (F-5); what the atomic route can carry |
 | `_assurance_runner.py` | Witness digest (drop and rewrite rejected, append not vouched for) and holder inventory (flagged class holds without one) |
 | `_replay_runner.py` | Replay and Evidence Pack outcomes for the same records |
 | `test_overlay_handoff.py` | Default path on candidates; byte identity against the programme-2 baseline; pin-move delta; profiles on and off |

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       control_plane_ref:
-        description: Control Plane revision to test (branch, tag or SHA of cogno-us/cognous-control-plane)
+        description: Control Plane revision to test (branch, tag or full 40-character SHA of cogno-us/cognous-control-plane)
         default: main
       runtime_ref:
         description: Execution Runtime revision to test (cogno-us/cognous-execution-runtime)
@@ -48,48 +48,38 @@ jobs:
           ref: 8d1572d4f926c968a8704cb912a6e9d49166f74a
           path: .overlay/action-manifest
           persist-credentials: false
-      - name: Checkout candidate Control Plane
-        uses: actions/checkout@v4
-        with:
-          repository: cogno-us/cognous-control-plane
-          ref: ${{ inputs.control_plane_ref }}
-          path: .overlay/control-plane
-          persist-credentials: false
-      - name: Checkout candidate Execution Runtime
-        uses: actions/checkout@v4
-        with:
-          repository: cogno-us/cognous-execution-runtime
-          ref: ${{ inputs.runtime_ref }}
-          path: .overlay/runtime
-          persist-credentials: false
-      - name: Checkout candidate independent verifier
-        uses: actions/checkout@v4
-        with:
-          repository: cogno-us/cognous-open-control-stack-verifier
-          ref: ${{ inputs.verifier_ref }}
-          path: .overlay/verifier
-          persist-credentials: false
-      - name: Checkout ODES (contract validators)
-        uses: actions/checkout@v4
-        with:
-          repository: cogno-us/open-decision-evidence-standard
-          ref: ${{ inputs.odes_ref }}
-          path: .overlay/odes
-          persist-credentials: false
-      - name: Checkout candidate Replay
-        uses: actions/checkout@v4
-        with:
-          repository: cogno-us/cognous-replay-bundle
-          ref: ${{ inputs.replay_ref }}
-          path: .overlay/replay
-          persist-credentials: false
-      - name: Checkout candidate Evidence Pack
-        uses: actions/checkout@v4
-        with:
-          repository: cogno-us/cognous-governance-evidence-pack
-          ref: ${{ inputs.evidence_pack_ref }}
-          path: .overlay/evidence-pack
-          persist-credentials: false
+      # Candidate revisions come from the dispatch inputs. They are passed through the environment (never interpolated into a script),
+      # restricted to a plain ref or SHA, and fetched from the named cogno-us repository by a shell step, so a ref cannot carry
+      # anything but a revision name.
+      - name: Fetch the candidate revisions named by the inputs
+        env:
+          CONTROL_PLANE_REF: ${{ inputs.control_plane_ref }}
+          RUNTIME_REF: ${{ inputs.runtime_ref }}
+          VERIFIER_REF: ${{ inputs.verifier_ref }}
+          ODES_REF: ${{ inputs.odes_ref }}
+          REPLAY_REF: ${{ inputs.replay_ref }}
+          EVIDENCE_PACK_REF: ${{ inputs.evidence_pack_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          fetch() {  # fetch <directory> <repository> <ref>
+            local dir="$1" repo="$2" ref="$3"
+            if ! [[ "$ref" =~ ^[A-Za-z0-9._/-]{1,100}$ ]] || [[ "$ref" == -* ]]; then
+              echo "refusing ref '$ref' for $repo: only letters, digits, . _ / - are accepted" >&2
+              exit 1
+            fi
+            git init -q ".overlay/$dir"
+            git -C ".overlay/$dir" remote add origin "https://github.com/cogno-us/$repo"
+            git -C ".overlay/$dir" fetch -q --depth 1 origin "$ref"
+            git -C ".overlay/$dir" checkout -q FETCH_HEAD
+          }
+          mkdir -p .overlay
+          fetch control-plane cognous-control-plane "$CONTROL_PLANE_REF"
+          fetch runtime cognous-execution-runtime "$RUNTIME_REF"
+          fetch verifier cognous-open-control-stack-verifier "$VERIFIER_REF"
+          fetch odes open-decision-evidence-standard "$ODES_REF"
+          fetch replay cognous-replay-bundle "$REPLAY_REF"
+          fetch evidence-pack cognous-governance-evidence-pack "$EVIDENCE_PACK_REF"
       # Comparison points. Baseline: the programme-2 starting revisions (default-path byte comparison). Pins: the orchestrator's own.
       - name: Checkout programme-2 baseline Control Plane
         uses: actions/checkout@v4

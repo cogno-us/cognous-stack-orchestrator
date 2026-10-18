@@ -109,3 +109,97 @@ def test_atomic_route_cannot_carry_an_operation_id(candidate_destinations):
     assert s["atomic_destination_has_delayed_commit_surface"] is False
     assert s["atomic_executor_mentions_operation_id"] is False and s["atomic_destination_mentions_operation_id"] is False
     section("atomic_route_surface", s)
+
+
+# ---- F-5 probe on the atomic route (AtomicLocalControlPlaneExecutor + AtomicAuthorityEffectDestination) ----------------------------
+#
+# Setup common to these tests: the same orchestrator inputs; Control Plane profile set `off`, `identity` (operation identity on) or `full`;
+# a per-grant effect cap of 1 (the shipped manifest) or 2 (a grant that legitimately allows two effects). The atomic destination has no
+# operation id, no delayed-commit mode and no dedupe: it commits claim, budget, attempt and effect in one SQLite transaction, so there
+# is no "in flight" state to renew into. The renewal re-approves under a new approval reference and moves the authority row to
+# revision 2 through the destination's own writer (`set_grant_status`); `landed_same_approval` renews without a new approval reference.
+
+ATOMIC_SETS = ("off", "identity", "full")
+
+
+def atomic(r, profile, cap, case):
+    return r[f"atomic_renewal[profile={profile},cap={cap},case={case}]"]
+
+
+def test_atomic_route_stale_claim_is_refused_after_renewal(candidate_destinations):
+    """Renewal while claim 1 is issued and not yet executed: the stale claim cannot commit (the authority row moved to revision 2, the
+    destination re-validates it inside the commit transaction), r2 commits. One effect, with the profiles off or on and at either cap."""
+    r = results(candidate_destinations)
+    for profile in ATOMIC_SETS:
+        for cap in (1, 2):
+            s = atomic(r, profile, cap, "outstanding")
+            assert s["d2_result"] == "authorized" and s["d2_effect_id"] != s["d1_effect_id"]
+            assert s["provision2"]["raised"] is None and s["r2"]["status"] == "executed"
+            assert s["r1_late"]["status"] == "denied" and s["r1_late"]["error"] == "authoritative grant state invalid"
+            assert s["ledger_final"] == [s["d2_effect_id"]] and s["claim1_state"] == "issued"
+            assert s["budget"]["used_effects"] == 1
+    section("atomic_renewal_outstanding_claim", {"variants": 6, "effects_each": 1})
+
+
+def test_atomic_route_cap_of_one_blocks_the_second_effect_after_landing(candidate_destinations):
+    """Renewal after claim 1 committed (acknowledged or acknowledgement lost): with the shipped cap of 1 the shared per-grant budget
+    refuses r2, so one effect. This is the cap acting, not an operation guard: see the known-gap test below for cap 2."""
+    r = results(candidate_destinations)
+    for profile in ATOMIC_SETS:
+        for case in ("landed", "lost_ack"):
+            s = atomic(r, profile, 1, case)
+            assert s["ledger_before_renewal"] == [s["d1_effect_id"]]
+            assert s["d2_result"] == "authorized" and s["provision2"]["raised"] is None
+            assert s["r2"]["status"] == "denied" and s["r2"]["error"] == "authoritative effect budget exhausted"
+            assert s["ledger_final"] == [s["d1_effect_id"]] and s["budget"] == {"max_effects": 1, "used_effects": 1}
+            if case == "lost_ack":  # blind retry of the same claim is refused: the claim is consumed
+                assert s["r1"]["status"] == "unknown" and s["r1"]["observed_state"] == "applied"
+                assert s["retry1"]["status"] == "denied" and s["retry1"]["error"] == "execution claim is not usable"
+                assert s["claim1_state"] == "consumed"
+    section("atomic_renewal_cap_one", {"variants": 6, "effects_each": 1, "barrier": "per-grant budget"})
+
+
+def test_KNOWN_GAP_atomic_route_double_commits_after_renewal_when_the_cap_allows_two(candidate_destinations):
+    """KNOWN GAP (F-5, atomic route): two effects for ONE operation, including with operation identity ON.
+
+    The accepted atomic route has no operation id (see test_atomic_route_cannot_carry_an_operation_id). After claim 1 has committed
+    (acknowledged, or acknowledgement lost), a renewal gives a new grant revision, a new effect_id and a new claim; the destination's
+    only cross-revision barrier is the shared per-grant budget (`grant:<grant_id>`). With a grant that allows two effects the budget has
+    room, so r2 commits a second effect. The Control Plane's operation identity profile is on in `identity` and `full`, the renewal is
+    recorded (1 operation), and the atomic destination still commits: nothing writes an attempt join on this route (0 joins), so the
+    Control Plane cannot know the first effect landed.
+
+    This test asserts today's behaviour so the overlay stays green; any change (a guard on this route, a changed budget key) FAILS it and
+    must be recorded in the gap report. It is not a claim that the route is wrong for a single-effect grant: with cap 1 see above.
+    """
+    r = results(candidate_destinations)
+    for profile in ATOMIC_SETS:
+        for case in ("landed", "lost_ack"):
+            s = atomic(r, profile, 2, case)
+            assert s["d2_result"] == "authorized" and s["d2_effect_id"] != s["d1_effect_id"]
+            assert s["provision2"]["raised"] is None
+            assert s["r2"]["status"] == "executed" and s["r2"]["acknowledged"] is True
+            assert sorted(s["ledger_final"]) == sorted([s["d1_effect_id"], s["d2_effect_id"]]), "KNOWN GAP: two effects for one operation"
+            assert s["budget"] == {"max_effects": 2, "used_effects": 2}
+            assert s["attempt_joins"] == 0, "the atomic route writes no attempt join"
+            assert s["operations"] == (1 if profile in ("identity", "full") else 0)
+            if case == "lost_ack":
+                assert s["retry1"]["status"] == "denied" and s["retry1"]["error"] == "execution claim is not usable"
+    on = atomic(r, "identity", 2, "landed")
+    section("atomic_renewal_KNOWN_GAP_F5", {"effects_for_one_operation_profile_off": len(atomic(r, "off", 2, "landed")["ledger_final"]),
+                                           "effects_for_one_operation_identity_on": len(on["ledger_final"]),
+                                           "effects_for_one_operation_full": len(atomic(r, "full", 2, "landed")["ledger_final"]),
+                                           "cap1_effects": 1, "attempt_joins_identity_on": on["attempt_joins"]})
+
+
+def test_atomic_route_renewal_without_a_new_approval_cannot_be_provisioned(candidate_destinations):
+    """Renewing the grant revision while keeping the old approval reference: the destination refuses to provision the renewed claim
+    (`existing authoritative approval state rejects claim provisioning`), so no second effect even with cap 2. The destination exposes no
+    writer that moves an approval to a new grant revision (only its status), so a renewal on this route has to bring a new approval."""
+    r = results(candidate_destinations)
+    for profile in ATOMIC_SETS:
+        s = atomic(r, profile, 2, "landed_same_approval")
+        assert s["d2_result"] == "authorized"
+        assert s["provision2"]["raised"] == "PermissionError: existing authoritative approval state rejects claim provisioning"
+        assert "r2" not in s and s["ledger_final"] == [s["d1_effect_id"]]
+    section("atomic_renewal_same_approval", {"variants": 3, "effects_each": 1})

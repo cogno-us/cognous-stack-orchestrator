@@ -15,6 +15,15 @@ Scenarios (each reports what happened; assertions are in test_overlay_destinatio
                                         while r1 is outstanding, then r1 lands late (F-5 probe, adapter route).
   renewal_after_landing[identity=..]    r1 lands late, then the grant is renewed and a decision for the same operation is attempted.
   atomic_route_surface                  whether the orchestrator's accepted atomic route can carry an operation id at all.
+  atomic_renewal[profile=..,cap=..,case=..]
+                                        F-5 probe on the ATOMIC route (AtomicLocalControlPlaneExecutor + AtomicAuthorityEffectDestination,
+                                        the route the orchestrator accepts). Control Plane profile sets off | identity | full, per-grant
+                                        effect cap 1 (the shipped manifest) or 2 (a grant that legitimately allows two effects), and
+                                        three cases: `outstanding` (claim 1 issued and not executed when the grant is renewed, then the
+                                        stale claim is executed late), `lost_ack` (claim 1 committed, acknowledgement lost, blind retry,
+                                        then renewal), `landed` (claim 1 applied, then renewal). The renewal re-approves under a new
+                                        approval reference and moves the authority row to revision 2 through the destination's own
+                                        `set_grant_status`. `landed_same_approval` renews without a new approval reference.
 """
 from __future__ import annotations
 
@@ -23,6 +32,7 @@ import json
 import os
 import pathlib
 import shutil
+import sqlite3
 import sys
 import tempfile
 
@@ -146,6 +156,93 @@ def renewal_after_landing(work, identity: bool, out: pathlib.Path) -> dict:
             "ledger_final": [r["effect_id"] for r in flow.ledger()], **_joins(flow)}
 
 
+def _atomic_world(work, profile_set: str, cap: int):
+    """The orchestrator's atomic route over the same inputs as the adapter-route probes (profile set and cap are the variables)."""
+    from engine.atomic_local_control_plane_executor import AtomicLocalControlPlaneExecutor
+    from engine.local_authority_effect import AtomicAuthorityEffectDestination
+    flow = J.Flow(work, profile_set, wide=(cap == 2))
+    assert flow.d1.result == "authorized", flow.d1.reasons
+    dest = AtomicAuthorityEffectDestination(work / "atomic", clock=lambda: flow.NOW)
+    executor = AtomicLocalControlPlaneExecutor(workflow=flow.f, destination=dest, policy=flow.executor.policy)
+    return flow, dest, executor
+
+
+def _atomic_ledger(dest) -> list[str]:
+    with sqlite3.connect(dest.path) as conn:
+        return [row[0] for row in conn.execute("SELECT effect_id FROM effects ORDER BY effect_id")]
+
+
+def _atomic_renew(flow, dest, identity: bool, *, new_approval: bool):
+    """The authority side renews the grant: new revision published, the authority row moved by the destination's own writer, and
+    (new_approval) a fresh approval reference bound to revision 2. Returns the renewed decision."""
+    flow.publish_revision("2")
+    if new_approval:
+        ctx = flow.r.contexts[flow.tba.PROFILE]
+        grant = ctx["grant"]
+        old = grant["approval_refs"][0]
+        new = old.rsplit("-", 1)[0] + "-2"
+        approval = flow.r.approvals[old].model_copy(deep=True)
+        approval.approval_ref = new
+        flow.r.approvals[new] = approval
+        grant["approval_refs"] = [new]
+        ra = ctx["runtime_authority"]
+        for item in ra["required_inputs"]:
+            if item["input_id"] == old:
+                item["input_id"] = new
+        ra["required_inputs"] = sorted(ra["required_inputs"], key=lambda x: (x["input_type"], x["input_id"]))
+        ra["required_inputs_digest"] = flow.cp.commitment(ra["required_inputs"])
+        flow.tra.bind_approval(flow.r, flow.f.runtime_authority_profile or flow.cfg)
+    if identity:
+        flow.f.record_renewal(J.OPERATION, to_revision="2", written_by=flow.tba.ISSUER, now=flow.NOW)
+    dest.set_grant_status(flow.d1.binding.grant_id, status="active", revision="2")
+    return flow.f.decide(flow.p, now=flow.NOW)
+
+
+def _atomic_try(fn) -> dict:
+    """Run a step; a raised refusal is an outcome (recorded as data), a returned result is summarised."""
+    try:
+        res = fn()
+    except Exception as exc:
+        return {"raised": f"{type(exc).__name__}: {exc}"}
+    return {"raised": None, "status": getattr(res, "status", None), "error": getattr(res, "error", None),
+            "acknowledged": getattr(res, "acknowledged", None), "observed_state": getattr(res, "observed_state", None)}
+
+
+def atomic_renewal(work, profile_set: str, cap: int, case: str, out: pathlib.Path) -> dict:
+    flow, dest, executor = _atomic_world(work, profile_set, cap)
+    identity = profile_set in ("identity", "full")
+    grant_id = flow.d1.binding.grant_id
+    claim1 = executor.provision_claim(proposal=flow.p, decision=flow.d1, now=flow.NOW)
+    env1 = flow.envelope(flow.d1)
+    out_doc: dict = {"d1_effect_id": flow.d1.effect_id}
+    if case == "lost_ack":
+        out_doc["r1"] = _atomic_try(lambda: executor.execute(envelope=env1, claim_id=claim1.claim_id, simulate="lost_ack"))
+        out_doc["retry1"] = _atomic_try(lambda: executor.execute(envelope=env1, claim_id=claim1.claim_id))
+    elif case in ("landed", "landed_same_approval"):
+        out_doc["r1"] = _atomic_try(lambda: executor.execute(envelope=env1, claim_id=claim1.claim_id))
+    out_doc["ledger_before_renewal"] = _atomic_ledger(dest)
+    d2 = _atomic_renew(flow, dest, identity, new_approval=(case != "landed_same_approval"))
+    out_doc.update({"d2_result": d2.result, "d2_reasons": list(d2.reasons), "d2_effect_id": d2.effect_id})
+    prov = {"raised": None}
+    claim2 = None
+    if d2.result == "authorized":
+        try:
+            claim2 = executor.provision_claim(proposal=flow.p, decision=d2, now=flow.NOW)
+        except Exception as exc:
+            prov = {"raised": f"{type(exc).__name__}: {exc}"}
+    out_doc["provision2"] = prov
+    if claim2 is not None:
+        env2 = flow.envelope(d2)
+        out_doc["r2"] = _atomic_try(lambda: executor.execute(envelope=env2, claim_id=claim2.claim_id))
+    if case == "outstanding":
+        out_doc["r1_late"] = _atomic_try(lambda: executor.execute(envelope=env1, claim_id=claim1.claim_id))
+    out_doc.update({"ledger_final": _atomic_ledger(dest), "budget": dest.budget_state(f"grant:{grant_id}"),
+                    "claim1_state": dest.claim_state(claim1.claim_id), **_joins(flow)})
+    tag = f"atomic_renewal_{profile_set}_cap{cap}_{case}"
+    flow.keep(out, tag, {"decision": flow.d1.result})
+    return out_doc
+
+
 def atomic_route_surface() -> dict:
     from engine.atomic_local_control_plane_executor import AtomicLocalControlPlaneExecutor
     from engine.local_authority_effect import AtomicAuthorityEffectDestination
@@ -181,6 +278,13 @@ def main(out: pathlib.Path) -> dict:
         result[f"renewal_during_lost_ack[identity={tag}]"] = renewal_during_lost_ack(work / f"rdla-{tag}", identity, out)
         result[f"renewal_after_landing[identity={tag}]"] = renewal_after_landing(work / f"ral-{tag}", identity, out)
     result["atomic_route_surface"] = atomic_route_surface()
+    for profile_set in ("off", "identity", "full"):
+        for cap in (1, 2):
+            for case in ("outstanding", "lost_ack", "landed"):
+                result[f"atomic_renewal[profile={profile_set},cap={cap},case={case}]"] = atomic_renewal(
+                    work / f"atomic-{profile_set}-{cap}-{case}", profile_set, cap, case, out)
+        result[f"atomic_renewal[profile={profile_set},cap=2,case=landed_same_approval]"] = atomic_renewal(
+            work / f"atomic-{profile_set}-2-same", profile_set, 2, "landed_same_approval", out)
     shutil.rmtree(work, ignore_errors=True)
     (out / "results.json").write_text(json.dumps(result, indent=1, sort_keys=True, default=str) + "\n", encoding="utf-8")
     return result

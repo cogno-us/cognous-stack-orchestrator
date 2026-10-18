@@ -34,7 +34,7 @@ fails on any refusal outside a named finding and now pins the exact abstentions,
 | Piece (where it lives) | Exercised across components in the orchestrator's default CI | Overlay result |
 |---|---|---|
 | `rule_revision` profile (Control Plane #44) | No | Applied and held refund through the Runtime adapter: effect id unchanged, top-level member `rule_revisions` added (2 bundles). Replay accepts it only with its rows dropped (F-4) |
-| Operation identity (Control Plane #45, Runtime #109) | No | Renewal race with the orchestrator's inputs: profile off, **2 effects** for one operation; profile on, **1 effect**, first attempt refused `operation_already_committed`, 2 attempt joins (F-5 for the atomic route) |
+| Operation identity (Control Plane #45, Runtime #109) | No | Renewal race with the orchestrator's inputs: profile off, **2 effects** for one operation; profile on, **1 effect**, first attempt refused `operation_already_committed`, 2 attempt joins. **Atomic route (the accepted route): no operation id; with a cap of 2, renewal after the first effect landed commits a second effect even with the profile on (F-5, known gap); cap 1 blocks it through the per-grant budget** |
 | Freshness / clocks / reaper (Control Plane #47) | No | Profile on adds clock members inside existing rows, no new top-level list; applied and held hold as with the profile off. Replay and the verifier refuse these records (F-3, F-4) |
 | Witness digest (Control Plane #49) | No | 3 retained records (atomic route, journal, journal with all profiles): untouched verifies; appended row reported unwitnessed, not intact; dropped row `witness_ledger_shrunk`; rewritten row `witness_ledger_head_mismatch` (3 of 3 each). Atomic-route record covers only `decisions` and `resolution_checks` (F-2) |
 | Holder inventory (Control Plane #49) | No | Flagged action class without an inventory: `hold` / `holder_inventory_missing`, 0 ledger rows; with an inventory enumerating a holder: authorized, applied, 1 ledger row, effect id unchanged |
@@ -114,15 +114,19 @@ where two components do not yet meet.
   Pack then refuses that bundle (`retained Replay import_reports differs from accepted reconstruction`). The orchestrator's atomic-route
   records are refused under P4 (`resolution journal missing`) and accepted only under pre-journal labels. So the freshness block (#39) cannot be reached end to
   end and P3 (retention of profile members) is not on Replay main.
-- **F-5 (runtime route; adapter-route probe added, atomic route still unprobed).** The opt-in operation-identity and delayed-commit destinations are reachable only through the Control Plane adapter
+- **F-5 (runtime route; FINDING on the atomic route).** The opt-in operation-identity and delayed-commit destinations are reachable only through the Control Plane adapter
   route (`PinnedControlPlaneExecutor`). The orchestrator's accepted route (`AtomicLocalControlPlaneExecutor` with
   `AtomicAuthorityEffectDestination`) has no operation-id parameter, is not an operation-identity or delayed-commit class, and its lost
-  acknowledgement uses `simulate="lost_ack"` instead. Probed on the adapter route with the runtime's own destination classes (synthetic, no network), two new overlay tests
-  beyond the existing renewal race: (a) r1's commit deferred (acknowledgement lost), grant renewed, r2 attempted while r1 is outstanding, r1 lands late: **profile off, 2 effects** for
+  acknowledgement uses `simulate="lost_ack"` instead.
+  *Adapter route* (overlay tests from #105): r1's commit deferred (acknowledgement lost), grant renewed, r2 attempted while r1 is outstanding, r1 lands late: **profile off, 2 effects** for
   one operation; **operation identity on, 1 effect** (r2 commits; r1's late landing is refused by the destination guard, `PermissionError: operation_already_committed`). The control plane does
-  not hold r2 while r1 is outstanding; the destination guard is the only barrier. (b) r1 lands late, then the grant is renewed and the operation decided again: **profile off, 2 effects**;
-  **identity on, 1 effect** (r2 fails `operation_already_committed`). No double commit with the identity profile on, so no new finding; the profile-off double commit is the legacy gap the profile exists
-  to close. Still **not run** on the orchestrator's atomic route (whether the renewal race double-commits there, with the per-grant cap possibly masking it, is unknown).
+  not hold r2 while r1 is outstanding; the destination guard is the only barrier. r1 lands late, then renewal and a second decision: profile off 2 effects; identity on 1 effect (r2 fails `operation_already_committed`).
+  *Atomic route* (this PR, overlay `atomic_renewal[...]`, ran at Control Plane `128eaa5e`, Runtime `d90a2cae`; 3 Control Plane profile sets `off`/`identity`/`full` x per-grant cap 1 or 2 x 3 cases, plus a same-approval variant):
+  - Claim 1 issued and **not yet executed** when the grant is renewed: the stale claim cannot commit (`authoritative grant state invalid`; the authority row moved to revision 2 and the destination re-validates inside the commit transaction), r2 commits. **1 effect** at either cap, profiles off or on. The atomic commit has no in-flight state, so the adapter-route race (r1 outstanding inside the destination) has no counterpart here.
+  - Claim 1 **committed** (acknowledged, or acknowledgement lost) and then the grant renewed with a new approval reference: a blind retry of claim 1 is refused (`execution claim is not usable`, claim `consumed`). Renewed decision and claim 2 are issued normally (`authorized`, claim provisioned). With the shipped **cap of 1** r2 is refused (`authoritative effect budget exhausted`): **1 effect, but the barrier is the shared per-grant budget (`grant:<grant_id>`), not an operation guard**.
+  - Same sequence with a grant that legitimately allows **two effects (cap 2)**: r2 commits. **2 effects for one operation, with the Control Plane's operation identity profile on** (`identity` and `full`: the renewal is recorded, 1 operation row, and the decision is `authorized`), and with it off. The atomic route writes no attempt join (0), so the Control Plane has no record that the first effect landed and the destination has no operation key to refuse the second. **This is a double commit on the accepted route that operation identity does not reach: finding.** It is masked only while the grant's cap is 1.
+  - Renewing the revision without a new approval reference cannot be provisioned (`existing authoritative approval state rejects claim provisioning`, no second effect at cap 2), because the destination exposes no writer that moves an approval to a new grant revision (only its status). So on this route a renewal must bring a new approval, and that is the path that double-commits.
+  The overlay asserts today's behaviour under the label KNOWN GAP (`test_KNOWN_GAP_atomic_route_double_commits_after_renewal_when_the_cap_allows_two`), so it stays green and any change in behaviour (a guard on this route, a per-revision budget key, an operation key) fails it. Not fixed here: the change belongs to the Execution Runtime (an operation key or per-operation budget on `AtomicAuthorityEffectDestination`, forwarded by `AtomicLocalControlPlaneExecutor`), opt-in. Limits of the probe: synthetic, one SQLite file, same host, a renewal that the test performs through the destination's own `set_grant_status` and a new approval row it adds to the resolver; it does not show what a deployment's renewal workflow does.
 - **F-6 (runtime pin move, orchestrator side; fixed in the orchestrator, no pin moved).** Runtime `2ee2e525` ("Move cross-component tests and harnesses to cognous-stack-qualification") removed
   `tests/test_local_authority_effect.py`, `tests/test_refund_intent.py`, `tests/test_safe_executor.py` and `tests/test_w2_stop_recovery.py` (they now live under
   `suites/cognous-execution-runtime/tests/` in `cognous-stack-qualification`). `tests/scenarios/customer_refunds/live_components/runtime/test_actual_runtime.py` imported
@@ -163,8 +167,19 @@ candidate revisions; no file in this repository was edited):
 | `o6-q6` reconciliation | 23 passed |
 | `o5-d-b` upstream runtime | 7 passed, 1 failed (collection fixed, F-6; the failure is the exact-SHA assertion that moves with the pin) |
 
-Not run: `o5-d-combined`, `o5-e-combined` (composition of the above), `o6-q2`, `o6-q5` (needs the hub root), `recovery-resolution-inspection`
-(its own pins).
+Run later (same disposable-copy method; Control Plane `128eaa5e`, Runtime `d90a2cae`, Replay `d0e7b368`, Evidence Pack `fa7cd7e`, hub `afca5bb`, every pin constant in the copy replaced; Python 3.13 locally, the workflows use 3.11/3.12):
+
+| Suite | Result |
+|---|---|
+| `o5-d-combined` (control, runtime, evidence, O5-C sandbox regression) | 12 + 8 + 7 + (8, 14, 10 unittest) all passed |
+| `o5-e-combined` (connected handoff, connected Replay, contracts) | 9 passed, 12 passed, 34 passed |
+| `o6-q2` (`COGNOUS_O6_Q2_RUNTIME_CANDIDATE` set to the candidate; runtime-side revocation controls; GAX generation fence and attestation custody at their own pins) | 9 + 12 + 34 passed; 11 passed; 6 passed; 10 passed |
+| `o6-q5` release admission (hub `afca5bb`) | status `hold`, `not_authorized`, `effects: disabled`; 14 passed |
+| `recovery-resolution-inspection` | **fails at candidate, passes at its own pins (33 passed)**; see below |
+
+These passes depend on the copy's pin constants being replaced consistently (the exact-SHA assertions and `source_mapping_v1.json` then agree with the substituted revisions); they show the suites' behaviour does not break on the candidates, not that the pins may move without the coordinator's batch.
+
+`recovery-resolution-inspection` finding (not fixed; it is a pin-coupling property, not a defect in the orchestrator): the three components it composes bind each other by exact revision. (1) Replay `recovery_inspection.py` accepts only Runtime `8e7d634c` (`RUNTIME_REVISION`), so substituting the candidate Runtime gives `unsupported Runtime revision` and the adapter holds. (2) Evidence Pack `recovery_inspection.py` accepts only Replay `696e7bc2` (`REPLAY_REVISION`), so substituting the candidate Replay gives `unsupported Replay revision` (18 failed, 15 passed). (3) The Replay-side helper `tests/recovery_inspection_checks.py` is no longer shipped by Replay main (it lives at `suites/cognous-replay-bundle/tests/` in qualification, as in F-6), so collection fails with `FileNotFoundError`; and the Runtime module `engine/revocation_closeout.py` changed (blob `5488756e` to `6d02e060`, the disposition sweep now takes the write lock before reading) while the helper pins the old blob. The module blobs of Replay and Evidence Pack `recovery_inspection.py` are unchanged at main. So this suite stays on its own pins until Replay and Evidence Pack are re-released with the new Runtime revision in their allow-lists; the orchestrator can vendor the helper (as F-6 did) but cannot move these pins alone.
 
 ## How to reproduce
 

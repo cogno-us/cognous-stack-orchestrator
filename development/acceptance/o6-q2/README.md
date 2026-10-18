@@ -1,5 +1,7 @@
 # O6-Q2 candidate qualification scope
 
+> **Historical record.** The revisions named below are those accepted at the time of this run; they are not the current stack pins. Current pinned code revisions: Control Plane `3cd17ead6b24301290ad1e50ae4b22bbd93c12fb`, Replay `46e8bd7c263f5075cac3a7a9defcb265384f40e9`, Evidence Pack `4fbbd34418f8dce7a536879d7bd0378737179f47` (see `.github/workflows/overlay-candidate-components.yml` defaults).
+
 Issue: [#74](https://github.com/cogno-us/cognous-stack-orchestrator/issues/74). This workflow checks actual source revisions in three independent jobs, never alters `component-lock.json` and never activates optional profiles.
 
 ## Freeze and execution

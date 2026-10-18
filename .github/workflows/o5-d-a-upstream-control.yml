@@ -8,17 +8,22 @@ on:
       - '.github/workflows/o5-d-a-upstream-control.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
 jobs:
   qualify:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
       - name: Checkout orchestrator
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Checkout pinned Action Manifest
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cogno-us/cognous-action-manifest
           ref: 8d1572d4f926c968a8704cb912a6e9d49166f74a
@@ -26,7 +31,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout pinned Control Plane
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cogno-us/cognous-control-plane
           ref: 3cd17ead6b24301290ad1e50ae4b22bbd93c12fb
@@ -34,7 +39,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.11'
 

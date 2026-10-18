@@ -21,8 +21,9 @@ from dataclasses import dataclass
 import hashlib
 import json
 import re
+import time
 from typing import Any, Mapping, Protocol, Sequence
-from urllib import request
+from urllib import error as urlerror, request
 
 REGISTRY_REVISION = "d5e45d275cb301d9684b543e93b05997991d1cf2"
 REGISTRY_SOURCE_PATH = "chain/contracts/IndexProtocol.sol"
@@ -33,6 +34,20 @@ RECONSTRUCTOR_SOURCE_BLOB = "797f46414acef9936e8c572f9a52e9d45e26126a"
 HEX20 = re.compile(r"^0x[0-9a-fA-F]{40}$")
 HEX32 = re.compile(r"^0x[0-9a-fA-F]{64}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+MAX_RPC_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_OBSERVED_LOGS = 2000
+DEFAULT_OBSERVATION_DEADLINE_SECONDS = 120.0
+
+
+class _NoRedirect(request.HTTPRedirectHandler):
+    """Refuse every redirect: a redirected RPC is a different, unconfigured endpoint."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+        raise urlerror.HTTPError(req.full_url, code, "redirect_refused", headers, fp)
+
+
+_OPENER = request.build_opener(_NoRedirect)
 
 
 class RegistryObservationError(RuntimeError):
@@ -98,11 +113,12 @@ class TrustedRegistrySource:
 class UrlJsonRpcClient:
     """Minimal read-only JSON-RPC transport. Credentials are not embedded or logged.
 
-    The URL is passed to urllib unchanged: no scheme, host, redirect or
+    The URL is passed to urllib unchanged: no scheme, host or
     certificate-pinning policy is enforced here, so ``http://`` URLs and URLs
-    carrying userinfo (``user:pass@host``) are accepted as given. Endpoint and
-    transport policy is part of operational trust (issue #30, HOLD) and is not
-    established by this adapter.
+    carrying userinfo (``user:pass@host``) are accepted as given. Redirects are
+    refused and each response body is capped at ``MAX_RPC_RESPONSE_BYTES``.
+    Remaining endpoint and transport policy is part of operational trust
+    (issue #30, HOLD) and is not established by this adapter.
     """
 
     def __init__(self, url: str, *, timeout_seconds: float = 10.0):
@@ -122,8 +138,13 @@ class UrlJsonRpcClient:
             headers={"content-type": "application/json"},
         )
         try:
-            with request.urlopen(req, timeout=self._timeout) as response:
-                payload = json.loads(response.read().decode("utf-8"))
+            with _OPENER.open(req, timeout=self._timeout) as response:
+                raw = response.read(MAX_RPC_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_RPC_RESPONSE_BYTES:
+                raise RegistryObservationError("rpc_response_too_large")
+            payload = json.loads(raw.decode("utf-8"))
+        except RegistryObservationError:
+            raise
         except Exception as exc:
             raise RegistryObservationError("rpc_unavailable") from exc
         if not isinstance(payload, Mapping) or payload.get("error") is not None:
@@ -222,8 +243,24 @@ def _log_content(log: Mapping[str, Any]) -> tuple[str | None, tuple[str, ...] | 
     )
 
 
-def observe_authenticated_registry(*, trusted: TrustedRegistrySource, rpc: JsonRpc) -> dict[str, Any]:
-    """Observe one deployment without producing grants, effects, or truth status."""
+def observe_authenticated_registry(
+    *,
+    trusted: TrustedRegistrySource,
+    rpc: JsonRpc,
+    deadline_seconds: float = DEFAULT_OBSERVATION_DEADLINE_SECONDS,
+) -> dict[str, Any]:
+    """Observe one deployment without producing grants, effects, or truth status.
+
+    The whole observation is bounded by ``deadline_seconds`` (checked between
+    RPC calls) and by ``MAX_OBSERVED_LOGS``; exceeding either is an explicit
+    unknown result, never an acceptance.
+    """
+
+    started = time.monotonic()
+
+    def _check_deadline() -> None:
+        if time.monotonic() - started > deadline_seconds:
+            raise RegistryObservationError("observation_deadline_exceeded")
 
     trust_model = _trust_model(trusted)
     config_errors = trusted.validate()
@@ -275,14 +312,18 @@ def observe_authenticated_registry(*, trusted: TrustedRegistrySource, rpc: JsonR
         )
         if not isinstance(logs, list):
             return _failure(["malformed_log_response"], trust_model=trust_model)
+        if len(logs) > MAX_OBSERVED_LOGS:
+            return _unknown("log_count_cap_exceeded", trust_model=trust_model)
 
         errors: list[str] = []
         verified_logs: list[dict[str, Any]] = []
         seen: set[tuple[str, str, int]] = set()
         last_order: tuple[int, int, int] | None = None
         checked_blocks: dict[int, str] = {}
+        receipts: dict[str, Any] = {}
 
         for raw in logs:
+            _check_deadline()
             if not isinstance(raw, Mapping):
                 errors.append("malformed_log")
                 continue
@@ -327,7 +368,11 @@ def observe_authenticated_registry(*, trusted: TrustedRegistrySource, rpc: JsonR
             if block_hash != identity[0]:
                 errors.append("log_block_hash_mismatch")
 
-            receipt = rpc.call("eth_getTransactionReceipt", [identity[1]])
+            if identity[1] in receipts:
+                receipt = receipts[identity[1]]
+            else:
+                receipt = rpc.call("eth_getTransactionReceipt", [identity[1]])
+                receipts[identity[1]] = receipt
             if not isinstance(receipt, Mapping):
                 errors.append("receipt_unavailable")
                 continue

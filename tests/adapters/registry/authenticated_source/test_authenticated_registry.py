@@ -227,5 +227,52 @@ class AuthenticatedRegistryTests(unittest.TestCase):
         self.assertIn("invalid_trusted_chain_id", got["reasons"])
 
 
+    def test_log_count_cap_is_unknown_not_accepted(self):
+        logs = [log_entry(logIndex=hex(i)) for i in range(module.MAX_OBSERVED_LOGS + 1)]
+        got = module.observe_authenticated_registry(trusted=trusted(), rpc=FakeRpc(logs=logs))
+        self.assertEqual(got["status"], "unknown")
+        self.assertEqual(got["reasons"], ["log_count_cap_exceeded"])
+
+    def test_receipt_fetched_once_per_transaction(self):
+        rpc = FakeRpc(logs=[log_entry(), log_entry(logIndex="0x1")],
+                      receipt_value=receipt(logs=[log_entry(), log_entry(logIndex="0x1")]))
+        calls = []
+        orig = rpc.call
+        rpc.call = lambda m, p: (calls.append(m), orig(m, p))[1]
+        got = module.observe_authenticated_registry(trusted=trusted(), rpc=rpc)
+        self.assertEqual(got["status"], "accepted_provisional")
+        self.assertEqual(calls.count("eth_getTransactionReceipt"), 1)
+
+    def test_deadline_exceeded_is_unknown(self):
+        got = module.observe_authenticated_registry(
+            trusted=trusted(), rpc=FakeRpc(), deadline_seconds=-1.0
+        )
+        self.assertEqual(got["status"], "unknown")
+        self.assertEqual(got["reasons"], ["observation_deadline_exceeded"])
+
+    def test_redirects_are_refused(self):
+        import urllib.error
+        handler = module._NoRedirect()
+        with self.assertRaises(urllib.error.HTTPError):
+            handler.redirect_request(
+                module.request.Request("http://a.invalid/"), None, 302, "Found", {}, "http://b.invalid/"
+            )
+
+    def test_oversized_rpc_response_is_refused(self):
+        class Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self, n): return b"x" * n
+        client = module.UrlJsonRpcClient("http://a.invalid/")
+        orig = module._OPENER.open
+        module._OPENER.open = lambda req, timeout=None: Resp()
+        try:
+            with self.assertRaises(module.RegistryObservationError) as cm:
+                client.call("eth_chainId", [])
+        finally:
+            module._OPENER.open = orig
+        self.assertEqual(str(cm.exception), "rpc_response_too_large")
+
+
 if __name__ == "__main__":
     unittest.main()

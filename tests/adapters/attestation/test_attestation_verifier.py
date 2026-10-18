@@ -338,5 +338,17 @@ class PinnedUpstreamIntegrationTests(unittest.TestCase):
         )
 
 
+class ShapeBoundTests(unittest.TestCase):
+    def test_deep_and_wide_attestations_are_bounded_without_recursion(self):
+        deep = cur = []
+        for _ in range(5000):
+            nxt = []
+            cur.append(nxt)
+            cur = nxt
+        self.assertEqual(bridge._bounded_shape(deep), "too_deep")
+        self.assertEqual(bridge._bounded_shape(list(range(bridge._MAX_ATTESTATION_NODES + 1))), "too_large")
+        self.assertEqual(bridge._bounded_shape({"a": [1, 2, {"b": 3}]}), "ok")
+
+
 if __name__ == "__main__":
     unittest.main()

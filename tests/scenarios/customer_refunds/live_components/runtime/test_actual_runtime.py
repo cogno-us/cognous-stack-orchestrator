@@ -24,9 +24,20 @@ from engine.atomic_local_control_plane_executor import AtomicLocalControlPlaneEx
 from engine.local_authority_effect import AtomicAuthorityEffectDestination
 from engine.refund_intent import RefundIntentRegistry
 from engine.safe_executor import snapshot_envelope
-from test_local_authority_effect import APPROVAL, BASE, effect_rows, policy, setup_atomic
-from test_refund_intent import fixture as intent_fixture
-from test_w2_stop_recovery import _attempt_rows, _blocked_worker
+
+# The runtime's own test modules supply these helpers while they exist (the pinned default: unchanged). Runtime 2ee2e525 moved those
+# tests to cognous-stack-qualification, so on a newer runtime checkout they are gone; then the copies vendored from the accepted pin
+# (with provenance in each file header) are used instead. Only a missing test module triggers the fallback.
+try:
+    from test_local_authority_effect import APPROVAL, BASE, effect_rows, policy, setup_atomic
+    from test_refund_intent import fixture as intent_fixture
+    from test_w2_stop_recovery import _attempt_rows, _blocked_worker
+except ModuleNotFoundError as exc:
+    if exc.name not in {"test_local_authority_effect", "test_refund_intent", "test_w2_stop_recovery", "test_safe_executor"}:
+        raise
+    from vendored_runtime_helpers.local_authority_effect_helpers import APPROVAL, BASE, effect_rows, policy, setup_atomic
+    from vendored_runtime_helpers.refund_intent_helpers import fixture as intent_fixture
+    from vendored_runtime_helpers.w2_stop_recovery_helpers import _attempt_rows, _blocked_worker
 
 
 def _head(path: Path) -> str:

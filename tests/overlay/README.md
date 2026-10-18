@@ -3,7 +3,7 @@
 Synthetic integration scenarios that run the orchestrator's own inputs against **candidate** component revisions (Control Plane
 main, Runtime main, the independent verifier, ODES, Replay, Evidence Pack) without touching what the default CI pins. Nothing here
 runs on a pull request or push. It is started by hand through the
-[workflow](../../.github/workflows/overlay-candidate-components.yml) (`workflow_dispatch`, inputs default to `main`) or locally.
+[workflow](../../.github/workflows/overlay-candidate-components.yml) (`workflow_dispatch`; inputs are full 40-hex commit SHAs and default to the orchestrator's current pins; a branch or tag name is refused) or locally.
 
 **Claim boundary.** This is engineering evidence about synthetic records on named revisions. It selects no release (README claim 1),
 grants nothing, authorizes no effect, and does not establish operational deployment assurance (claim 4; issue

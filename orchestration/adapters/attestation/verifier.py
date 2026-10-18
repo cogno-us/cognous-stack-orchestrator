@@ -105,6 +105,28 @@ def _valid_expected(expected: Mapping[str, Any]) -> bool:
     )
 
 
+_MAX_ATTESTATION_DEPTH = 32
+_MAX_ATTESTATION_NODES = 20000
+
+
+def _bounded_shape(value: Any) -> str:
+    """Iterative walk (no recursion) that bounds nesting depth and node count before serialization."""
+    stack = [(value, 1)]
+    nodes = 0
+    while stack:
+        item, depth = stack.pop()
+        nodes += 1
+        if nodes > _MAX_ATTESTATION_NODES:
+            return "too_large"
+        if depth > _MAX_ATTESTATION_DEPTH:
+            return "too_deep"
+        if isinstance(item, Mapping):
+            stack.extend((v, depth + 1) for v in item.values())
+        elif isinstance(item, (list, tuple)):
+            stack.extend((v, depth + 1) for v in item)
+    return "ok"
+
+
 def verify_attestation_binding(
     *,
     verifier_checkout: str | os.PathLike[str],
@@ -152,11 +174,16 @@ def verify_attestation_binding(
     ):
         return _base(status="unknown", reason="trust_snapshot_pin_mismatch")
 
+    shape = _bounded_shape(attestation)
+    if shape == "too_deep":
+        return _base(status="rejected", reason="malformed_attestation")
+    if shape == "too_large":
+        return _base(status="rejected", reason="attestation_too_large")
     try:
         attestation_bytes = json.dumps(
             attestation, separators=(",", ":"), ensure_ascii=True
         ).encode("ascii")
-    except (TypeError, UnicodeEncodeError, ValueError):
+    except (TypeError, UnicodeEncodeError, ValueError, RecursionError):
         return _base(status="rejected", reason="malformed_attestation")
     if len(attestation_bytes) > 64 * 1024:
         return _base(status="rejected", reason="attestation_too_large")

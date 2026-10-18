@@ -205,5 +205,5 @@ These passes depend on the copy's pin constants being replaced consistently (the
 ## How to reproduce
 
 `tests/overlay/README.md` lists the variables. In CI: dispatch [Candidate component overlay](../.github/workflows/overlay-candidate-components.yml) with the
-refs to test (defaults: `main`). The workflow has no pull-request or push trigger, edits no pin, and uploads `overlay-report.json`
+refs to test (full commit SHAs; the defaults are the orchestrator's current pins, 2026-10-18 update). The workflow has no pull-request or push trigger, edits no pin, and uploads `overlay-report.json`
 (denominators, outcomes, revisions) as an artifact. It stays a report: a failure means a refusal outside the findings above.

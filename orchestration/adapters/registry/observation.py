@@ -284,7 +284,7 @@ def observe_registry_snapshot(
                 errors.append("observation_regressed_before_checkpoint")
                 reorg_status = "regressed"
             else:
-                reorg_status = "checkpoint_consistent_at_observed_boundary"
+                reorg_status = "unknown"  # parent hashes are not verified: checkpoint is not linked to the observed block
 
     if errors:
         return _failure(*errors, reorg_status=reorg_status)
@@ -300,7 +300,7 @@ def observe_registry_snapshot(
         "status": "accepted_provisional",
         "reasons": [],
         "source_identity": "matches_trusted_configuration",
-        "observation": "source_consistent_read_only_projection",
+        "observation": "shape_checked_projection",
         "reorg_status": reorg_status,
         "chain_finality": finality_status,
         "content_bindings": content_results,

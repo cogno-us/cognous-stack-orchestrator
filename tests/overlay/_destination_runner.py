@@ -11,6 +11,9 @@ Scenarios (each reports what happened; assertions are in test_overlay_destinatio
   lost_ack_then_land[identity=off|on]   delayed-commit destination loses the acknowledgement; absent is read; retry is refused;
                                         the late commit lands; one effect.
   renewal_race[identity=off|on]         r1 is inside the destination, the grant is renewed, r2 commits, r1 lands late.
+  renewal_during_lost_ack[identity=..]  r1's commit is deferred (acknowledgement lost, unknown), the grant is renewed, r2 is attempted
+                                        while r1 is outstanding, then r1 lands late (F-5 probe, adapter route).
+  renewal_after_landing[identity=..]    r1 lands late, then the grant is renewed and a decision for the same operation is attempted.
   atomic_route_surface                  whether the orchestrator's accepted atomic route can carry an operation id at all.
 """
 from __future__ import annotations
@@ -85,6 +88,64 @@ def renewal_race(work, identity: bool, out: pathlib.Path) -> dict:
     }
 
 
+def _renew(flow, identity: bool):
+    flow.publish_revision("2")
+    if identity:
+        flow.f.record_renewal(J.OPERATION, to_revision="2", written_by=flow.tba.ISSUER, now=flow.NOW)
+    return flow.f.decide(flow.p, now=flow.NOW)
+
+
+def _land(flow) -> str | None:
+    """Let the provider process the outstanding commit; return the refusal the destination raised, if any (recorded as data)."""
+    try:
+        flow.dest.land()
+    except Exception as exc:  # the destination's own guard refusing a late commit is an outcome, not a runner failure
+        return f"{type(exc).__name__}: {exc}"
+    return None
+
+
+def _joins(flow) -> dict:
+    rec = flow.f.records.load()
+    return {"operations": len(getattr(rec, "operations", []) or []), "attempt_joins": len(getattr(rec, "attempt_joins", []) or [])}
+
+
+def renewal_during_lost_ack(work, identity: bool, out: pathlib.Path) -> dict:
+    """F-5 probe on the adapter route: a renewal while the first commit is outstanding (delayed-commit destination)."""
+    flow = J.Flow(work, "identity" if identity else "off", delayed=True, wide=True)
+    assert flow.d1.result == "authorized", flow.d1.reasons
+    flow.dest.defer_next_commit()
+    r1 = flow.run()
+    in_flight_after_r1 = len(flow.dest.in_flight)
+    d2 = _renew(flow, identity)
+    r2 = flow.run(d2) if d2.result == "authorized" else None
+    in_flight_before_land = len(flow.dest.in_flight)
+    ledger_before_land = [r["effect_id"] for r in flow.ledger()]
+    land_refusal = _land(flow)
+    ledger_after_land = [r["effect_id"] for r in flow.ledger()]
+    flow.keep(out, f"renewal_during_lost_ack_identity_{'on' if identity else 'off'}", {"decision": flow.d1.result})
+    return {"d1_effect_id": flow.d1.effect_id, "d2_result": d2.result, "d2_reasons": list(d2.reasons), "d2_effect_id": d2.effect_id,
+            "r1": J._res(r1), "r2": J._res(r2) if r2 else None, "in_flight_after_r1": in_flight_after_r1,
+            "in_flight_before_land": in_flight_before_land, "ledger_before_land": ledger_before_land,
+            "land_refusal": land_refusal, "in_flight_after_land": len(flow.dest.in_flight),
+            "ledger_after_land": ledger_after_land, **_joins(flow)}
+
+
+def renewal_after_landing(work, identity: bool, out: pathlib.Path) -> dict:
+    """F-5 probe on the adapter route: r1 lands late, then the grant is renewed and the same operation is decided again."""
+    flow = J.Flow(work, "identity" if identity else "off", delayed=True, wide=True)
+    assert flow.d1.result == "authorized", flow.d1.reasons
+    flow.dest.defer_next_commit()
+    r1 = flow.run()
+    land_refusal = _land(flow)
+    ledger_after_land = [r["effect_id"] for r in flow.ledger()]
+    d2 = _renew(flow, identity)
+    r2 = flow.run(d2) if d2.result == "authorized" else None
+    flow.keep(out, f"renewal_after_landing_identity_{'on' if identity else 'off'}", {"decision": flow.d1.result})
+    return {"d1_effect_id": flow.d1.effect_id, "d2_result": d2.result, "d2_reasons": list(d2.reasons), "d2_effect_id": d2.effect_id,
+            "r1": J._res(r1), "r2": J._res(r2) if r2 else None, "land_refusal": land_refusal, "ledger_after_land": ledger_after_land,
+            "ledger_final": [r["effect_id"] for r in flow.ledger()], **_joins(flow)}
+
+
 def atomic_route_surface() -> dict:
     from engine.atomic_local_control_plane_executor import AtomicLocalControlPlaneExecutor
     from engine.local_authority_effect import AtomicAuthorityEffectDestination
@@ -117,6 +178,8 @@ def main(out: pathlib.Path) -> dict:
         tag = "on" if identity else "off"
         result[f"lost_ack_then_land[identity={tag}]"] = lost_ack_then_land(work / f"lost-{tag}", identity, out)
         result[f"renewal_race[identity={tag}]"] = renewal_race(work / f"race-{tag}", identity, out)
+        result[f"renewal_during_lost_ack[identity={tag}]"] = renewal_during_lost_ack(work / f"rdla-{tag}", identity, out)
+        result[f"renewal_after_landing[identity={tag}]"] = renewal_after_landing(work / f"ral-{tag}", identity, out)
     result["atomic_route_surface"] = atomic_route_surface()
     shutil.rmtree(work, ignore_errors=True)
     (out / "results.json").write_text(json.dumps(result, indent=1, sort_keys=True, default=str) + "\n", encoding="utf-8")

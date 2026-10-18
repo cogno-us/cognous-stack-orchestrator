@@ -2,7 +2,7 @@
 
 Report only. The verifier imports nothing from the stack; it is run here as a subprocess against records the orchestrator's own
 harness (atomic-claim route) and the journal-mode adapter route produced from the orchestrator's inputs (the pinned Action Manifest
-example and the tenant-bound proposal). A refusal of a real orchestrator record is a FINDING: these tests fail on it for the
+example and the tenant-bound proposal). A refusal of a real orchestrator record outside the named findings is a FINDING: these tests fail on it for the
 default path and never loosen the verifier's verdict. For profile-on records they pin only the SHAPE of the current outcome.
 
 What an accepted record proves: that its own fields are mutually consistent and recompute. It does not prove that the decision was
@@ -111,20 +111,26 @@ def _refusals(report: dict) -> dict[str, set[str]]:
     return {c["check_id"]: {f["code"] for f in c.get("findings", [])} for c in report["checks"] if c["verdict"] == "refuted"}
 
 
-# FINDING F-2 (verifier main from 2597196, "a ledger row needs an attempt"). On the orchestrator's accepted route (Atomic claim) the
-# Control Plane record carries no attempt row: the runtime keeps the attempt in its own SQLite destination. A ledger row projected from
-# that destination therefore has "no attempt row in the record". Before 2597196 the verifier accepted these records with the
-# projected ledger (23 of 23 checks confirmed on 867402f); from 2597196 it refuses them on exactly this check. Neither is wrong
-# on its own terms; the route and the verifier's ledger model do not yet meet.
-KNOWN_F2 = {"v4.ledger.rows-agree-with-attempts": {"ledger_row_without_attempt"}}
+def _abstentions(report: dict) -> dict[str, str]:
+    """check_id -> the verifier's own reason (extensions.x-reason) for every check that could not be made."""
+    return {c["check_id"]: (c.get("extensions") or {}).get("x-reason", "") for c in report["checks"] if c["verdict"] == "could_not_check"}
+
+
+# FINDING F-2 (narrowed, verifier main 5ed1ffb, PR #9). On the orchestrator's accepted route (Atomic claim) the Control Plane record
+# carries no attempt row: the runtime keeps the attempt in its own SQLite destination. The verifier first accepted these records with
+# a projected ledger (867402f), then refused them (from 2597196, "a ledger row needs an attempt"), and since 5ed1ffb abstains:
+# `v4.ledger.rows-agree-with-attempts` is could_not_check with reason `attempt_rows_not_in_record`, 0 refutations. The route and the
+# verifier's ledger model still do not meet; the verifier now says so instead of refusing. Expectations below are exact.
+F2_ABSTAIN = {"v4.ledger.rows-agree-with-attempts": "attempt_rows_not_in_record"}
 
 
 def test_runtime_route_records_with_an_orchestrator_projected_ledger(overlay, odes, candidate_handoff):
-    """Handoff (atomic route) bundles with the orchestrator's SQLite-to-ledger projection: the V4 receipt checks now run.
+    """Handoff (atomic route) bundles with the orchestrator's SQLite-to-ledger projection (finding F-2, narrowed).
 
-    4 records; the held record has no effect rows (an empty ledger). The report must validate and add up. Refusals are tolerated ONLY
-    as exactly the F-2 pattern (and never on the held record); any other refusal is a new finding and fails. The rows record what the
-    verifier did at the revision under test.
+    4 records; the held record has no effect rows (an empty ledger). Exact expectations at verifier 5ed1ffb: the three records with an
+    effect abstain on exactly `v4.ledger.rows-agree-with-attempts` (reason `attempt_rows_not_in_record`) with 0 refutations (exit 3);
+    the held record is fully confirmed (exit 0, nothing abstained). Any refusal, and any other abstention or reason, fails: it is a new
+    finding or a regression, never something to tolerate. The report must validate against ODES and its denominators must add up.
     """
     rows = []
     for sc in HANDOFF:
@@ -133,17 +139,17 @@ def test_runtime_route_records_with_an_orchestrator_projected_ledger(overlay, od
         ledger.write_text(json.dumps(ledger_projection(bundle / "result.json", json.loads((bundle / "result.json").read_text())),
                                      indent=1, sort_keys=True) + "\n", encoding="utf-8")
         code, report, out = verify(overlay, bundle, ledger=ledger)
-        assert code in (0, 1, 3), out
         assert odes["verification-report"].validate(report) == []
         assert_report_denominators(report)
-        refusals = _refusals(report)
-        for check_id, codes in refusals.items():
-            assert check_id in KNOWN_F2 and codes <= KNOWN_F2[check_id], f"{sc}: NEW finding {check_id} {codes}\n{out}"
+        refusals, abstentions = _refusals(report), _abstentions(report)
+        assert refusals == {}, f"{sc}: refusal outside a named finding (F-2 is an abstention now)\n{out}"
         if sc == "held_no_grant":
-            assert refusals == {}, "the held record has no ledger rows and must not be refused"
-        rows.append({"bundle": sc, "exit": code, "refused": {k: sorted(v) for k, v in refusals.items()}, **tally(report)})
+            assert code == 0 and abstentions == {}, f"{sc}: held record (empty ledger) must be fully confirmed: exit {code} {abstentions}"
+        else:
+            assert code == 3 and abstentions == F2_ABSTAIN, f"{sc}: expected exactly {F2_ABSTAIN}, got exit {code} {abstentions}\n{out}"
+        rows.append({"bundle": sc, "exit": code, "refused": {k: sorted(v) for k, v in refusals.items()}, "abstained": abstentions, **tally(report)})
     section("verifier_runtime_route_with_projected_ledger_F2", {"records": len(rows), "rows": rows,
-                                                                "f2_observed": any(r["refused"] for r in rows)})
+                                                                "f2_abstained": sum(1 for r in rows if r["abstained"])})
 
 
 def test_profile_on_records_report_only(overlay, odes, candidate_journal):
@@ -208,21 +214,25 @@ def test_odes_operation_identity_sidecar_over_the_identity_records(odes, candida
     assert all(not r["violations"] for r in rows), rows
 
 
-# FINDING F-1 (recorded in development/programme-2-gap-report.md). The runtime's destination observation carries `operation_digest`
-# inside `destination_state`; the verifier's ledger row shape is closed and has no such member, and its observations-agree check
-# demands destination_state == ledger row. So an adapter-route record whose observations are `applied` can satisfy only one of
-# the two: omit the member and `v4.ledger.observations-agree` refuses, include it and `v1.structure.ledger` refuses.
-KNOWN_F1 = {"v4.ledger.observations-agree": {"observation_differs_from_ledger_row"}, "v1.structure.ledger": {"ledger_shape"}}
+# FINDING F-1 (narrowed, verifier main 5ed1ffb, PR #9). The runtime's destination observation carries `operation_digest` inside
+# `destination_state`; the verifier's ledger row shape is closed and has no such member. Projection A (ledger row omits the member):
+# `v4.ledger.observations-agree` used to refuse (`observation_differs_from_ledger_row`); since 5ed1ffb it abstains with reason
+# `destination_state_has_members_outside_ledger_row`, 0 refutations. Projection B (ledger row keeps the member) is still refused at
+# `v1.structure.ledger` / `ledger_shape`, by design (the ledger row shape is closed).
+F1_A_ABSTAIN = {"v4.ledger.observations-agree": "destination_state_has_members_outside_ledger_row"}
+F1_B_REFUSAL = {"v1.structure.ledger": {"ledger_shape"}}
 
 
 def test_adapter_route_records_with_projected_ledger_finding_f1(overlay, odes, candidate_journal, candidate_destinations):
-    """Adapter-route default-path records (profile off) with the orchestrator's projected ledger, both projections.
+    """Adapter-route default-path records (profile off) with the orchestrator's projected ledger, both projections (finding F-1, narrowed).
 
-    Records: journal applied, journal held, lost-ack-then-land, renewal race (legacy: two effects for one operation). For each,
-    variant A drops `operation_digest` from the ledger row, variant B keeps it. The report must validate and its denominators must
-    add up. Refusals are tolerated ONLY if they are exactly the F-1 pattern; any other refusal is a new finding and fails. The
-    tolerance is data, not approval: the rows below show what the verifier did. If the verifier or the runtime later removes the
-    mismatch, the refusals disappear and this test still passes.
+    Records: journal applied, journal held, lost-ack-then-land, renewal race (legacy: two effects for one operation). Variant A drops
+    `operation_digest` from the ledger row, variant B keeps it. Exact expectations at verifier 5ed1ffb:
+    - A, with an effect: exit 3, 0 refutations, abstains on exactly `v4.ledger.observations-agree`
+      (`destination_state_has_members_outside_ledger_row`).
+    - B, with an effect: exit 1, refused on exactly `v1.structure.ledger` / `ledger_shape` (by design).
+    - the held record (empty ledger): exit 0, nothing abstained or refused, both variants.
+    Any other refusal, abstention or reason fails. The report must validate and add up.
     """
     bundles = [candidate_journal / "off/applied", candidate_journal / "off/held",
                candidate_destinations / "lost_ack_then_land_identity_off", candidate_destinations / "renewal_race_identity_off"]
@@ -237,13 +247,18 @@ def test_adapter_route_records_with_projected_ledger_finding_f1(overlay, odes, c
             path = bundle / f"ledger-{variant}.json"
             path.write_text(json.dumps(ledger, indent=1, sort_keys=True) + "\n", encoding="utf-8")
             code, report, out = verify(overlay, bundle, ledger=path)
-            assert code in (0, 1, 3), out
             assert odes["verification-report"].validate(report) == [], f"{bundle.name}/{variant}: report does not validate"
             assert_report_denominators(report)
-            refusals = _refusals(report)
-            for check_id, codes in refusals.items():
-                assert check_id in KNOWN_F1 and codes <= KNOWN_F1[check_id], f"{bundle.name}/{variant}: NEW finding {check_id} {codes}\n{out}"
+            refusals, abstentions = _refusals(report), _abstentions(report)
+            where = f"{bundle.name}/{variant}"
+            if not result["effect_rows"]:
+                assert (code, refusals) == (0, {}) and abstentions == {}, f"{where}: empty ledger must be fully confirmed: {code} {refusals} {abstentions}\n{out}"
+            elif variant.startswith("A"):
+                assert code == 3 and refusals == {} and abstentions == F1_A_ABSTAIN, f"{where}: expected exactly {F1_A_ABSTAIN}: {code} {refusals} {abstentions}\n{out}"
+            else:
+                assert code == 1 and refusals == F1_B_REFUSAL, f"{where}: expected exactly {F1_B_REFUSAL}: {code} {refusals}\n{out}"
             rows.append({"bundle": f"{bundle.parent.name}/{bundle.name}", "variant": variant, "exit": code, "effects_in_ledger": len(result["effect_rows"]),
-                         "refused": {k: sorted(v) for k, v in refusals.items()}, **tally(report)})
+                         "refused": {k: sorted(v) for k, v in refusals.items()}, "abstained": abstentions, **tally(report)})
     section("verifier_adapter_route_projected_ledger_F1", {"records": len(bundles), "runs": len(rows), "rows": rows,
-                                                           "f1_observed": any(r["refused"] for r in rows)})
+                                                           "f1_abstained_projection_a": sum(1 for r in rows if r["abstained"] and r["variant"].startswith("A")),
+                                                           "f1_refused_projection_b": sum(1 for r in rows if r["refused"] and r["variant"].startswith("B"))})

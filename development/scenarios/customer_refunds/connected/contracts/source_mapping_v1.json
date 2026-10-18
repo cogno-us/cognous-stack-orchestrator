@@ -3,10 +3,10 @@
   "accepted_orchestrator_base": "2d032e686c7f6a1f45fdaa810087e066666ccb24",
   "sources": {
     "action_manifest": {"repository": "cogno-us/cognous-action-manifest", "revision": "8d1572d4f926c968a8704cb912a6e9d49166f74a", "role": "declared action/proposal identity only"},
-    "control_plane": {"repository": "cogno-us/cognous-control-plane", "revision": "3cd17ead6b24301290ad1e50ae4b22bbd93c12fb", "role": "decision and binding source"},
-    "execution_runtime": {"repository": "cogno-us/cognous-execution-runtime", "revision": "11de097c450d3ad4d89f9add41b00e38e7cc2c7c", "role": "execution-attempt source; never settlement"},
-    "replay": {"repository": "cogno-us/cognous-replay-bundle", "revision": "46e8bd7c263f5075cac3a7a9defcb265384f40e9", "role": "reconstruction only"},
-    "evidence_pack": {"repository": "cogno-us/cognous-governance-evidence-pack", "revision": "4fbbd34418f8dce7a536879d7bd0378737179f47", "role": "review evidence only"}
+    "control_plane": {"repository": "cogno-us/cognous-control-plane", "revision": "6093aca7b945698e89c0d8ac7c75306375e1a298", "role": "decision and binding source"},
+    "execution_runtime": {"repository": "cogno-us/cognous-execution-runtime", "revision": "62a5cc156ecb439b4103b757fd265f276bb30374", "role": "execution-attempt source; never settlement"},
+    "replay": {"repository": "cogno-us/cognous-replay-bundle", "revision": "c8e665bd1936e4da90f6a324b486a320934c4bff", "role": "reconstruction only"},
+    "evidence_pack": {"repository": "cogno-us/cognous-governance-evidence-pack", "revision": "cde3f1f1cf517d5663afb33ce88c123aae779757", "role": "review evidence only"}
   },
   "non_inference": [
     "No source record establishes merchant authority unless an authenticated current grant is separately present.",

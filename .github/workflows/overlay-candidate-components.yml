@@ -8,22 +8,22 @@ on:
     inputs:
       control_plane_ref:
         description: Control Plane revision to test (full 40-character commit SHA of cogno-us/cognous-control-plane)
-        default: 3cd17ead6b24301290ad1e50ae4b22bbd93c12fb
+        default: 6093aca7b945698e89c0d8ac7c75306375e1a298
       runtime_ref:
         description: Execution Runtime revision to test (full commit SHA of cogno-us/cognous-execution-runtime)
-        default: 11de097c450d3ad4d89f9add41b00e38e7cc2c7c
+        default: 62a5cc156ecb439b4103b757fd265f276bb30374
       verifier_ref:
         description: Independent verifier revision to test (full commit SHA of cogno-us/cognous-open-control-stack-verifier)
-        default: f99a65430a15760977c25f356c304d6037ed5925
+        default: 31708c3313e31df3b6a583215216372f25c9a489
       odes_ref:
         description: ODES revision supplying the contract validators (full commit SHA of cogno-us/open-decision-evidence-standard)
-        default: cdf704c88bb6542e3f1121a5ceb6cb03fc7d6a52
+        default: bff8307cc437d16e977be4d5ff389f1dd3bf7991
       replay_ref:
         description: Replay revision (full commit SHA of cogno-us/cognous-replay-bundle)
-        default: 46e8bd7c263f5075cac3a7a9defcb265384f40e9
+        default: c8e665bd1936e4da90f6a324b486a320934c4bff
       evidence_pack_ref:
         description: Evidence Pack revision (full commit SHA of cogno-us/cognous-governance-evidence-pack)
-        default: 4fbbd34418f8dce7a536879d7bd0378737179f47
+        default: cde3f1f1cf517d5663afb33ce88c123aae779757
 
 permissions:
   contents: read
@@ -107,14 +107,14 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cogno-us/cognous-control-plane
-          ref: 3cd17ead6b24301290ad1e50ae4b22bbd93c12fb
+          ref: 6093aca7b945698e89c0d8ac7c75306375e1a298
           path: .overlay/pin-control-plane
           persist-credentials: false
       - name: Checkout the orchestrator's pinned Execution Runtime
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cogno-us/cognous-execution-runtime
-          ref: 11de097c450d3ad4d89f9add41b00e38e7cc2c7c
+          ref: 62a5cc156ecb439b4103b757fd265f276bb30374
           path: .overlay/pin-runtime
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-EXECUTION_RUNTIME_REVISION = "11de097c450d3ad4d89f9add41b00e38e7cc2c7c"
+EXECUTION_RUNTIME_REVISION = "62a5cc156ecb439b4103b757fd265f276bb30374"
 PROFILE = "urn:cognous:orchestrator:customer-refund-runtime-qualification:0.1.0"
 
 

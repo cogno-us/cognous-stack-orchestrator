@@ -118,10 +118,14 @@ where two components do not yet meet.
   `AtomicAuthorityEffectDestination`) has no operation-id parameter, is not an operation-identity or delayed-commit class, and its lost
   acknowledgement uses `simulate="lost_ack"` instead. So the renewal race that profile closes on the adapter route is **untested** on the orchestrator's
   route (not run; whether it double-commits there is unknown, and the per-grant cap may mask it).
-- **F-6 (runtime pin move, orchestrator side).** Runtime `2ee2e525` ("Move cross-component tests and harnesses to cognous-stack-qualification") removed
-  `tests/test_local_authority_effect.py`, which `tests/scenarios/customer_refunds/live_components/runtime/test_actual_runtime.py` imports. With the runtime
-  pin moved, that file fails at collection (ran: `ModuleNotFoundError: No module named 'test_local_authority_effect'`). The orchestrator needs its own
-  helper or a qualification-repository import before that pin can move.
+- **F-6 (runtime pin move, orchestrator side; fixed in the orchestrator, no pin moved).** Runtime `2ee2e525` ("Move cross-component tests and harnesses to cognous-stack-qualification") removed
+  `tests/test_local_authority_effect.py`, `tests/test_refund_intent.py`, `tests/test_safe_executor.py` and `tests/test_w2_stop_recovery.py` (they now live under
+  `suites/cognous-execution-runtime/tests/` in `cognous-stack-qualification`). `tests/scenarios/customer_refunds/live_components/runtime/test_actual_runtime.py` imported
+  helpers from the first, second and fourth, so with the runtime pin moved it failed at collection (`ModuleNotFoundError: No module named 'test_local_authority_effect'`).
+  Fix, inside the orchestrator only: the test module still imports the runtime's own helper modules when they exist (so the pinned default `da9f5290` is unchanged: 8 passed before
+  and after), and falls back to copies vendored from that pin under `vendored_runtime_helpers/` (helper functions only, verbatim, source file sha256 and the two rewritten imports
+  recorded in each header). Ran against runtime `d90a2cae` and Control Plane `128eaa5e`: collection succeeds and 7 of 8 pass; the 8th is
+  `test_exact_upstream_revisions_are_exercised`, which asserts the old SHA constants and belongs to the coordinator's pin batch. No runtime change is needed.
 - **F-7 (default path between the accepted pin and main, additive, before programme 2).** Control Plane `d489f85` and `2a17b2b` (2026-10-13 to 15): default
   run records gain `resolution_checks`, `input_time_floors` and the empty lists `closeouts`, `refusals`; decisions gain `resolution_inputs`,
   `time_source`, `operation_horizon`; the runtime's denied-result `observation` changed from `{}` to `null`. Effect ids and outcomes are
@@ -135,7 +139,7 @@ in the orchestrator's **default** CI:
 | Pin | Where it is held | Move to | Notes |
 |---|---|---|---|
 | Control Plane `e66e5f16` | `o5-d-a`, `o5-d-b`, `o5-d-combined`, `o5-e-a`, `o5-e-combined`, `o6-q2`, `o6-q4` workflows and the `CONTROL_PLANE_PIN` constants in `connected_handoff.py`, `control/qualification.py`, `live_components/control/upstream_control.py`, `trace_contract.py`, `source_mapping_v1.json` | at least `3f6a7668` for freshness, `128eaa5e` for witness and holder inventory, `83b49b5e` for `acp run`, `9d00f38` for operation identity, `87f0233` for rule revision | The harness is unchanged by the move (below) |
-| Execution Runtime `da9f5290` and `1b0a9e32` | `o5-d-b`, `o5-d-combined`, `o5-e-a`, `o5-e-combined`, `o6-q2`, `o6-q3`, `o6-q4`, `o6-q6`; `COGNOUS_O6_Q2_RUNTIME_CANDIDATE` and the `1b0a9e32` assertions in the O6 tests | `d90a2cae` (operation identity `63a7c0fe`, delayed commit `6bfb77ee`, adapter forwarding `d90a2cae`) | Blocked on F-6 for `o5-d-b` |
+| Execution Runtime `da9f5290` and `1b0a9e32` | `o5-d-b`, `o5-d-combined`, `o5-e-a`, `o5-e-combined`, `o6-q2`, `o6-q3`, `o6-q4`, `o6-q6`; `COGNOUS_O6_Q2_RUNTIME_CANDIDATE` and the `1b0a9e32` assertions in the O6 tests | `d90a2cae` (operation identity `63a7c0fe`, delayed commit `6bfb77ee`, adapter forwarding `d90a2cae`) | `o5-d-b` no longer blocked (F-6): its two SHA constants and the workflow ref move with the pin |
 | Replay `2069a0ba` | `o5-d-c`, `o5-d-combined`, `o5-e-b`, `o5-e-combined`, `o6-q2`, `qualification.py` constants | not yet useful | Replay lists no programme-2 revision and drops profile members (F-4) |
 | Evidence Pack `87293cfc` | same workflows and constants | `fa7cd7e` once Replay retains the members | Freshness block cannot be reached before then |
 | Verifier, ODES validators | not pinned by the orchestrator | new pins if they are to run in default CI | Candidate pins would be `07c2eb86` and `56edb3f9` |
@@ -152,7 +156,7 @@ candidate revisions; no file in this repository was edited):
 | `o6-q3` three-profile trace | 2 passed |
 | `o6-q4` authenticated fence | 4 passed |
 | `o6-q6` reconciliation | 23 passed |
-| `o5-d-b` upstream runtime | collection error (F-6) |
+| `o5-d-b` upstream runtime | 7 passed, 1 failed (collection fixed, F-6; the failure is the exact-SHA assertion that moves with the pin) |
 
 Not run: `o5-d-combined`, `o5-e-combined` (composition of the above), `o6-q2`, `o6-q5` (needs the hub root), `recovery-resolution-inspection`
 (its own pins).

@@ -29,6 +29,12 @@ Result of the overlay at these revisions: **31 tests, 31 passed**, under Python 
 patterns below were observed; it does not mean the findings are resolved. The verifier moved while this work ran (`867402f3`, then `07c2eb86`, then `5ed1ffb`) and the F-1 and F-2 outcomes changed with it: the overlay
 fails on any refusal outside a named finding and now pins the exact abstentions, which is how those changes were noticed.
 
+Update at verifier `adb8927` (PR #11, with tier V3 from PR #10, `05afab84`): the overlay is 38 tests locally, all passing (F-1 projection B now accepted; see F-1). A new
+test runs `cognous-verify --witness` over `acp witness publish` of 8 retained default-path records (4 atomic-route, 2 journal, 2 destination): all 48 of 48 tier V3 checks
+confirmed on the clean records (6 per record); after one value in the first `decisions` row is changed, with the witness untouched, 8 of 8 records are refused by
+`v3.witness.ledger-heads` with exactly `witness_ledger_head_mismatch` (on 4 of them the changed field is an enumerated one, so `v1.structure` also refuses with `unknown_enum_value`). Tier V3 shows
+the records match a digest that was published; not who published it, nor that it was in time. Dispatched workflow run: [39095381057](https://github.com/cogno-us/cognous-stack-orchestrator/actions/runs/39095381057) (workflow from the PR branch; inputs: control plane `128eaa5e`, runtime `fc034d14`, verifier `adb8927f`, ODES `fe705e87`, Replay `d0e7b368`, evidence pack `fa7cd7eb`, all as full SHAs; Python 3.11 and 3.13 both green).
+
 ## Programme-2 pieces and what exercises them across components
 
 | Piece (where it lives) | Exercised across components in the orchestrator's default CI | Overlay result |
@@ -61,7 +67,7 @@ verifier is run as a subprocess and imports nothing from the stack.
   check); exit 3 (abstain) because no ledger was supplied. At `867402f3` the same records gave 24/22/24/24 and 30/26 checks, 0 refuted.
 - **Atomic-route records with a ledger projected from the runtime SQLite rows (4 records):** 3 abstain on one check, 0 refuted; see F-2. The projection is the
   orchestrator's own, field for field; the verifier documents the Control Plane's local destination state as its ledger.
-- **Adapter-route records with a projected ledger (4 records, 8 runs with and without the `operation_digest` member):** projection A abstains on one check (3 records), projection B is refused at `ledger_shape` (3 records), the held record is accepted in both; see F-1.
+- **Adapter-route records with a projected ledger (4 records, 8 runs with and without the `operation_digest` member):** at verifier `adb8927`: projection A abstains on one check (3 records), projection B is accepted (3 records), a tampered digest is refused as `operation_digest_mismatch` (3 records), the held record is accepted in both; see F-1. At `5ed1ffb` projection B was refused at `ledger_shape`.
 - **Profile-on records (8 of 8):** all refused at `v1.structure` (codes `schema_violation`, `undeclared_member`; `undeclared_member` only for `rule_revision`), 24 of
   the 26 checks could not be made (the delegated groups report `earlier_rules_refuted`). See F-3.
 
@@ -86,17 +92,21 @@ check about operations, because the verifier cannot know an operation id exists;
 Each is reproducible with the overlay at the revisions above. None is a claim that a component is wrong in isolation; they are places
 where two components do not yet meet.
 
-- **F-1 (verifier / runtime, adapter route; narrowed by verifier PR #9, `5ed1ffb`).** The runtime's destination observation carries `operation_digest`
-  inside `destination_state`; the verifier's ledger row shape is closed and has no such member. Ran at `5ed1ffb`, 4 records, 8 runs:
-  - Projection A (ledger row omits the member): the 3 records with an effect now **abstain** (exit 3, 0 refutations): `v4.ledger.observations-agree` is
-    `could_not_check`, reason `destination_state_has_members_outside_ledger_row` (1 check abstained, 31 or 32 of 32 or 33 confirmed). At `07c2eb86` the same 3 were refused
-    (`observation_differs_from_ledger_row`).
-  - Projection B (ledger row keeps the member): the same 3 are still **refused** at `v1.structure.ledger` / `ledger_shape` (exit 1; 25 confirmed, 7 could not check,
-    1 refuted), by design, because the ledger row shape is closed.
-  - The held record (empty ledger) is accepted in both projections (22 of 22 confirmed, exit 0).
-  So the verifier no longer refuses the orchestrator's honest projection, but it cannot compare the runtime's observation with the ledger either: the
-  members the runtime adds to `destination_state` have no place in the verifier's ledger model. Not seen with the Control Plane's own local destination,
-  whose observation has the seven declared members.
+- **F-1 (verifier / runtime, adapter route; RESOLVED for projection B in verifier PR #11, `adb8927`).** The runtime's destination observation carries
+  `operation_digest` inside `destination_state`. Resolution: verifier #11 reads the ODES `destination-ledger` 0.1.0-draft contract. The ledger row now accepts an
+  optional `operation_digest` (`sha256:` plus 64 hex) and `extensions`; an equal digest is **confirmed**, a differing one is **refuted**
+  (`operation_digest_mismatch`). Revisions: verifier `adb8927fc13308370ea3b7ad3c899fd69c8fe203` (earlier: `5ed1ffb`, `07c2eb86`); ODES `main`. Ran at `adb8927`,
+  4 records, 11 runs (the held record has no effect to tamper with):
+  - Projection B (ledger row keeps `operation_digest`): the 3 records with an effect are **accepted** (exit 0, overall accept, 33, 32 and 33 of 33, 32 and 33 checks confirmed,
+    0 refuted, 0 could not check); `v4.ledger.observations-agree` is confirmed. At `5ed1ffb` the same 3 were refused at `v1.structure.ledger` / `ledger_shape`.
+  - Projection A (digest only in the observation, the ledger row omits it): still **abstains** (exit 3, 0 refutations) on `v4.ledger.observations-agree`,
+    reason `destination_state_has_members_outside_ledger_row` (1 check abstained, 3 of 3 records with an effect). The verifier cannot compare a member the ledger row
+    does not carry; that is the stated design, so a producer that wants the comparison writes the member into the row.
+  - Tampered digest (variant C, not a producer shape; the first row's digest replaced): 3 of 3 refused, exactly `operation_digest_mismatch` on `v4.ledger.observations-agree`.
+  - The held record (empty ledger) is accepted in projections A and B (22 of 22 confirmed, exit 0).
+  Still true and not a defect: in projection B the legacy renewal race (two effects for one operation, identity off) is accepted, because the verifier has no notion of an
+  operation id; the digest comparison confirms each row against its own observation. The orchestrator's own verifier pin is not changed here; it is left for the
+  coordinator's end batch.
 - **F-2 (route / verifier; narrowed by verifier PR #9, `5ed1ffb`).** On the orchestrator's accepted route (Atomic claim) the Control Plane record has **no attempt row**; the
   attempt lives only in the runtime SQLite destination. History: accepted at `867402f3` (23, 17, 23, 23 of as many checks confirmed), refused from `2597196` on
   `ledger_row_without_attempt` (3 of 4, `07c2eb86`), and at `5ed1ffb` **abstained**: for the 3 records with an effect, `v4.ledger.rows-agree-with-attempts` is

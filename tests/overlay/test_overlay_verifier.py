@@ -60,14 +60,24 @@ def ledger_projection(result_json: pathlib.Path, bundle_result: dict) -> dict:
     return {"effects": effects, "grant_effect_counts": counts}
 
 
-def verify(overlay, bundle: pathlib.Path, *, ledger: pathlib.Path | None = None) -> tuple[int, dict, str]:
-    report = bundle / ("report-ledger.json" if ledger else "report.json")
+def acp(overlay, *argv: str) -> subprocess.CompletedProcess:
+    cp = pathlib.Path(overlay.paths["control_plane"])
+    code = "import sys; sys.path.insert(0, sys.argv[1]); from agent_control_plane.cli import main; sys.exit(main(sys.argv[2:]))"
+    return subprocess.run([sys.executable, "-I", "-c", code, str(cp / "src"), *argv], capture_output=True, text=True, timeout=300,
+                          env={"PATH": "", "HOME": ""})
+
+
+def verify(overlay, bundle: pathlib.Path, *, ledger: pathlib.Path | None = None, witness: pathlib.Path | None = None,
+           record: pathlib.Path | None = None, report_name: str | None = None) -> tuple[int, dict, str]:
+    report = bundle / (report_name or ("report-ledger.json" if ledger else "report.json"))
     verifier_src = pathlib.Path(overlay.paths["verifier"]) / "src"
-    argv = [str(bundle / "run-record.json"), "--proposal", str(bundle / "proposal.json"), "--manifest", str(bundle / "manifest.json"),
+    argv = [str(record or bundle / "run-record.json"), "--proposal", str(bundle / "proposal.json"), "--manifest", str(bundle / "manifest.json"),
             "--out", str(report), "--generated-at", FIXED, "--controller-revision", overlay.heads["control_plane"],
             "--source-revision", overlay.heads["verifier"]]
     if ledger:
         argv += ["--ledger", str(ledger)]
+    if witness:
+        argv += ["--witness", str(witness)]
     code = ("import sys; sys.path.insert(0, sys.argv[1]); from cognous_verify.cli import main; sys.exit(main(sys.argv[2:]))")
     proc = subprocess.run([sys.executable, "-I", "-c", code, str(verifier_src), *argv], capture_output=True, text=True, timeout=300,
                           env={"PATH": "", "HOME": ""})
@@ -214,51 +224,139 @@ def test_odes_operation_identity_sidecar_over_the_identity_records(odes, candida
     assert all(not r["violations"] for r in rows), rows
 
 
-# FINDING F-1 (narrowed, verifier main 5ed1ffb, PR #9). The runtime's destination observation carries `operation_digest` inside
-# `destination_state`; the verifier's ledger row shape is closed and has no such member. Projection A (ledger row omits the member):
-# `v4.ledger.observations-agree` used to refuse (`observation_differs_from_ledger_row`); since 5ed1ffb it abstains with reason
-# `destination_state_has_members_outside_ledger_row`, 0 refutations. Projection B (ledger row keeps the member) is still refused at
-# `v1.structure.ledger` / `ledger_shape`, by design (the ledger row shape is closed).
+# FINDING F-1 (resolved for projection B, verifier main adb8927, PR #11; narrowed earlier by 5ed1ffb, PR #9). The runtime's destination
+# observation carries `operation_digest` inside `destination_state`. Since adb8927 the verifier reads the ODES destination-ledger
+# 0.1.0-draft contract: the ledger row accepts an optional `operation_digest` (sha256: + 64 hex) and `extensions`; an equal digest is
+# confirmed, a differing one is refuted (`operation_digest_mismatch`). Projection B (ledger row keeps the member): accept.
+# Projection A (ledger row omits it, the member only in the observation) still abstains on `v4.ledger.observations-agree` with reason
+# `destination_state_has_members_outside_ledger_row`, 0 refutations.
 F1_A_ABSTAIN = {"v4.ledger.observations-agree": "destination_state_has_members_outside_ledger_row"}
-F1_B_REFUSAL = {"v1.structure.ledger": {"ledger_shape"}}
+
+
+def _verdicts(report: dict) -> dict[str, str]:
+    return {c["check_id"]: c["verdict"] for c in report["checks"]}
 
 
 def test_adapter_route_records_with_projected_ledger_finding_f1(overlay, odes, candidate_journal, candidate_destinations):
-    """Adapter-route default-path records (profile off) with the orchestrator's projected ledger, both projections (finding F-1, narrowed).
+    """Adapter-route default-path records (profile off) with the orchestrator's projected ledger, both projections (finding F-1).
 
     Records: journal applied, journal held, lost-ack-then-land, renewal race (legacy: two effects for one operation). Variant A drops
-    `operation_digest` from the ledger row, variant B keeps it. Exact expectations at verifier 5ed1ffb:
+    `operation_digest` from the ledger row, variant B keeps it. Exact expectations at verifier adb8927:
     - A, with an effect: exit 3, 0 refutations, abstains on exactly `v4.ledger.observations-agree`
       (`destination_state_has_members_outside_ledger_row`).
-    - B, with an effect: exit 1, refused on exactly `v1.structure.ledger` / `ledger_shape` (by design).
+    - B, with an effect: exit 0, overall accept, no refuted or could-not-check check, `v4.ledger.observations-agree` confirmed.
     - the held record (empty ledger): exit 0, nothing abstained or refused, both variants.
-    Any other refusal, abstention or reason fails. The report must validate and add up.
+    Any other refusal, abstention or reason fails. The report must validate and add up. Tampering with the row's digest (variant C,
+    not a producer shape) must be refuted with exactly `operation_digest_mismatch`.
     """
     bundles = [candidate_journal / "off/applied", candidate_journal / "off/held",
                candidate_destinations / "lost_ack_then_land_identity_off", candidate_destinations / "renewal_race_identity_off"]
     rows = []
     for bundle in bundles:
         result = json.loads((bundle / "result.json").read_text())
-        for variant in ("A_without_operation_digest", "B_with_operation_digest"):
+        for variant in ("A_without_operation_digest", "B_with_operation_digest", "C_tampered_operation_digest"):
             ledger = ledger_projection(bundle / "result.json", result)
-            if variant.startswith("B"):
+            if variant[0] in "BC":
                 for row, src in zip(ledger["effects"].values(), result["effect_rows"], strict=True):
                     row["operation_digest"] = src["operation_digest"]
+            if variant[0] == "C":
+                if not result["effect_rows"]:
+                    continue
+                first = next(iter(ledger["effects"].values()))
+                first["operation_digest"] = "sha256:" + "0" * 64
             path = bundle / f"ledger-{variant}.json"
             path.write_text(json.dumps(ledger, indent=1, sort_keys=True) + "\n", encoding="utf-8")
             code, report, out = verify(overlay, bundle, ledger=path)
             assert odes["verification-report"].validate(report) == [], f"{bundle.name}/{variant}: report does not validate"
             assert_report_denominators(report)
             refusals, abstentions = _refusals(report), _abstentions(report)
+            overall = report["extensions"]["x-overall"]
             where = f"{bundle.name}/{variant}"
             if not result["effect_rows"]:
                 assert (code, refusals) == (0, {}) and abstentions == {}, f"{where}: empty ledger must be fully confirmed: {code} {refusals} {abstentions}\n{out}"
-            elif variant.startswith("A"):
+            elif variant[0] == "A":
                 assert code == 3 and refusals == {} and abstentions == F1_A_ABSTAIN, f"{where}: expected exactly {F1_A_ABSTAIN}: {code} {refusals} {abstentions}\n{out}"
+            elif variant[0] == "B":
+                assert (code, overall, refusals, abstentions) == (0, "accept", {}, {}), f"{where}: expected accept: {code} {overall} {refusals} {abstentions}\n{out}"
+                assert _verdicts(report)["v4.ledger.observations-agree"] == "confirmed"
+                assert report["summary"]["refuted"] == 0 and report["summary"]["could_not_check"] == 0
             else:
-                assert code == 1 and refusals == F1_B_REFUSAL, f"{where}: expected exactly {F1_B_REFUSAL}: {code} {refusals}\n{out}"
-            rows.append({"bundle": f"{bundle.parent.name}/{bundle.name}", "variant": variant, "exit": code, "effects_in_ledger": len(result["effect_rows"]),
-                         "refused": {k: sorted(v) for k, v in refusals.items()}, "abstained": abstentions, **tally(report)})
-    section("verifier_adapter_route_projected_ledger_F1", {"records": len(bundles), "runs": len(rows), "rows": rows,
-                                                           "f1_abstained_projection_a": sum(1 for r in rows if r["abstained"] and r["variant"].startswith("A")),
-                                                           "f1_refused_projection_b": sum(1 for r in rows if r["refused"] and r["variant"].startswith("B"))})
+                assert code == 1 and set(refusals) and all(v == {"operation_digest_mismatch"} for v in refusals.values()), f"{where}: expected only operation_digest_mismatch: {code} {refusals}\n{out}"
+            rows.append({"bundle": f"{bundle.parent.name}/{bundle.name}", "variant": variant, "exit": code, "overall": overall,
+                         "effects_in_ledger": len(result["effect_rows"]), "refused": {k: sorted(v) for k, v in refusals.items()},
+                         "abstained": abstentions, **tally(report)})
+    section("verifier_adapter_route_projected_ledger_F1", {
+        "records": len(bundles), "runs": len(rows), "rows": rows,
+        "f1_abstained_projection_a": sum(1 for r in rows if r["abstained"] and r["variant"].startswith("A")),
+        "f1_accepted_projection_b": sum(1 for r in rows if r["variant"].startswith("B") and r["overall"] == "accept" and r["effects_in_ledger"]),
+        "f1_projection_b_with_effect": sum(1 for r in rows if r["variant"].startswith("B") and r["effects_in_ledger"]),
+        "f1_tampered_digest_refused": sum(1 for r in rows if r["variant"].startswith("C") and r["refused"])})
+
+
+# Tier V3 (verifier PR #10, 05afab84): `cognous-verify --witness` over the witness the Control Plane's own public command
+# `acp witness publish` writes for each retained record. The verifier's tools/capture_witnessed_runs.py does the same for its own corpus.
+WITNESS_BUNDLES = ([("handoff", sc) for sc in HANDOFF] + [("journal", sc) for sc in JOURNAL_DEFAULT]
+                   + [("destinations", "lost_ack_then_land_identity_off"), ("destinations", "renewal_race_identity_off")])
+
+
+def _bundle(kind: str, name: str, candidate_handoff, candidate_journal, candidate_destinations) -> pathlib.Path:
+    return {"handoff": candidate_handoff, "journal": candidate_journal, "destinations": candidate_destinations}[kind] / name
+
+
+def _v3(report: dict) -> list[dict]:
+    return report["extensions"]["x-tier-v3"]["checks"]
+
+
+def test_witness_tier_v3_over_acp_witness_publish_of_the_retained_records(overlay, odes, candidate_handoff, candidate_journal, candidate_destinations):
+    """Clean records: every V3 check confirmed and nothing else changes. Tampered ledger row: a stable refusal code.
+
+    For each retained default-path record, `acp witness publish` writes a local file witness (the record is not touched) and the
+    verifier is run with `--witness`. Clean: every V3 check confirmed, 0 refuted; the only could-not-check checks are the V4 ledger ones (no ledger supplied).
+    Tampered (the record's first `decisions` row has one value changed AFTER the witness was published, the witness is untouched):
+    the V3 ledger-head comparison refuses with `witness_ledger_head_mismatch`. What a confirmed witness shows: that the records
+    match a digest that was published; not that the publisher was independent, nor that it was published in time.
+    """
+    rows, clean_confirmed, clean_total, tamper_refused = [], 0, 0, 0
+    for kind, name in WITNESS_BUNDLES:
+        bundle = _bundle(kind, name, candidate_handoff, candidate_journal, candidate_destinations)
+        wit_dir = overlay.out / "witness" / kind / name.replace("/", "_")
+        wit_dir.mkdir(parents=True, exist_ok=True)
+        witness = wit_dir / "witness.jsonl"
+        witness.unlink(missing_ok=True)
+        pub = acp(overlay, "witness", "publish", str(bundle / "run-record.json"), "--witness", str(witness))
+        assert pub.returncode == 0, f"{kind}/{name}: acp witness publish failed:\n{pub.stdout}{pub.stderr}"
+        code, report, out = verify(overlay, bundle, witness=witness, report_name="report-witness.json")
+        assert odes["verification-report"].validate(report) == [], f"{kind}/{name}: report does not validate"
+        assert_report_denominators(report)
+        v3 = _v3(report)
+        assert v3 and report["extensions"]["x-tier-v3"]["requested"] is True
+        assert all(c["verdict"] == "confirmed" for c in v3), f"{kind}/{name}: V3 not all confirmed: {[(c['check_id'], c['verdict']) for c in v3]}\n{out}"
+        # No ledger is supplied here, so the V4 ledger checks stay could-not-check exactly as without --witness (exit 3, abstain);
+        # tier V3 adds no abstention and no refusal.
+        assert report["summary"]["refuted"] == 0 and code in (0, 3), out
+        assert set(_abstentions(report)) <= {c["check_id"] for c in report["checks"] if c["check_id"].startswith("v4.ledger.")}, out
+        clean_confirmed += sum(1 for c in v3 if c["verdict"] == "confirmed")
+        clean_total += len(v3)
+
+        record = json.loads((bundle / "run-record.json").read_text(encoding="utf-8"))
+        ledger_name = next(k for k in ("decisions", "resolution_checks") if record.get(k))
+        damaged = json.loads(json.dumps(record))
+        row = damaged[ledger_name][0]
+        key = next(k for k, v in row.items() if isinstance(v, str))
+        row[key] = row[key] + "-tampered"
+        bad_record = wit_dir / "run-record-tampered.json"
+        bad_record.write_text(json.dumps(damaged, indent=1) + "\n", encoding="utf-8")
+        bcode, breport, bout = verify(overlay, bundle, witness=witness, record=bad_record, report_name="report-witness-tampered.json")
+        assert odes["verification-report"].validate(breport) == []
+        assert_report_denominators(breport)
+        v3_codes = {c["check_id"]: sorted({f["code"] for f in c.get("findings", [])}) for c in _v3(breport) if c["verdict"] == "refuted"}
+        assert v3_codes, f"{kind}/{name}: tampering with {ledger_name}[0].{key} was not refuted by tier V3\n{bout}"
+        assert {c for codes in v3_codes.values() for c in codes} == {"witness_ledger_head_mismatch"}, f"{kind}/{name}: {v3_codes}"
+        assert bcode == 1
+        tamper_refused += 1
+        rows.append({"bundle": f"{kind}/{name}", "clean_exit": code, "v3_checks": len(v3), "v3_confirmed": sum(1 for c in v3 if c["verdict"] == "confirmed"),
+                     "tampered_ledger": ledger_name, "tampered_exit": bcode, "tampered_v3_refusals": v3_codes,
+                     "tampered_other_refusals": {k: sorted(v) for k, v in _refusals(breport).items() if k not in v3_codes}, **{f"clean_{k}": v for k, v in tally(report).items()}})
+    section("verifier_witness_tier_v3", {"records": len(WITNESS_BUNDLES), "clean_records_all_confirmed": len(WITNESS_BUNDLES),
+                                         "v3_checks_clean_total": clean_total, "v3_checks_clean_confirmed": clean_confirmed,
+                                         "tampered_records": len(WITNESS_BUNDLES), "tampered_refused_witness_ledger_head_mismatch": tamper_refused, "rows": rows})

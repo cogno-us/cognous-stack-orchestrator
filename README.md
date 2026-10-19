@@ -4,6 +4,38 @@
 
 This repository connects **actual pinned component source interfaces** in bounded synthetic qualification tests. It does not authenticate institutional adoption, issue grants, certify a deployed environment, settle real payments, or replace the [Open Control Stack hub](https://github.com/cogno-us/cognous-open-control-stack) as the release-selection authority.
 
+Status label: **merged** (not a lock entry). Role: engineering integration repository in the Tooling and qualification side group. It selects no revisions: the hub component lock does.
+
+## At a glance
+
+| | |
+|---|---|
+| What it is | Test harnesses, adapters, schemas and retained acceptance records that run actual pinned component interfaces against synthetic inputs. |
+| Who it is for | Engineers qualifying component interfaces together, and reviewers reading what those synthetic qualifications do and do not show. |
+| What it does not do | Issue authority, select a release, certify a deployment, or establish operational trust (issue [#30](https://github.com/cogno-us/cognous-stack-orchestrator/issues/30), **HOLD**). It has no installed command and no package. |
+| Interfaces | Integration contracts in [CONTRACTS.md](CONTRACTS.md); profiles [bounded-v1-reference](profiles/bounded-v1-reference.yaml) and [integrated-preview](profiles/integrated-preview.yaml). |
+
+## Where it fits
+
+<!-- stack-map-block:start -->
+The Open Control Stack has five hub groups plus a cross-cutting exchange component and two side groups. This is the same map as the hub [stack map](https://github.com/cogno-us/cognous-open-control-stack/blob/main/docs/stack-map.md); names are defined in [naming](https://github.com/cogno-us/cognous-open-control-stack/blob/main/docs/naming.md), and commands and profiles per repository are in [profiles and tools](https://github.com/cogno-us/cognous-open-control-stack/blob/main/docs/profiles-and-tools.md). The map is for navigation; it is not an execution sequence and it selects nothing. Selected revisions come only from the hub `component-lock.json`.
+
+| Group | Members |
+|---|---|
+| 01 Knowledge & Provenance | [Evidence Registry (The Index)](https://github.com/cogno-us/cognous-evidence-registry), [Evidence Attestation (BitRep)](https://github.com/cogno-us/cognous-evidence-attestation) |
+| 02 Institutional Governance | [Institutional Governance (Alvorada)](https://github.com/cogno-us/cognous-institutional-governance) |
+| 03 Declaration & Policy Control | [Action Manifest](https://github.com/cogno-us/cognous-action-manifest), [Control Plane](https://github.com/cogno-us/cognous-control-plane) |
+| 04 Constrained Execution | [Execution Runtime](https://github.com/cogno-us/cognous-execution-runtime) |
+| 05 Replay & Evidence | [Replay Bundle](https://github.com/cogno-us/cognous-replay-bundle), [Governance Evidence Pack](https://github.com/cogno-us/cognous-governance-evidence-pack), [ODES](https://github.com/cogno-us/open-decision-evidence-standard) |
+| Cross-cutting exchange | [Governed Exchange (GAX/IMX)](https://github.com/cogno-us/cognous-governed-exchange) |
+| Optional reasoning protocols (side group) | [PRP](https://github.com/cogno-us/portable-reasoning-protocol), [Research Intelligence Protocol](https://github.com/cogno-us/research-intelligence-protocol), [TFA Protocol](https://github.com/cogno-us/truth-freedom-agency-protocol) |
+| Tooling and qualification (side group) | [Ergonomics (`cognous-ocs`)](https://github.com/cogno-us/cognous-open-control-stack-ergonomics), [Verifier](https://github.com/cogno-us/cognous-open-control-stack-verifier), [Orchestrator](https://github.com/cogno-us/cognous-stack-orchestrator), [Qualification](https://github.com/cogno-us/cognous-stack-qualification) |
+
+Status labels used in this repository's tables: **merged** (reviewed and merged in the owning repository; not by itself selected), **selected** (pinned in the hub component lock), **known limit** (a limitation that existing documentation already states), **proposed** (draft or planned work, not a supported interface). Last checked against `component-lock.json` at hub commit `dcc9bd7533ef`; refresh at the pin round.
+<!-- stack-map-block:end -->
+
+The orchestrator connects the components of groups 01 to 05 and the cross-cutting exchange in bounded synthetic tests. It sits in the **Tooling and qualification** side group, next to the hub (selection authority), the qualification repository (cross-component suites and records), the verifier and the ergonomics CLI. Its older directory names under `domains/` use an earlier vocabulary; the table in [Functional domains](#functional-domains) maps them to the hub group names.
+
 ## Start here
 
 | You want to… | Read |
@@ -26,6 +58,37 @@ This repository connects **actual pinned component source interfaces** in bounde
 
 Use [qualification ledger](docs/qualification-ledger.md) for retained prior milestones. For the accepted newer engineering work, follow the scoped [O6-Q2](development/acceptance/o6-q2/README.md), [Q3](development/acceptance/o6-q3/README.md), [Q4](development/acceptance/o6-q4/README.md), [Q5](development/acceptance/o6-q5/README.md) and [Q6](development/acceptance/o6-q6/README.md) notes and their PR-head CI runs. The separately merged [read-only recovery inspection](acceptance/recovery-resolution-inspection/README.md) composes the native Runtime export, Replay importer and Evidence Pack transformation at its own exact pins. Its 33-test CI and inspected artifacts are recorded in [PR #97](https://github.com/cogno-us/cognous-stack-orchestrator/pull/97). It does not replace Q6 intake or select a hub release. All examples are synthetic.
 
+## What is in this repository
+
+Status labels are those of the stack map block above. There is no standalone install: the pinned component sources are fetched by the workflows or by the commands each page names.
+
+| Path | What it holds | Label | Page |
+|---|---|---|---|
+| `ARCHITECTURE.md`, `CONTRACTS.md`, `AGENTS.md` | Execution path and authority separation; the integration contracts; rules for editing. | merged | [Architecture](ARCHITECTURE.md), [contracts](CONTRACTS.md), [agents](AGENTS.md) |
+| `docs/` | Component matrix, trust boundaries, qualification ledger. | merged | [docs index](docs/README.md) |
+| `development/` | Engineering cockpit, candidate integration contracts, schemas, scenarios, acceptance notes for O4d, O4e and O6-Q2 to Q6, link-check tool. | merged | [Engineering cockpit](development/README.md) |
+| `development/schemas/` | Candidate non-authorizing reference envelope schema (`orchestration-reference-v0`). | proposed | [schema notes](development/schemas/README.md) |
+| `development/documentation/` | Documentation map and the link check used by CI. | merged | [documentation map](development/documentation/README.md) |
+| `orchestration/` | Experimental local consistency assessment (`provenance_context.py`), producer evidence, attestation and registry adapters, state-transition and dependency-registry notes. | merged | [orchestration notes](orchestration/README.md) |
+| `profiles/` | `bounded-v1-reference.yaml` (historical qualified reference, informational pointer) and `integrated-preview.yaml` (a profile, not a deployment approval). | merged | [component matrix](docs/component-matrix.md) |
+| `acceptance/recovery-resolution-inspection/` | Optional read-only recovery inspection chain 0.1. | merged | [inspection README](acceptance/recovery-resolution-inspection/README.md) |
+| `tests/` | Contract, integration, adapter, overlay and scenario tests; overlay runs only on request. | merged | [integration tests](tests/integration/README.md), [overlay](tests/overlay/README.md) |
+| `domains/` | Per-domain ownership notes (earlier vocabulary). | merged | [Functional domains](#functional-domains) |
+| `integrations/iss/` | Disabled external-interface placeholder. | known limit | [ISS placeholder](integrations/iss/README.md) |
+| `.github/workflows/` | One acceptance workflow per qualification step (O3, O4, O4b to O4e, O5, O6-Q2 to Q6, overlay, recovery inspection) and the documentation link check. | merged | [qualification ledger](docs/qualification-ledger.md) |
+
+## Quick check
+
+There is no standalone quick start: the qualifications need pinned component checkouts and run in CI. The smallest read-only check that runs from a clean checkout is the documentation link check (no network, no commands executed):
+
+```bash
+git clone https://github.com/cogno-us/cognous-stack-orchestrator
+cd cognous-stack-orchestrator
+python development/documentation/check_links.py
+```
+
+Expected: one line, `Checked 10 canonical Markdown files, 73 local links/anchors and 2 shell fences (syntax only); no external URLs fetched`, exit code 0 (the counts change when pages change). What this does not prove: it shows the entrypoint pages link to existing files and headings. It says nothing about any qualification result. To reproduce a qualification, follow the [connected refund handoff](development/scenarios/customer_refunds/connected/handoff/README.md) and the [integration tests guide](tests/integration/README.md).
+
 ## One synthetic refund, five separate facts
 
 Consider a request to refund a synthetic payment. The records answer different questions; they are not interchangeable.
@@ -42,13 +105,24 @@ Example: if an attempt times out after the provider *may* have accepted it, reco
 
 ## Functional domains
 
-- **Knowledge and provenance:** Registry and Evidence Attestation
-- **Institutional governance:** Alvorada, proposed authority and review requirements
-- **Action governance:** Action Manifest and Control Plane
-- **Governed execution:** Execution Runtime and optional adapters
-- **Evidence and accountability:** Replay Bundle, Evidence Pack, ODES and Governed Exchange
+The `domains/` directory and the older component matrix used five domain names. They map to the hub groups (see the [hub stack map](https://github.com/cogno-us/cognous-open-control-stack/blob/main/docs/stack-map.md)); the hub names are the ones to use.
+
+| Orchestrator domain (`domains/`) | Hub group | Components |
+|---|---|---|
+| Knowledge and provenance | 01 Knowledge & Provenance | Registry and Evidence Attestation |
+| Institutional governance | 02 Institutional Governance | Alvorada: proposed authority and review requirements |
+| Action governance | 03 Declaration & Policy Control | Action Manifest and Control Plane |
+| Governed execution | 04 Constrained Execution | Execution Runtime and optional adapters |
+| Evidence and accountability | 05 Replay & Evidence, plus the cross-cutting exchange | Replay Bundle, Governance Evidence Pack, ODES; Governed Exchange |
 
 Consult the [component matrix](docs/component-matrix.md), [integration contracts](CONTRACTS.md) and [bounded reference profile](profiles/bounded-v1-reference.yaml). The [integrated preview](profiles/integrated-preview.yaml) is a profile, not a deployment approval.
+
+## Known limits
+
+- **known limit** Operational deployment assurance is not established (issue [#30](https://github.com/cogno-us/cognous-stack-orchestrator/issues/30), HOLD); production effect activation is not authorized.
+- **known limit** The qualifications use synthetic inputs and trusted-host test flags; a pass is not a live institutional workflow.
+- **known limit** The ISS integration is a disabled placeholder and no proprietary source is mirrored here.
+- **known limit** There is no installed command or package, and no standalone quick start beyond the link check above.
 
 ## Engineering and IP boundaries
 

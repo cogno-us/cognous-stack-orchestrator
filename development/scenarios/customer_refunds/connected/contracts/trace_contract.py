@@ -11,10 +11,10 @@ from typing import Any
 CONTRACT_VERSION = "o5-e-connected-refund-trace/1.0.0"
 SOURCE_REVISIONS = {
     "action_manifest": "8d1572d4f926c968a8704cb912a6e9d49166f74a",
-    "control_plane": "6093aca7b945698e89c0d8ac7c75306375e1a298",
-    "execution_runtime": "62a5cc156ecb439b4103b757fd265f276bb30374",
-    "replay": "c8e665bd1936e4da90f6a324b486a320934c4bff",
-    "evidence_pack": "cde3f1f1cf517d5663afb33ce88c123aae779757",
+    "control_plane": "2bac7875391cad0a431fa0d75208b7ade39743e3",
+    "execution_runtime": "c4a05883266b815f39d97cbf2240406647985147",
+    "replay": "2a7963b18d96eb2e9e4fdb1a09c7588cf5c0ef00",
+    "evidence_pack": "80e24650bb089d3a0cb9c0063c5b4bcc4a436123",
 }
 
 HOLD_REASONS = {

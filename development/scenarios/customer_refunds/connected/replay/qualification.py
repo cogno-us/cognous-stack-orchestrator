@@ -16,9 +16,9 @@ from dataclasses import dataclass
 from typing import Any
 
 REPLAY_REPOSITORY = "cogno-us/cognous-replay-bundle"
-REPLAY_REVISION = "c8e665bd1936e4da90f6a324b486a320934c4bff"
+REPLAY_REVISION = "2a7963b18d96eb2e9e4fdb1a09c7588cf5c0ef00"
 EVIDENCE_PACK_REPOSITORY = "cogno-us/cognous-governance-evidence-pack"
-EVIDENCE_PACK_REVISION = "cde3f1f1cf517d5663afb33ce88c123aae779757"
+EVIDENCE_PACK_REVISION = "80e24650bb089d3a0cb9c0063c5b4bcc4a436123"
 RECONSTRUCTION_VERSION = "0.2.0"
 EVIDENCE_PACK_VERSION = "0.2.0"
 PRODUCER_PROFILE = "cognous-refund-o5-e-b-connected-v1"

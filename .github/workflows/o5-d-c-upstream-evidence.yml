@@ -42,7 +42,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install upstream runtime dependency
-        run: python -m pip install 'pydantic>=2.0'
+        run: python -m pip install --require-hashes -r .github/locks/pydantic-22835e.txt
 
       - name: Run scoped qualification
         env:

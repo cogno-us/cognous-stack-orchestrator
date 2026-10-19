@@ -53,7 +53,7 @@ jobs:
           echo "Orchestrator checked out $(git rev-parse HEAD)"
       - name: Install pinned source package interfaces
         run: |
-          python -m pip install 'pytest>=8,<9' 'pydantic>=2,<3'
+          python -m pip install --require-hashes -r .github/locks/pydantic-pytest-165155.txt
           python -m pip install --no-deps -e .upstream/action-manifest -e .upstream/control-plane
       - name: Execute connected actual-source refund handoff
         env:

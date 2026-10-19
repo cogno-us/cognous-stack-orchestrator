@@ -27,6 +27,6 @@ jobs:
       - name: Verify paths, GitHub heading anchors and shell syntax (no execution)
         run: python development/documentation/check_links.py
       - name: Install scoped negative-test runner
-        run: python -m pip install pytest==8.3.5
+        run: python -m pip install --require-hashes -r .github/locks/pytest-b61d81.txt
       - name: Verify negative controls for malformed docs
         run: python -m pytest -q development/documentation/test_check_links.py

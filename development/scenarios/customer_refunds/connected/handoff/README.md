@@ -12,7 +12,7 @@ replacement as proof of integration.
 ## Accepted source pins
 
 - Orchestrator base: `2d032e686c7f6a1f45fdaa810087e066666ccb24`
-- Action Manifest: `cogno-us/cognous-action-manifest@8d1572d4f926c968a8704cb912a6e9d49166f74a`
+- Action Manifest: `cogno-us/cognous-action-manifest@ff5490828b2bf7f6a976da209f3f533701855687`
 - Control Plane: `cogno-us/cognous-control-plane@e66e5f163c5d5c112ff345a2f332b4c3893ee183`
 - Execution Runtime: `cogno-us/cognous-execution-runtime@da9f52900ee2596dab087ec6c249ba84915d2b13`
 

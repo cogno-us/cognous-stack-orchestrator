@@ -36,7 +36,7 @@ def test_orchestrator_pins_are_untouched_by_the_overlay():
     text = HARNESS.read_text(encoding="utf-8")
     assert 'CONTROL_PLANE_PIN = "2bac7875391cad0a431fa0d75208b7ade39743e3"' in text
     assert 'EXECUTION_RUNTIME_BASE_PIN = "c4a05883266b815f39d97cbf2240406647985147"' in text
-    assert 'ACTION_MANIFEST_PIN = "8d1572d4f926c968a8704cb912a6e9d49166f74a"' in text
+    assert 'ACTION_MANIFEST_PIN = "ff5490828b2bf7f6a976da209f3f533701855687"' in text
 
 
 def test_candidate_heads_are_recorded(overlay, candidate_handoff):

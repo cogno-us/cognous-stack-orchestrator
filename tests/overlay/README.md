@@ -26,7 +26,7 @@ Python 3.11+, `pytest`, `pydantic>=2.12`, `cryptography>=43`. Check out the revi
 
 | Variable | Checkout |
 |---|---|
-| `COGNOUS_OVERLAY_ACTION_MANIFEST` | cognous-action-manifest at the orchestrator's pin (`8d1572d4`) |
+| `COGNOUS_OVERLAY_ACTION_MANIFEST` | cognous-action-manifest at the orchestrator's pin (`ff549082`) |
 | `COGNOUS_OVERLAY_CONTROL_PLANE`, `_RUNTIME` | the candidate Control Plane and Execution Runtime |
 | `COGNOUS_OVERLAY_VERIFIER`, `_ODES` | cognous-open-control-stack-verifier; open-decision-evidence-standard (validators) |
 | `COGNOUS_OVERLAY_REPLAY`, `_EVIDENCE_PACK` | Replay and Evidence Pack (probe only) |

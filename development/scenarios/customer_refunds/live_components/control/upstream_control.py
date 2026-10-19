@@ -13,7 +13,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-ACTION_MANIFEST_PIN = "8d1572d4f926c968a8704cb912a6e9d49166f74a"
+ACTION_MANIFEST_PIN = "ff5490828b2bf7f6a976da209f3f533701855687"
 CONTROL_PLANE_PIN = "2bac7875391cad0a431fa0d75208b7ade39743e3"
 
 

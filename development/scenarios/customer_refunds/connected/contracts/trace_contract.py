@@ -10,7 +10,7 @@ from typing import Any
 
 CONTRACT_VERSION = "o5-e-connected-refund-trace/1.0.0"
 SOURCE_REVISIONS = {
-    "action_manifest": "8d1572d4f926c968a8704cb912a6e9d49166f74a",
+    "action_manifest": "ff5490828b2bf7f6a976da209f3f533701855687",
     "control_plane": "2bac7875391cad0a431fa0d75208b7ade39743e3",
     "execution_runtime": "c4a05883266b815f39d97cbf2240406647985147",
     "replay": "2a7963b18d96eb2e9e4fdb1a09c7588cf5c0ef00",

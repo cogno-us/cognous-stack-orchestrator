@@ -2,7 +2,7 @@
   "contract_version": "o5-e-connected-refund-trace/1.0.0",
   "accepted_orchestrator_base": "2d032e686c7f6a1f45fdaa810087e066666ccb24",
   "sources": {
-    "action_manifest": {"repository": "cogno-us/cognous-action-manifest", "revision": "8d1572d4f926c968a8704cb912a6e9d49166f74a", "role": "declared action/proposal identity only"},
+    "action_manifest": {"repository": "cogno-us/cognous-action-manifest", "revision": "ff5490828b2bf7f6a976da209f3f533701855687", "role": "declared action/proposal identity only"},
     "control_plane": {"repository": "cogno-us/cognous-control-plane", "revision": "2bac7875391cad0a431fa0d75208b7ade39743e3", "role": "decision and binding source"},
     "execution_runtime": {"repository": "cogno-us/cognous-execution-runtime", "revision": "c4a05883266b815f39d97cbf2240406647985147", "role": "execution-attempt source; never settlement"},
     "replay": {"repository": "cogno-us/cognous-replay-bundle", "revision": "2a7963b18d96eb2e9e4fdb1a09c7588cf5c0ef00", "role": "reconstruction only"},

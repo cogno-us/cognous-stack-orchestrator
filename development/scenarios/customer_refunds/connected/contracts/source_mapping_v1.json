@@ -4,9 +4,9 @@
   "sources": {
     "action_manifest": {"repository": "cogno-us/cognous-action-manifest", "revision": "ff5490828b2bf7f6a976da209f3f533701855687", "role": "declared action/proposal identity only"},
     "control_plane": {"repository": "cogno-us/cognous-control-plane", "revision": "2bac7875391cad0a431fa0d75208b7ade39743e3", "role": "decision and binding source"},
-    "execution_runtime": {"repository": "cogno-us/cognous-execution-runtime", "revision": "c4a05883266b815f39d97cbf2240406647985147", "role": "execution-attempt source; never settlement"},
-    "replay": {"repository": "cogno-us/cognous-replay-bundle", "revision": "2a7963b18d96eb2e9e4fdb1a09c7588cf5c0ef00", "role": "reconstruction only"},
-    "evidence_pack": {"repository": "cogno-us/cognous-governance-evidence-pack", "revision": "80e24650bb089d3a0cb9c0063c5b4bcc4a436123", "role": "review evidence only"}
+    "execution_runtime": {"repository": "cogno-us/cognous-execution-runtime", "revision": "6b16962db140590b808f02b5c2cb11a217aec46f", "role": "execution-attempt source; never settlement"},
+    "replay": {"repository": "cogno-us/cognous-replay-bundle", "revision": "6a6a477495ac24e813f12bb0fe314acfe8bac9cf", "role": "reconstruction only"},
+    "evidence_pack": {"repository": "cogno-us/cognous-governance-evidence-pack", "revision": "fd030615a782a064b89c57e8e40d7f220f99ff9e", "role": "review evidence only"}
   },
   "non_inference": [
     "No source record establishes merchant authority unless an authenticated current grant is separately present.",

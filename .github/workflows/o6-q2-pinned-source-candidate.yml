@@ -36,13 +36,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cogno-us/cognous-replay-bundle
-          ref: 2a7963b18d96eb2e9e4fdb1a09c7588cf5c0ef00
+          ref: 6a6a477495ac24e813f12bb0fe314acfe8bac9cf
           path: .upstream/replay
           persist-credentials: false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cogno-us/cognous-governance-evidence-pack
-          ref: 80e24650bb089d3a0cb9c0063c5b4bcc4a436123
+          ref: fd030615a782a064b89c57e8e40d7f220f99ff9e
           path: .upstream/evidence-pack
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -55,8 +55,8 @@ jobs:
           test "$(git -C .upstream/action-manifest rev-parse HEAD)" = "ff5490828b2bf7f6a976da209f3f533701855687"
           test "$(git -C .upstream/control-plane rev-parse HEAD)" = "2bac7875391cad0a431fa0d75208b7ade39743e3"
           test "$(git -C .upstream/execution-runtime rev-parse HEAD)" = "1b0a9e32d010797711004ae612051a277b07912a"
-          test "$(git -C .upstream/replay rev-parse HEAD)" = "2a7963b18d96eb2e9e4fdb1a09c7588cf5c0ef00"
-          test "$(git -C .upstream/evidence-pack rev-parse HEAD)" = "80e24650bb089d3a0cb9c0063c5b4bcc4a436123"
+          test "$(git -C .upstream/replay rev-parse HEAD)" = "6a6a477495ac24e813f12bb0fe314acfe8bac9cf"
+          test "$(git -C .upstream/evidence-pack rev-parse HEAD)" = "fd030615a782a064b89c57e8e40d7f220f99ff9e"
       - name: Connected handoff on O6 runtime source
         env:
           COGNOUS_O6_Q2_RUNTIME_CANDIDATE: 1b0a9e32d010797711004ae612051a277b07912a

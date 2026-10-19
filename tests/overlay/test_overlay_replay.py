@@ -1,7 +1,7 @@
 """Replay and the Evidence Pack importer over the overlay's records (report only; Replay and pack are not pinned by this overlay).
 
 Replay chooses its profile from a Control Plane revision LABEL supplied by the caller. The nearest label for the candidate Control
-Plane used to be Replay's newest listed generation (P4, 26a7e659). Replay 2a7963b1 lists the candidate's own revision (2bac7875), so
+Plane used to be Replay's newest listed generation (P4, 26a7e659). Replay 6a6a4774 lists the candidate's own revision (2bac7875), so
 the candidate label is accepted for journal-mode records and refused with a typed profile error for the orchestrator's atomic-route
 records ('resolution journal missing'). All statements here are about these synthetic records on the named revisions.
 """
@@ -27,7 +27,7 @@ JOURNAL_MODE_RECORDS = ("off/applied", "identity/applied", "freshness/applied", 
 
 
 def test_replay_candidate_revision_label_outcomes_are_exact(replay_probe):
-    """Replay 2a7963b1 lists the programme-2 Control Plane revision, so its label is no longer refused as unsupported. Replaces the
+    """Replay 6a6a4774 lists the programme-2 Control Plane revision, so its label is no longer refused as unsupported. Replaces the
     earlier assertion that every record was refused with 'unsupported Control Plane revision' (the stale P4 behaviour). The outcome
     is asserted exactly for EVERY record, in both directions:
       * the atomic-route records (no resolution journal) are refused with exactly

@@ -12,9 +12,9 @@ CONTRACT_VERSION = "o5-e-connected-refund-trace/1.0.0"
 SOURCE_REVISIONS = {
     "action_manifest": "ff5490828b2bf7f6a976da209f3f533701855687",
     "control_plane": "2bac7875391cad0a431fa0d75208b7ade39743e3",
-    "execution_runtime": "c4a05883266b815f39d97cbf2240406647985147",
-    "replay": "2a7963b18d96eb2e9e4fdb1a09c7588cf5c0ef00",
-    "evidence_pack": "80e24650bb089d3a0cb9c0063c5b4bcc4a436123",
+    "execution_runtime": "6b16962db140590b808f02b5c2cb11a217aec46f",
+    "replay": "6a6a477495ac24e813f12bb0fe314acfe8bac9cf",
+    "evidence_pack": "fd030615a782a064b89c57e8e40d7f220f99ff9e",
 }
 
 HOLD_REASONS = {

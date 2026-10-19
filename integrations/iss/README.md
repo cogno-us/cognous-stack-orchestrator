@@ -1,6 +1,6 @@
 # ISS Integration — disabled placeholder
 
-Source: private [TurwinAI/COGNOUS-client](https://github.com/TurwinAI/COGNOUS-client).
+Source: external service, not part of this repository.
 
 The inspected project documentation describes org-bound API credentials, a governed chat API (`POST /v1/chat/completions`), session processing, and evidence lookup (`GET /v1/evidence/{correlation_id}`). Those published-in-repo descriptions are **not an integration contract or verified interoperability**.
 

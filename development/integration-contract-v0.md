@@ -115,13 +115,13 @@ On identity, grant, adapter/version, policy or critical-evidence mismatch: **hol
 
 ## 7. ISS external interface reservation
 
-Source: private `TurwinAI/COGNOUS-client`, described by its own README and architecture. Current placeholder: [integrations/iss](../integrations/iss/README.md).
+Source: external service, not part of this repository. Current placeholder: [integrations/iss](../integrations/iss/README.md).
 
 - `enabled: false` until a separately authorized adapter and security review.
 - Proposed interaction: governed cognition request/response; structured **proposal** output; optional read-back of ISS correlation/evidence references.
 - No inference that an ISS readiness verdict, proof, lineage hash or signed object grants enterprise effect authority or establishes independent destination verification.
 - Tenant/workspace credentials, transport version, payload/correlation mapping, classification, retention, and redaction require explicit contracts and tests.
-- Never vendor private ISS implementation or confidential AoM/IGPG algorithms into public runtime components.
+- Never vendor private or proprietary implementations of other products into public runtime components.
 - ISS availability failure may affect cognitive proposals but cannot relax Action Governance.
 
 ## 8. Compatibility and ownership ledger
@@ -134,7 +134,7 @@ Source: private `TurwinAI/COGNOUS-client`, described by its own README and archi
 | Action governance | Manifest / Control Plane owners | Accepted hub C1–C8 pins | Existing bounded path only |
 | Governed execution | Cognous Execution Runtime owner | Accepted hub C1–C8 pins | Existing bounded path only |
 | Evidence | Replay / Evidence Pack; ODES owner | Accepted hub C8 pins; optional ODES separately | Replay/Evidence bounded path only |
-| ISS | TurwinAI/COGNOUS-client owner | Private repo, pending API version | Placeholder disabled |
+| ISS | External service owner | Not part of this repository; pending API version | Placeholder disabled |
 
 The orchestrator must build a machine-checked compatibility manifest only after owners approve exact revisions. Never substitute branch HEAD for an immutable accepted pin.
 

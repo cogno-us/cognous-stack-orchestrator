@@ -20,7 +20,7 @@ Issue ID; accountable worker/owner; repo/path boundaries; source HEAD SHA(s); ob
 - One task issue and one working branch per independently reviewable change; reuse existing issues when applicable.
 - No new integration semantics or C1-C8 changes without separate documented amendment and review.
 - No force-push of accepted base, no direct edits to the bounded release lock, no promotion from candidate to published by inference.
-- No private ISS, AoM, or IGPG internals committed to this repository.
+- No private or proprietary implementations of other products committed to this repository.
 - Evidence, policy decision, execution ACK, observation and independent verification must remain separate.
 - Do not write to subcomponent repositories without scoped ownership and an explicit reviewable PR.
 - No automatic merges, releases, authority grants or production deployment.

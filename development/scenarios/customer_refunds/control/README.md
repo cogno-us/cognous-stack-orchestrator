@@ -4,7 +4,7 @@ Issue: #38. This path is a **synthetic, fixture-only contract qualification**. I
 
 Accepted source pins used by this qualification:
 
-- Action Manifest: `8d1572d4f926c968a8704cb912a6e9d49166f74a`
+- Action Manifest: `ff5490828b2bf7f6a976da209f3f533701855687`
 - Control Plane: `e66e5f163c5d5c112ff345a2f332b4c3893ee183`
 - Orchestrator starting base: `0aaaa11d1795e4e0cbf081826e9e1d1b3d5ca850`
 

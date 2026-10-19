@@ -27,7 +27,7 @@ jobs:
         with:
           persist-credentials: false
           repository: cogno-us/cognous-replay-bundle
-          ref: c8e665bd1936e4da90f6a324b486a320934c4bff
+          ref: 2a7963b18d96eb2e9e4fdb1a09c7588cf5c0ef00
           path: .upstream/replay
 
       - name: Checkout exact Evidence Pack pin
@@ -35,7 +35,7 @@ jobs:
         with:
           persist-credentials: false
           repository: cogno-us/cognous-governance-evidence-pack
-          ref: cde3f1f1cf517d5663afb33ce88c123aae779757
+          ref: 80e24650bb089d3a0cb9c0063c5b4bcc4a436123
           path: .upstream/evidence-pack
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -47,8 +47,8 @@ jobs:
 
       - name: Verify exact upstream source SHAs
         run: |
-          test "$(git -C .upstream/replay rev-parse HEAD)" = "c8e665bd1936e4da90f6a324b486a320934c4bff"
-          test "$(git -C .upstream/evidence-pack rev-parse HEAD)" = "cde3f1f1cf517d5663afb33ce88c123aae779757"
+          test "$(git -C .upstream/replay rev-parse HEAD)" = "2a7963b18d96eb2e9e4fdb1a09c7588cf5c0ef00"
+          test "$(git -C .upstream/evidence-pack rev-parse HEAD)" = "80e24650bb089d3a0cb9c0063c5b4bcc4a436123"
 
       - name: Run issue-57 scoped qualification
         env:

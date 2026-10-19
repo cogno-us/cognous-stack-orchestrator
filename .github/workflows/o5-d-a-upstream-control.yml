@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cogno-us/cognous-action-manifest
-          ref: 8d1572d4f926c968a8704cb912a6e9d49166f74a
+          ref: ff5490828b2bf7f6a976da209f3f533701855687
           path: .upstream/action-manifest
           persist-credentials: false
 
@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cogno-us/cognous-control-plane
-          ref: 6093aca7b945698e89c0d8ac7c75306375e1a298
+          ref: 2bac7875391cad0a431fa0d75208b7ade39743e3
           path: .upstream/control-plane
           persist-credentials: false
 
@@ -52,8 +52,8 @@ jobs:
 
       - name: Verify exact upstream heads
         run: |
-          test "$(git -C .upstream/action-manifest rev-parse HEAD)" = "8d1572d4f926c968a8704cb912a6e9d49166f74a"
-          test "$(git -C .upstream/control-plane rev-parse HEAD)" = "6093aca7b945698e89c0d8ac7c75306375e1a298"
+          test "$(git -C .upstream/action-manifest rev-parse HEAD)" = "ff5490828b2bf7f6a976da209f3f533701855687"
+          test "$(git -C .upstream/control-plane rev-parse HEAD)" = "2bac7875391cad0a431fa0d75208b7ade39743e3"
 
       - name: Run O5-D-A scoped qualification
         env:

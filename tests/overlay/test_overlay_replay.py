@@ -1,7 +1,7 @@
 """Replay and the Evidence Pack importer over the overlay's records (report only; Replay and pack are not pinned by this overlay).
 
 Replay chooses its profile from a Control Plane revision LABEL supplied by the caller. The nearest label for the candidate Control
-Plane used to be Replay's newest listed generation (P4, 26a7e659). Replay c8e665bd lists the candidate's own revision (6093aca7), so
+Plane used to be Replay's newest listed generation (P4, 26a7e659). Replay 2a7963b1 lists the candidate's own revision (2bac7875), so
 the candidate label is accepted for journal-mode records and refused with a typed profile error for the orchestrator's atomic-route
 records ('resolution journal missing'). All statements here are about these synthetic records on the named revisions.
 """
@@ -10,12 +10,14 @@ from __future__ import annotations
 from conftest import section
 
 P4 = "26a7e659"
+P2 = "2bac7875"  # Replay CONTROL_PLANE_P2_REVISION; the pack is built from the bundle accepted under this label (see _replay_runner)
 CANDIDATE_LABEL_PREFIX = "candidate:"
 
 
 def test_replay_and_pack_accept_the_default_journal_record_under_the_p4_label(replay_probe):
     r = replay_probe["off/applied"]
     assert P4 in r["accepted_under"]
+    assert P2 in r["accepted_under"], "the label the installed Replay and the pack pair with"
     assert r["evidence_pack"] == {"outcome": "accepted", "freshness_block": False}, "default path: no freshness block (byte-identical when absent)"
     assert not r["retained"]["rule_revisions_rows"] and not r["retained"]["attempt_joins_rows"]
 
@@ -25,7 +27,7 @@ JOURNAL_MODE_RECORDS = ("off/applied", "identity/applied", "freshness/applied", 
 
 
 def test_replay_candidate_revision_label_outcomes_are_exact(replay_probe):
-    """Replay c8e665bd lists the programme-2 Control Plane revision, so its label is no longer refused as unsupported. Replaces the
+    """Replay 2a7963b1 lists the programme-2 Control Plane revision, so its label is no longer refused as unsupported. Replaces the
     earlier assertion that every record was refused with 'unsupported Control Plane revision' (the stale P4 behaviour). The outcome
     is asserted exactly for EVERY record, in both directions:
       * the atomic-route records (no resolution journal) are refused with exactly

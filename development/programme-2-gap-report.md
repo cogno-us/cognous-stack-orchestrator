@@ -22,11 +22,11 @@ editing any pin. Revisions under test:
 | Action Manifest | `8d1572d4` (unchanged pin) | `8d1572d4` | n/a |
 
 **Update 2026-10-18 (current pins).** The table above records the revisions of the dated runs described below and is kept as history. The
-orchestrator's accepted pins are now: Control Plane `6093aca7b945698e89c0d8ac7c75306375e1a298`, Execution Runtime
-`62a5cc156ecb439b4103b757fd265f276bb30374` (the O6 suites stay at `1b0a9e32`, whose tests later runtime commits removed), Replay
-`c8e665bd1936e4da90f6a324b486a320934c4bff`, Evidence Pack `cde3f1f1cf517d5663afb33ce88c123aae779757`; the independent verifier reference
+orchestrator's accepted pins are now: Control Plane `2bac7875391cad0a431fa0d75208b7ade39743e3`, Execution Runtime
+`c4a05883266b815f39d97cbf2240406647985147` (the O6 suites stay at `1b0a9e32`, whose tests later runtime commits removed), Replay
+`2a7963b18d96eb2e9e4fdb1a09c7588cf5c0ef00`, Evidence Pack `80e24650bb089d3a0cb9c0063c5b4bcc4a436123`; the independent verifier reference
 is `31708c3313e31df3b6a583215216372f25c9a489` (not an orchestrator pin). Two statements below are out of date at these revisions: Replay
-now lists the Control Plane revision `6093aca7`, so the candidate label is accepted for journal-mode records and refused with
+now lists the Control Plane revision `2bac7875`, so the candidate label is accepted for journal-mode records and refused with
 `typed refusal profile: resolution journal missing` for the orchestrator's atomic-route records (F-4; the overlay test asserts both outcomes
 exactly), and verifier tier V3 is reported as ordinary `v3.*` checks listed in `scope.tiers_run` instead of an `x-tier-v3` extension
 (the overlay test reads the checks from there). The overlay is 38 tests, all passing locally at these revisions.

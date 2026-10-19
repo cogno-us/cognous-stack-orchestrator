@@ -17,7 +17,9 @@ REPLAY_REVISION = "2a7963b18d96eb2e9e4fdb1a09c7588cf5c0ef00"
 EVIDENCE_PACK_REPOSITORY = "cogno-us/cognous-governance-evidence-pack"
 EVIDENCE_PACK_REVISION = "80e24650bb089d3a0cb9c0063c5b4bcc4a436123"
 RECONSTRUCTION_VERSION = "0.2.0"
-EVIDENCE_PACK_VERSION = "0.2.0"
+# Not importer-built: this scenario assembles its pack by hand and never runs the Evidence Pack manifest reconstruction importer, so the pack
+# id prefix and version deliberately do not claim importer identity (the importer emits "agep-" ids at version 0.2.0 with metadata.traceable_import).
+EVIDENCE_PACK_VERSION = "0.1"
 
 
 class QualificationError(ValueError):
@@ -217,7 +219,7 @@ def _pack_dict(source: dict[str, Any], reconstruction: dict[str, Any], events: l
     ]
     duplicates = [e["duplicate_of_request_id"] for e in events if e["kind"] == "duplicate_suppressed"]
     return {
-        "pack_id": f"agep-refund-o5-d-c:{source['trajectory_id']}",
+        "pack_id": f"synthetic-refund-o5-d-c:{source['trajectory_id']}",
         "pack_version": EVIDENCE_PACK_VERSION,
         "title": "O5-D-C synthetic refund evidence qualification",
         "generated_at": source.get("generated_at") or "2026-10-09T19:00:00Z",
@@ -276,6 +278,7 @@ def _pack_dict(source: dict[str, Any], reconstruction: dict[str, Any], events: l
                     "no_institutional_grants",
                     "no_destination_settlement_observer",
                     "does_not_exercise_manifest_reconstruction_transformer",
+                "synthetic_pack_not_importer_built_makes_no_importer_identity_claim",
                 ],
             }
         },

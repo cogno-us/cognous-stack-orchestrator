@@ -3,6 +3,7 @@
 **Status:** REPOSITORY REVISIONS VERIFIED / SOURCE INTERFACE ACCEPTANCE PENDING
 **Recorded:** 2026-10-09
 **Parent:** [Engineering dashboard #1](https://github.com/cogno-us/cognous-stack-orchestrator/issues/1)
+**Note:** historical v0 review. The pins and observed revisions below record the state on 2026-10-09 and are not the current selected pins; see the dashboard and workflows for current pins.
 **Normative source:** [V0 draft](integration-contract-v0.md)
 **Existing reference authority:** [Hub PR #63](https://github.com/cogno-us/cognous-open-control-stack/pull/63); original hub C1–C8 contracts, not this file.
 
@@ -32,7 +33,7 @@
 
 | Interface | Repository | Status | Safety boundary |
 |---|---|---|---|
-| ISS cognitive client | `TurwinAI/COGNOUS-client` (private) | Disabled placeholder; no adapter accepted | Output may propose actions, but never grant execution authority; no private code exported |
+| ISS cognitive client | External service (not part of this repository) | Disabled placeholder; no adapter accepted | Output may propose actions, but never grant execution authority; no private code exported |
 | OpenAPPA | Optional W4 profile | Existing optional qualification separate | Information-flow approval is not action authority |
 | Microsoft AGT | Optional W5 profile | HEAD diverges from selected control-plane pin | Pre-tool checks remain conjunctive with native authority |
 | OpenShell | Optional W6 profile | Founder-deferred live qualification | No live confinement claim |

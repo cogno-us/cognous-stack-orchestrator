@@ -7,6 +7,6 @@
 5. Do not blindly retry an effect after unknown delivery; reconcile using destination evidence and stable effect IDs.
 6. Do not elevate an ISS response, ODES envelope, Replay reconstruction or Evidence Pack validation into permission or proof of independently verified effects.
 7. Optional adapters must not modify the mandatory bounded reference chain by default.
-8. Do not copy proprietary ISS, Architecture of Mind or private IGPG implementation material into integration artifacts.
+8. Do not copy private or proprietary implementations of other products into integration artifacts.
 
 Changes to accepted C1–C8 contracts belong in the original control-stack governance process, not this scaffold.

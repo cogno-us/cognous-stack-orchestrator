@@ -8,7 +8,7 @@ Out of scope:
 
 ## Boundaries
 - [ ] Accepted contracts C1-C8 unchanged, OR an independently approved amendment linked
-- [ ] No ISS/AoM/IGPG proprietary internals introduced
+- [ ] No private or proprietary implementations of other products introduced
 - [ ] Authority remains distinct from evidence and execution
 - [ ] No unintended historical component-lock or release-state change
 

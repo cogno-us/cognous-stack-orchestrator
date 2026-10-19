@@ -43,8 +43,10 @@ The attestation cannot supply or replace the trust path, verifier revision, or
 trusted-clock provenance. The independent consumer reference must agree on
 audience, subject and content digest before delegation to the accepted bridge.
 
-Successful bridge verification is reported only as issuer authenticity under the
-configured snapshot and trusted time. Qualification always reports
+Successful bridge verification is reported only as `issuer_signature_only` under the
+configured snapshot and trusted time: a valid signature shows that the configured key signed, not who the issuer is.
+The result field named `issuer_authenticity` keeps that historical name and means only this.
+Qualification always reports
 `authority=not_established`, `grant=not_inferred`, and `effect=not_observed`.
 
 ## Negative matrix

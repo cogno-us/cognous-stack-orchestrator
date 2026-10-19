@@ -1,4 +1,4 @@
-"""Read-only authenticated Registry source observation."""
+"""Read-only, operator-trusted-endpoint Registry source observation."""
 
 from .observer import (
     REGISTRY_REVISION,

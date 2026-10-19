@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install bounded test dependencies
-        run: python -m pip install pytest==8.3.5
+        run: python -m pip install --require-hashes -r .github/locks/pytest-b61d81.txt
       - name: Check accepted source SHA and test provenance
         run: |
           test "$(git -C .upstream/execution-runtime rev-parse HEAD)" = "1b0a9e32d010797711004ae612051a277b07912a"

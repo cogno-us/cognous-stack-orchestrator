@@ -42,7 +42,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install test-only Python dependencies
-        run: python -m pip install --disable-pip-version-check 'pydantic>=2,<3' 'pytest>=8,<9'
+        run: python -m pip install --disable-pip-version-check --require-hashes -r .github/locks/pydantic-pytest-165155.txt
 
       - name: Verify exact upstream source revisions
         shell: bash

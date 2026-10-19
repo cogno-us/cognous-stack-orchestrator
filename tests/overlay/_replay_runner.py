@@ -44,7 +44,11 @@ def probe(bundle: pathlib.Path) -> dict:
         try:
             built = replay.import_bounded_workflow(record, proposal=proposal, control_plane_revision=rev)
             per_label[name] = "accepted"
-            if rev == replay.CONTROL_PLANE_P4_REVISION:  # the newest generation Replay lists: the nearest label for a later Control Plane
+            # The Evidence Pack pairs each Replay bundle with the Replay revision of its own generation (P4 -> 9aab3f6c, programme 2 ->
+            # 2a7963b1) and refuses a bundle whose generation does not match the installed Replay. The installed Replay is 2a7963b1, so the
+            # bundle handed to the pack is the one built under the programme-2 label (CONTROL_PLANE_P2_REVISION), the label this Replay pairs
+            # with; the P4-labelled bundle can no longer be imported by the pack. Replay's own per-label outcomes are still reported for all labels.
+            if rev == replay.CONTROL_PLANE_P2_REVISION:
                 accepted_bundle = (name, built)
         except Exception as exc:  # noqa: BLE001 - the probe records every outcome
             per_label[name] = outcome(exc)

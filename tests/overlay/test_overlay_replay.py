@@ -10,12 +10,14 @@ from __future__ import annotations
 from conftest import section
 
 P4 = "26a7e659"
+P2 = "2bac7875"  # Replay CONTROL_PLANE_P2_REVISION; the pack is built from the bundle accepted under this label (see _replay_runner)
 CANDIDATE_LABEL_PREFIX = "candidate:"
 
 
 def test_replay_and_pack_accept_the_default_journal_record_under_the_p4_label(replay_probe):
     r = replay_probe["off/applied"]
     assert P4 in r["accepted_under"]
+    assert P2 in r["accepted_under"], "the label the installed Replay and the pack pair with"
     assert r["evidence_pack"] == {"outcome": "accepted", "freshness_block": False}, "default path: no freshness block (byte-identical when absent)"
     assert not r["retained"]["rule_revisions_rows"] and not r["retained"]["attempt_joins_rows"]
 

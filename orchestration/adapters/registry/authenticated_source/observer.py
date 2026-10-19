@@ -1,8 +1,12 @@
-"""Authenticated, read-only observation of the pinned Evidence Registry deployment.
+"""Operator-trusted-endpoint, read-only observation of the pinned Evidence Registry deployment.
 
-Authentication is deliberately bounded: an operator chooses a trusted deployment
-and RPC endpoint, and may additionally pin an independently obtained block
-checkpoint. Receipt/log/block consistency is checked against that trust root.
+Trust is deliberately bounded: an operator chooses a deployment and RPC
+endpoint and trusts it; nothing is cryptographically authenticated (the
+transport accepts ``http://`` and userinfo URLs as given). The operator may
+additionally pin an independently obtained block checkpoint. The names
+``observe_authenticated_registry`` and ``source_authentication`` keep the
+historical word and mean only "matches the operator-chosen endpoint".
+Receipt/log/block consistency is checked against that trust root.
 The checkpoint is checked only by hash equality at its own height through the
 same RPC endpoint; it is not linked to the observed block by parent hashes or
 any proof, so it detects an endpoint that misreports that one block but does

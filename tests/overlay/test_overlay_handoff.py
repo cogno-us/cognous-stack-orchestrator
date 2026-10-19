@@ -35,7 +35,7 @@ def test_orchestrator_pins_are_untouched_by_the_overlay():
     """The overlay substitutes pins only inside a subprocess copy of the harness source; the file on disk keeps the accepted pins."""
     text = HARNESS.read_text(encoding="utf-8")
     assert 'CONTROL_PLANE_PIN = "2bac7875391cad0a431fa0d75208b7ade39743e3"' in text
-    assert 'EXECUTION_RUNTIME_BASE_PIN = "c4a05883266b815f39d97cbf2240406647985147"' in text
+    assert 'EXECUTION_RUNTIME_BASE_PIN = "6b16962db140590b808f02b5c2cb11a217aec46f"' in text
     assert 'ACTION_MANIFEST_PIN = "ff5490828b2bf7f6a976da209f3f533701855687"' in text
 
 

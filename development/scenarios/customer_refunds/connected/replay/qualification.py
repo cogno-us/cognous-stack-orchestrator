@@ -16,9 +16,9 @@ from dataclasses import dataclass
 from typing import Any
 
 REPLAY_REPOSITORY = "cogno-us/cognous-replay-bundle"
-REPLAY_REVISION = "2a7963b18d96eb2e9e4fdb1a09c7588cf5c0ef00"
+REPLAY_REVISION = "6a6a477495ac24e813f12bb0fe314acfe8bac9cf"
 EVIDENCE_PACK_REPOSITORY = "cogno-us/cognous-governance-evidence-pack"
-EVIDENCE_PACK_REVISION = "80e24650bb089d3a0cb9c0063c5b4bcc4a436123"
+EVIDENCE_PACK_REVISION = "fd030615a782a064b89c57e8e40d7f220f99ff9e"
 RECONSTRUCTION_VERSION = "0.2.0"
 # Not importer-built: this scenario assembles its pack by hand and never runs the Evidence Pack manifest reconstruction importer, so the pack
 # id prefix and version deliberately do not claim importer identity (the importer emits "agep-" ids at version 0.2.0 with metadata.traceable_import).

@@ -5,7 +5,7 @@ Evidence intake only. Never issues authority, dispatches an effect, or permits r
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Literal
 
 from engine.revocation_closeout import OrderingEvidence, RevocationCloseoutStore

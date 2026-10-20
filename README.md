@@ -129,3 +129,7 @@ Consult the [component matrix](docs/component-matrix.md), [integration contracts
 Read [AGENTS.md](AGENTS.md) before editing. Preserve effect/attempt identity, source SHA pins, authority/evidence separation, negative tests and exact-head CI. No automatic change to release locks, C1–C8 contracts, trust roots, deployment state or institutional grants.
 
 [ISS integration](integrations/iss/README.md) is a **disabled external-interface placeholder**. No proprietary ISS source is implemented or mirrored here.
+
+## License
+
+This repository is licensed under the [Apache License 2.0](LICENSE). The ISS integration remains a disabled external-interface placeholder; no proprietary ISS source is included or licensed here.

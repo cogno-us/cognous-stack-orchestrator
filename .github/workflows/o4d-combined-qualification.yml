@@ -24,6 +24,16 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install --require-hashes -r .github/locks/jsonschema-424038.txt
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-evidence-attestation
+          ref: 5b5077dafde232a7801cb425c4efddcffb468723
+          path: .upstream/attestation
+          persist-credentials: false
+      - name: Verify pinned attestation checkout
+        run: test "$(git -C .upstream/attestation rev-parse HEAD)" = "5b5077dafde232a7801cb425c4efddcffb468723"
+      - name: Install attestation test dependencies (hash-locked)
+        run: python -m pip install --require-hashes -r .github/locks/cryptography-pydantic-pytest-513753.txt
       - name: O3 reference schema
         run: python -m unittest discover -s tests/contract -p 'test_*.py' -v
       - name: O4 and O4b and O4c integrated boundary
@@ -32,10 +42,14 @@ jobs:
         run: python -m unittest discover -s tests/adapters/registry -p 'test_*.py' -v
       - name: O4d-A Registry source qualification
         run: python -m unittest discover -s tests/adapters/registry/authenticated_source -p 'test_*.py' -v
-      - name: O4c Attestation
-        run: python -m unittest discover -s tests/adapters/attestation -p 'test_*.py' -v
-      - name: O4d-B Attestation trust
-        run: python -m unittest discover -s tests/adapters/attestation/trust_qualification -p 'test_*.py' -v
+      - name: O4c Attestation (no skips allowed)
+        env:
+          COGNOUS_EVIDENCE_ATTESTATION_ROOT: ${{ github.workspace }}/.upstream/attestation
+        run: python .github/scripts/run_unittest_no_skips.py tests/adapters/attestation --require-env COGNOUS_EVIDENCE_ATTESTATION_ROOT
+      - name: O4d-B Attestation trust (no skips allowed)
+        env:
+          COGNOUS_EVIDENCE_ATTESTATION_ROOT: ${{ github.workspace }}/.upstream/attestation
+        run: python .github/scripts/run_unittest_no_skips.py tests/adapters/attestation/trust_qualification --require-env COGNOUS_EVIDENCE_ATTESTATION_ROOT
       - name: O4c Institutional mapping
         run: python -m unittest discover -s tests/contracts/institutional -p 'test_*.py' -v
       - name: O4c Exchange

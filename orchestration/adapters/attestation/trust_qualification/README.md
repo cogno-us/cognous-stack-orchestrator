@@ -104,6 +104,12 @@ verifier when `COGNOUS_EVIDENCE_ATTESTATION_ROOT` points to revision
 - Default exact-head CI does not provision the private/pinned upstream checkout;
   live cryptographic lifecycle tests therefore remain conditional unless the
   runner explicitly supplies `COGNOUS_EVIDENCE_ATTESTATION_ROOT`.
+  Update (E-9 fix): the workflows that run these tests (O4c-B, O4d-B and the
+  O4c/O4d combined workflows) now check out the pinned upstream revision, set
+  `COGNOUS_EVIDENCE_ATTESTATION_ROOT`, and run them through
+  `.github/scripts/run_unittest_no_skips.py`, which fails the job on any skipped
+  test, on zero tests run, or if the variable is unset. This does not change
+  what the qualification establishes.
 - Neither a verified signature nor this qualification establishes an
   institutional grant, execution permission, effect, or independent effect
   observation.

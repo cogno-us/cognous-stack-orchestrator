@@ -23,14 +23,26 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install --require-hashes -r .github/locks/jsonschema-424038.txt
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-evidence-attestation
+          ref: 5b5077dafde232a7801cb425c4efddcffb468723
+          path: .upstream/attestation
+          persist-credentials: false
+      - name: Verify pinned attestation checkout
+        run: test "$(git -C .upstream/attestation rev-parse HEAD)" = "5b5077dafde232a7801cb425c4efddcffb468723"
+      - name: Install attestation test dependencies (hash-locked)
+        run: python -m pip install --require-hashes -r .github/locks/cryptography-pydantic-pytest-513753.txt
       - name: Reference schema
         run: python -m unittest discover -s tests/contract -p 'test_*.py' -v
       - name: Existing O4 and O4b and combined boundaries
         run: python -m unittest discover -s tests/integration -p 'test_*.py' -v
       - name: Registry tests
         run: python -m unittest discover -s tests/adapters/registry -p 'test_*.py' -v
-      - name: Attestation bridge tests
-        run: python -m unittest discover -s tests/adapters/attestation -p 'test_*.py' -v
+      - name: Attestation bridge tests (no skips allowed)
+        env:
+          COGNOUS_EVIDENCE_ATTESTATION_ROOT: ${{ github.workspace }}/.upstream/attestation
+        run: python .github/scripts/run_unittest_no_skips.py tests/adapters/attestation --require-env COGNOUS_EVIDENCE_ATTESTATION_ROOT
       - name: Institutional mapping tests
         run: python -m unittest discover -s tests/contracts/institutional -p 'test_*.py' -v
       - name: Governed Exchange mapping tests

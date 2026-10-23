@@ -19,6 +19,7 @@ import json
 import os
 import re
 import secrets
+import unicodedata
 from pathlib import Path
 
 PROFILE = "cognous-producer-observation/0"
@@ -29,8 +30,8 @@ SHA = re.compile(r"^[a-f0-9]{40}$")
 DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
 OBS_ID = re.compile(r"^obs_[a-f0-9]{64}$")
 PENDING_PREFIX = ".pending-"
-FILE_NAME = re.compile(r"^(\d{12})\.json$")
-TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+FILE_NAME = re.compile(r"^([0-9]{12})\.json$", re.ASCII)
+TIMESTAMP = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", re.ASCII)
 MAX_SUBJECT = 256
 MAX_REVISIONS = 64
 
@@ -167,7 +168,7 @@ def validate(observation) -> str:
     if type(kind) is not str or kind not in KINDS:
         _refuse("unknown_kind", str(kind)[:40])
     subject = observation["subject"]
-    if not _text(subject) or len(subject) > MAX_SUBJECT or any(ord(c) < 0x20 for c in subject):
+    if not _text(subject) or len(subject) > MAX_SUBJECT or not _plain_reference(subject):
         _refuse("schema_invalid", "subject reference")
     revs = observation["source_revisions"]
     if type(revs) is not list or not revs or len(revs) > MAX_REVISIONS \
@@ -197,6 +198,17 @@ def validate(observation) -> str:
     if observation["observation_id"] != observation_id_for(computed):
         _refuse("id_mismatch")
     return computed
+
+
+def _plain_reference(value: str) -> bool:
+    """No control, format (bidi, zero-width, BOM), line/paragraph separator characters; NFC only.
+
+    The subject is an opaque reference compared by exact code points, so visually identical but
+    different spellings are refused rather than normalized.
+    """
+    if unicodedata.normalize("NFC", value) != value:
+        return False
+    return not any(unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") for c in value)
 
 
 def _check_timestamp(value) -> None:
@@ -243,7 +255,9 @@ class ObservationStore:
 
     # reading (never writes)
     def _entries(self) -> list:
-        if not self.directory.is_dir() or self.directory.is_symlink():
+        if self.directory.is_symlink():
+            _refuse("store_integrity", "store directory is a symlink")
+        if not self.directory.is_dir():
             _refuse("store_missing")
         # in-flight temporary files of an appender (removed after publish) are not records
         names = sorted(n for n in os.listdir(self.directory) if not n.startswith(PENDING_PREFIX))
@@ -264,7 +278,7 @@ class ObservationStore:
         data = path.read_bytes()
         try:
             obs = loads_strict(data)
-        except (ValueError, UnicodeDecodeError):
+        except (ValueError, UnicodeDecodeError, RecursionError):
             _refuse("not_strict_json", name)
         validate(obs)
         if canonical_bytes(obs) != data:
@@ -312,15 +326,27 @@ class ObservationStore:
         return [self._read(n) for n in self._entries()]
 
     # writing
-    def append(self, observation: dict) -> str:
-        """Validate, check the chain, then publish one new read-only file. Returns the id."""
+    def append(self, observation: dict, *, expected_head: str | None = None,
+               expected_count: int | None = None) -> str:
+        """Validate, check the chain, then publish one new read-only file. Returns the id.
+
+        expected_head / expected_count (held outside the store) are checked against the chain as it
+        stands before this append, exactly as in verify_chain.
+        """
         validate(observation)
         data = canonical_bytes(observation)
         if len(data) > self.max_record_bytes:
             _refuse("store_bound_exceeded", "record too large")
+        if self.directory.is_symlink():
+            _refuse("store_integrity", "store directory is a symlink")
         if not self.directory.exists():
-            os.mkdir(self.directory)  # only the named directory; parents must exist
-        digests = self.verify_chain()
+            try:
+                os.mkdir(self.directory)  # only the named directory; parents must exist
+            except FileNotFoundError:
+                _refuse("store_missing", "parent directory missing")
+            except OSError:
+                _refuse("store_integrity", "store directory cannot be created")
+        digests = self.verify_chain(expected_head=expected_head, expected_count=expected_count)
         if len(digests) >= self.max_records:
             _refuse("store_bound_exceeded", "record count bound reached")
         if observation["sequence"] != len(digests) + 1 \
@@ -338,9 +364,25 @@ class ObservationStore:
                 os.link(temp, final)  # atomic and exclusive: never overwrites, never half-visible
             except FileExistsError:
                 _refuse("store_conflict", "sequence slot already taken")
+            except OSError:
+                _refuse("store_integrity", "hard links unsupported or failed; nothing published")
+            self._sync_directory()
         finally:
             try:
                 os.unlink(temp)
             except FileNotFoundError:
                 pass
         return observation["observation_id"]
+
+    def _sync_directory(self) -> None:
+        """Best effort: make the new directory entry durable. Failure does not undo the publish."""
+        try:
+            fd = os.open(self.directory, os.O_RDONLY)
+        except OSError:
+            return
+        try:
+            os.fsync(fd)
+        except OSError:
+            pass
+        finally:
+            os.close(fd)

@@ -1,11 +1,13 @@
 """Developer tests for the source-preserving producer handoff. Not independent acceptance cases."""
 from __future__ import annotations
+import ast
 import builtins
 import copy
 import hashlib
 import importlib.util
 import json
 import os
+import signal
 from pathlib import Path
 import pytest
 
@@ -244,9 +246,14 @@ def test_oversize_when_file_grows_past_bound_after_stat(tmp_path, hub, monkeypat
     real = os.fstat
 
     class FakeStat:
-        st_size = 1
+        def __init__(self, st):
+            self._st = st
+            self.st_size = 1
 
-    monkeypatch.setattr(os, "fstat", lambda fd: FakeStat())
+        def __getattr__(self, name):
+            return getattr(self._st, name)
+
+    monkeypatch.setattr(os, "fstat", lambda fd: FakeStat(real(fd)))
     refused("oversize", **args(hub, root=tmp_path, seed_paths=["g"], max_bytes=10,
                                expected_digests={"g": "sha256:" + "0" * 64}))
     monkeypatch.setattr(os, "fstat", real)
@@ -447,8 +454,274 @@ def test_historical_o6_q5_constants_unchanged():
 
 
 def test_module_uses_no_subprocess_network_or_write_modes():
-    src = SCRIPT.read_text()
-    code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith(("#", '"""')))
-    for banned in ("import subprocess", "import socket", "urllib", "O_WRONLY", "O_RDWR", "O_CREAT", "write_bytes",
-                   "write_text", "shutil", "os.rename", "os.replace", "os.remove", "os.unlink"):
-        assert banned not in code, banned
+    tree = ast.parse(SCRIPT.read_text())
+    banned_modules = {"subprocess", "socket", "urllib", "http", "shutil", "tempfile", "ssl", "ftplib", "requests"}
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            imported.add((node.module or "").split(".")[0])
+    assert not imported & banned_modules, imported & banned_modules
+    banned_calls = {"open", "exec", "eval", "compile", "system", "popen", "Popen", "run", "call", "check_call",
+                    "check_output", "write", "write_bytes", "write_text", "rename", "replace", "remove", "unlink",
+                    "rmdir", "mkdir", "makedirs", "chmod", "truncate", "symlink", "link", "urlopen", "connect"}
+    banned_names = {"O_WRONLY", "O_RDWR", "O_CREAT", "O_TRUNC", "O_APPEND"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            fn = node.func
+            name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
+            if name == "open" and isinstance(fn, ast.Attribute) and fn.attr == "open" \
+                    and getattr(fn.value, "id", "") == "os":
+                continue  # os.open with the fixed read-only flag constants checked below
+            if name == "compile" and getattr(fn, "value", None) is not None and getattr(fn.value, "id", "") == "re":
+                continue  # re.compile is the only allowed compile
+            assert name not in banned_calls, name
+        if isinstance(node, (ast.Name, ast.Attribute)):
+            assert (node.id if isinstance(node, ast.Name) else node.attr) not in banned_names
+
+
+# --- safe reader: races, special files, hardlinks, root --------------------------------------
+class Timeout(Exception):
+    pass
+
+
+@pytest.fixture
+def guard():
+    def boom(*_):
+        raise Timeout("read hung")
+    old = signal.signal(signal.SIGALRM, boom)
+    signal.alarm(5)
+    yield
+    signal.alarm(0)
+    signal.signal(signal.SIGALRM, old)
+
+
+def digest_of(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def swap_after_lstat(monkeypatch, name, action):
+    """Run `action` once, right after the first lstat of entry `name` (the check-to-open window)."""
+    real, done = os.lstat, []
+
+    def wrapped(path, *a, **k):
+        out = real(path, *a, **k)
+        if path == name and k.get("dir_fd") is not None and not done:
+            done.append(1)
+            action()
+        return out
+
+    monkeypatch.setattr(os, "lstat", wrapped)
+    return done
+
+
+def test_intermediate_directory_swapped_for_symlink_is_refused(tmp_path, hub, monkeypatch):
+    root = tmp_path / "r"
+    (root / "d").mkdir(parents=True)
+    (root / "d" / "f").write_bytes(b"x")
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "f").write_bytes(b"x")
+
+    def swap():
+        os.rename(root / "d", root / "d_old")
+        os.symlink(other, root / "d")
+
+    done = swap_after_lstat(monkeypatch, "d", swap)
+    refused("symlink_refused", **args(hub, root=root, seed_paths=["d/f"], expected_digests={"d/f": digest_of(b"x")}))
+    assert done
+
+
+def test_intermediate_directory_swapped_for_other_directory_is_refused(tmp_path, hub, monkeypatch):
+    root = tmp_path / "r"
+    (root / "d").mkdir(parents=True)
+    (root / "d" / "f").write_bytes(b"x")
+
+    def swap():
+        os.rename(root / "d", root / "d_old")
+        (root / "d").mkdir()
+        (root / "d" / "f").write_bytes(b"x")
+
+    done = swap_after_lstat(monkeypatch, "d", swap)
+    refused("changed_between_reads", **args(hub, root=root, seed_paths=["d/f"],
+                                            expected_digests={"d/f": digest_of(b"x")}))
+    assert done
+
+
+def test_file_swapped_for_symlink_after_lstat_is_refused(tmp_path, hub, monkeypatch):
+    (tmp_path / "f").write_bytes(b"x")
+    (tmp_path / "t").write_bytes(b"x")
+
+    def swap():
+        os.unlink(tmp_path / "f")
+        os.symlink(tmp_path / "t", tmp_path / "f")
+
+    swap_after_lstat(monkeypatch, "f", swap)
+    refused("symlink_refused", **args(hub, root=tmp_path, seed_paths=["f"], expected_digests={"f": digest_of(b"x")}))
+
+
+def test_file_swapped_for_fifo_after_lstat_does_not_hang(tmp_path, hub, monkeypatch, guard):
+    (tmp_path / "f").write_bytes(b"x")
+
+    def swap():
+        os.unlink(tmp_path / "f")
+        os.mkfifo(tmp_path / "f")
+
+    done = swap_after_lstat(monkeypatch, "f", swap)
+    refused("not_a_regular_file", **args(hub, root=tmp_path, seed_paths=["f"],
+                                         expected_digests={"f": digest_of(b"x")}))
+    assert done
+
+
+def test_fifo_present_from_the_start_is_refused_without_opening(tmp_path, hub, guard):
+    os.mkfifo(tmp_path / "f")
+    refused("not_a_regular_file", **args(hub, root=tmp_path, seed_paths=["f"],
+                                         expected_digests={"f": digest_of(b"x")}))
+
+
+def test_hardlink_to_a_regular_file_is_accepted(tmp_path, hub):
+    (tmp_path / "orig").write_bytes(b"same bytes")
+    os.link(tmp_path / "orig", tmp_path / "hard")
+    rec = p.build_record(**args(hub, root=tmp_path, seed_paths=["hard"],
+                                expected_digests={"hard": digest_of(b"same bytes")}))
+    assert rec["sources"][0]["bytes"] == 10 and rec["preservation"]["symlinks_followed"] is False
+
+
+def test_symlinked_root_is_refused(tmp_path, hub):
+    real = tmp_path / "real"
+    real.mkdir()
+    (real / "f").write_bytes(b"x")
+    os.symlink(real, tmp_path / "rootlink")
+    kw = dict(seed_paths=["f"], expected_digests={"f": digest_of(b"x")})
+    refused("root_symlink_refused", **args(hub, root=tmp_path / "rootlink", **kw))
+    refused("root_symlink_refused", **args(hub, root=str(tmp_path / "rootlink") + "/", **kw))
+    os.symlink(hub, tmp_path / "locklink")
+    refused("root_symlink_refused", **args(hub, root=real, lock_root=tmp_path / "locklink", **kw))
+    rec = p.build_record(**args(hub, root=real, **kw))
+    with pytest.raises(p.HandoffRefused) as ctx:
+        p.recheck_sources(rec, root=tmp_path / "rootlink", lock_root=hub)
+    assert ctx.value.code == "root_symlink_refused"
+
+
+def test_relative_root_is_accepted(tmp_path, hub, monkeypatch):
+    (tmp_path / "f").write_bytes(b"x")
+    monkeypatch.chdir(tmp_path)
+    rec = p.build_record(**args(hub, root=".", seed_paths=["f"], expected_digests={"f": digest_of(b"x")}))
+    assert rec["sources"][0]["path"] == "f"
+
+
+# --- record checks: tuple and strict types ----------------------------------------------------
+def test_tuple_tamper_with_stale_digest_is_refused(hub):
+    rec = p.build_record(**args(hub))
+    rec["tuple"]["bitrep"]["sha"] = D
+    with pytest.raises(p.HandoffRefused) as ctx:
+        p.check_record(redigest(rec))
+    assert ctx.value.code == "tuple_digest_mismatch"
+
+
+def test_consistent_tuple_forgery_passes_offline_but_not_recheck(hub):
+    rec = p.build_record(**args(hub))
+    rec["tuple"]["bitrep"]["sha"] = D
+    rec["tuple_digest"] = p.h31.tuple_digest(rec["tuple"])
+    redigest(rec)
+    assert p.check_record(rec)["status"] == "HOLD"
+    with pytest.raises(p.HandoffRefused) as ctx:
+        p.recheck_sources(rec, root=ROOT, lock_root=hub)
+    assert ctx.value.code == "tuple_differs_from_lock"
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda t: t.clear(),
+    lambda t: t["bitrep"].update(extra="x"),
+    lambda t: t["bitrep"].pop("interfaces"),
+    lambda t: t["bitrep"].update(sha="nothex"),
+    lambda t: t["bitrep"].update(repository=""),
+    lambda t: t["bitrep"].update(interfaces="Decision 1.0"),
+    lambda t: t["bitrep"].update(interfaces=[1]),
+    lambda t: t.update(bad="x"),
+])
+def test_tuple_shape_is_validated(hub, mutate):
+    rec = p.build_record(**args(hub))
+    mutate(rec["tuple"])
+    rec["tuple_digest"] = p.h31.tuple_digest(rec["tuple"]) if rec["tuple"] and all(
+        type(v) is dict for v in rec["tuple"].values()) else rec["tuple_digest"]
+    with pytest.raises(p.HandoffRefused) as ctx:
+        p.check_record(redigest(rec))
+    assert ctx.value.code == "tuple_invalid"
+
+
+def test_tuple_not_an_object_is_refused(hub):
+    rec = p.build_record(**args(hub))
+    rec["tuple"] = ["x"]
+    with pytest.raises(p.HandoffRefused) as ctx:
+        p.check_record(redigest(rec))
+    assert ctx.value.code == "tuple_invalid"
+
+
+@pytest.mark.parametrize("key,value", [
+    ("preservation", {"mode": "bytes_by_digest_only", "reads_per_file": 2, "seed_files_modified": 0,
+                      "normalized_or_reserialized": False, "symlinks_followed": False}),
+    ("preservation", {"mode": "bytes_by_digest_only", "reads_per_file": 2, "seed_files_modified": False,
+                      "normalized_or_reserialized": 0, "symlinks_followed": False}),
+    ("preservation", {"mode": "bytes_by_digest_only", "reads_per_file": 2, "seed_files_modified": False,
+                      "normalized_or_reserialized": False, "symlinks_followed": 0}),
+    ("preservation", {"mode": "bytes_by_digest_only", "reads_per_file": True, "seed_files_modified": False,
+                      "normalized_or_reserialized": False, "symlinks_followed": False}),
+    ("qualification_reference", 0),
+    ("qualification_reference", False),
+])
+def test_fixed_fields_are_type_exact(hub, key, value):
+    rec = p.build_record(**args(hub))
+    rec[key] = value
+    with pytest.raises(p.HandoffRefused) as ctx:
+        p.check_record(redigest(rec))
+    assert ctx.value.code == "fixed_field_changed"
+
+
+def test_float_in_fixed_field_is_refused_as_changed(hub):
+    rec = p.build_record(**args(hub))
+    rec["preservation"]["reads_per_file"] = 2.0  # cannot be digested; the fixed-field check comes first
+    with pytest.raises(p.HandoffRefused) as ctx:
+        p.check_record(rec)
+    assert ctx.value.code == "fixed_field_changed"
+
+
+def test_schema_version_false_is_refused(hub):
+    rec = p.build_record(**args(hub))
+    rec["schema_version"] = False
+    with pytest.raises(p.HandoffRefused) as ctx:
+        p.check_record(redigest(rec))
+    assert ctx.value.code == "profile_mismatch"
+
+
+# --- build-time inputs never raise TypeError -------------------------------------------------
+@pytest.mark.parametrize("over,code", [
+    ({"producer": None}, "producer_invalid"),
+    ({"producer": "x"}, "producer_invalid"),
+    ({"producer": {"component": ["x"], "revision": "f" * 40}}, "producer_invalid"),
+    ({"seed_paths": [1, CANDIDATE]}, "seed_paths_invalid"),
+    ({"seed_paths": [[CANDIDATE]]}, "seed_paths_invalid"),
+    ({"seed_paths": [{"a": 1}]}, "seed_paths_invalid"),
+    ({"seed_paths": [None]}, "seed_paths_invalid"),
+    ({"claim_scope": {"claim": "c", "exclusions": "no verdict"}}, "claim_scope_invalid"),
+    ({"claim_scope": {"claim": "c", "exclusions": [["x"]]}}, "claim_scope_invalid"),
+    ({"claim_scope": None}, "claim_scope_invalid"),
+    ({"claim_scope": "x"}, "claim_scope_invalid"),
+    ({"claim_scope": {"claim": ["c"], "exclusions": ["x"]}}, "claim_scope_invalid"),
+    ({"hub_sha": 5}, "hub_identity_invalid"),
+    ({"hub_sha": None}, "hub_identity_invalid"),
+    ({"hub_repository": None}, "hub_identity_invalid"),
+    ({"predecessor": 5}, "predecessor_invalid"),
+    ({"lock_path": None}, "path_invalid"),
+    ({"expected_lock_digest": None}, "expected_digest_invalid"),
+    ({"expected_digests": None}, "expected_digests_mismatch"),
+    ({"root": None}, "root_invalid"),
+    ({"lock_root": 5}, "root_invalid"),
+])
+def test_bad_build_inputs_are_refused_not_typeerror(hub, over, code):
+    refused(code, **args(hub, **over))
+
+
+def test_unhashable_expected_digest_value_is_refused(hub):
+    refused("expected_digest_invalid", **args(hub, expected_digests={CANDIDATE: ["x"], ADMISSION: EXPECTED[ADMISSION]}))

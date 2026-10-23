@@ -3,7 +3,7 @@
 Given explicit paths and expected digests, this producer emits a handoff record that carries the
 seed files (for example ../o6-q5/candidate.json and admission.py) BY DIGEST ONLY: exact path, byte
 length, sha256 of the exact bytes and git blob sha1. It never parses, normalizes, re-serializes or
-writes a seed file; files are opened read-only without following symlinks and read twice, and any
+writes a seed file; files are opened read-only, component by component relative to directory fds, without following symlinks, and read twice, and any
 difference between the reads, a digest that differs from the caller's expected digest, a symlink,
 a path outside the root, an oversize file or an unknown member is a loud refusal.
 
@@ -14,6 +14,7 @@ candidate are not changed. Standard library only; no network and no subprocess (
 is computed from the bytes).
 """
 from __future__ import annotations
+import errno
 import hashlib
 import importlib.util
 import os
@@ -88,54 +89,141 @@ def _split(rel) -> list[str]:
     return parts
 
 
-def _read_once(root: str, parts: list[str], max_bytes: int) -> bytes:
-    """One read-only pass: every component is checked with lstat (no symlink anywhere), the file
-    is opened O_RDONLY|O_NOFOLLOW and must be a regular file within the size bound."""
-    cur = root
-    for index, part in enumerate(parts):
-        cur = os.path.join(cur, part)
-        try:
-            st = os.lstat(cur)
-        except FileNotFoundError:
-            _refuse("file_missing", "/".join(parts))
-        except OSError as exc:
-            _refuse("file_unreadable", f"{type(exc).__name__}")
-        if stat.S_ISLNK(st.st_mode):
-            _refuse("symlink_refused", "/".join(parts[: index + 1]))
-        last = index == len(parts) - 1
-        if last and not stat.S_ISREG(st.st_mode):
-            _refuse("not_a_regular_file", "/".join(parts))
-        if not last and not stat.S_ISDIR(st.st_mode):
-            _refuse("path_invalid", "/".join(parts[: index + 1]))
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+_DIRFD_OK = os.open in os.supports_dir_fd and os.lstat in os.supports_dir_fd  # fixed at import
+
+
+def _need_platform() -> None:
+    needed = ("O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK")
+    if any(not hasattr(os, n) for n in needed) or not _DIRFD_OK:
+        _refuse("file_unreadable", "platform lacks dir_fd and O_NOFOLLOW/O_DIRECTORY support")
+
+
+_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
+_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_DIRECTORY", 0) | _CLOEXEC
+_FILE_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | _CLOEXEC
+
+
+def _same_inode(a, b) -> bool:
+    return a.st_dev == b.st_dev and a.st_ino == b.st_ino
+
+
+def _open_entry(dir_fd: int, name: str, label: str, want_dir: bool) -> int:
+    """lstat then open one entry relative to an already-open directory fd (never a path walk).
+    The opened object must have the lstat'ed type and the same device and inode, so a swap between
+    the lstat and the open (symlink, FIFO, other directory) is refused; O_NONBLOCK means a FIFO
+    swapped in cannot hang the read."""
     try:
-        fd = os.open(cur, flags)
+        st = os.lstat(name, dir_fd=dir_fd)
+    except FileNotFoundError:
+        _refuse("file_missing", label)
     except OSError as exc:
-        _refuse("file_unreadable", f"{type(exc).__name__}")
+        _refuse("file_unreadable", type(exc).__name__)
+    if stat.S_ISLNK(st.st_mode):
+        _refuse("symlink_refused", label)
+    if want_dir and not stat.S_ISDIR(st.st_mode):
+        _refuse("path_invalid", label)
+    if not want_dir and not stat.S_ISREG(st.st_mode):
+        _refuse("not_a_regular_file", label)
     try:
+        fd = os.open(name, _DIR_FLAGS if want_dir else _FILE_FLAGS, dir_fd=dir_fd)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            try:
+                again = os.lstat(name, dir_fd=dir_fd)
+            except OSError:
+                _refuse("changed_between_reads", label)
+            _refuse("symlink_refused" if stat.S_ISLNK(again.st_mode) else "changed_between_reads", label)
+        if exc.errno == errno.ENOENT:
+            _refuse("changed_between_reads", label)
+        _refuse("file_unreadable", type(exc).__name__)
+    try:
+        opened = os.fstat(fd)
+        if want_dir and not stat.S_ISDIR(opened.st_mode):
+            _refuse("path_invalid", label)
+        if not want_dir and not stat.S_ISREG(opened.st_mode):
+            _refuse("not_a_regular_file", label)
+        if not _same_inode(st, opened):
+            _refuse("changed_between_reads", label)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _open_root(root: str) -> int:
+    try:
+        st = os.lstat(root)
+    except OSError as exc:
+        _refuse("root_invalid", type(exc).__name__)
+    if stat.S_ISLNK(st.st_mode):
+        _refuse("root_symlink_refused", "the root itself must not be a symlink")
+    try:
+        fd = os.open(root, _DIR_FLAGS)
+    except OSError as exc:
+        _refuse("root_symlink_refused" if exc.errno == errno.ELOOP else "root_invalid", type(exc).__name__)
+    try:
+        if not stat.S_ISDIR(os.fstat(fd).st_mode) or not _same_inode(st, os.fstat(fd)):
+            _refuse("root_invalid", "root changed or is not a directory")
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _read_once(root: str, parts: list[str], max_bytes: int) -> bytes:
+    """One read-only pass. Starting at the root directory fd, each component is lstat'ed and opened
+    relative to its parent fd (directories O_NOFOLLOW|O_DIRECTORY, the file O_NOFOLLOW|O_NONBLOCK),
+    so no symlink can be followed at any level and a swap after the check is refused, not followed.
+    The file must be a regular file within the size bound."""
+    _need_platform()
+    label = "/".join(parts)
+    fds = [_open_root(root)]
+    try:
+        for index, part in enumerate(parts):
+            last = index == len(parts) - 1
+            fds.append(_open_entry(fds[-1], part, "/".join(parts[: index + 1]), want_dir=not last))
+        fd = fds[-1]
         if os.fstat(fd).st_size > max_bytes:
-            _refuse("oversize", "/".join(parts))
+            _refuse("oversize", label)
         chunks, total = [], 0
         while True:
-            chunk = os.read(fd, 65536)
+            try:
+                chunk = os.read(fd, 65536)
+            except OSError as exc:
+                _refuse("file_unreadable", type(exc).__name__)
             if not chunk:
                 break
             total += len(chunk)
             if total > max_bytes:
-                _refuse("oversize", "/".join(parts))
+                _refuse("oversize", label)
             chunks.append(chunk)
     finally:
-        os.close(fd)
+        for f in reversed(fds):
+            os.close(f)
     return b"".join(chunks)
 
 
 def _root(root) -> str:
+    """The root as given (made absolute without resolving anything). A root that is itself a symlink
+    is refused (`root_symlink_refused`); symlinks in the root's own ancestors are resolved by the
+    operating system and are outside what `symlinks_followed` states (see README)."""
     if not isinstance(root, (str, os.PathLike)):
         _refuse("root_invalid")
-    real = os.path.realpath(os.fspath(root))
-    if not os.path.isdir(real):
+    text = os.fspath(root)
+    if type(text) is not str or not text or "\0" in text:
+        _refuse("root_invalid")
+    if not os.path.isabs(text):
+        text = os.path.join(os.getcwd(), text)
+    text = text.rstrip("/") or "/"
+    try:
+        st = os.lstat(text)
+    except OSError:
+        _refuse("root_invalid", "not found")
+    if stat.S_ISLNK(st.st_mode):
+        _refuse("root_symlink_refused", "the root itself must not be a symlink")
+    if not stat.S_ISDIR(st.st_mode):
         _refuse("root_invalid", "not a directory")
-    return real
+    return text
 
 
 def _preserve(root: str, rel, expected, max_bytes: int) -> dict:
@@ -168,12 +256,17 @@ def build_record(*, root, seed_paths: list, expected_digests: dict, lock_root, l
     max_bytes = _bound(max_bytes)
     if type(seed_paths) is not list or not seed_paths or len(seed_paths) > MAX_FILES:
         _refuse("seed_paths_invalid", f"1..{MAX_FILES} paths required")
+    if any(type(path) is not str for path in seed_paths):
+        _refuse("seed_paths_invalid", "every path must be text")
     if len(set(seed_paths)) != len(seed_paths):
         _refuse("seed_paths_invalid", "duplicate path")
     if type(expected_digests) is not dict or set(expected_digests) != set(seed_paths):
         _refuse("expected_digests_mismatch", "an expected digest is required for exactly every seed path")
-    if not SHA.fullmatch(hub_sha or "") or not h31._text(hub_repository):
+    if type(hub_sha) is not str or not SHA.fullmatch(hub_sha) or not h31._text(hub_repository):
         _refuse("hub_identity_invalid")
+    h31._check_producer(producer)
+    h31._check_claim_scope(claim_scope)
+    h31._check_predecessor(predecessor)
     real_root, real_lock_root = _root(root), _root(lock_root)
     sources = [_preserve(real_root, p, expected_digests[p], max_bytes) for p in sorted(seed_paths)]
     lock_file = _preserve(real_lock_root, lock_path, expected_lock_digest, max_bytes)
@@ -187,8 +280,7 @@ def build_record(*, root, seed_paths: list, expected_digests: dict, lock_root, l
                                                                          "source_sha": hub_sha},
         "lock_digest": lock_digest, "tuple": tuple_, "tuple_digest": h31.tuple_digest(tuple_),
         "lock_file": lock_file, "sources": sources, "claim_scope": {
-            "claim": claim_scope.get("claim") if type(claim_scope) is dict else None,
-            "exclusions": list(claim_scope.get("exclusions", [])) if type(claim_scope) is dict else None},
+            "claim": claim_scope["claim"], "exclusions": list(claim_scope["exclusions"])},
         "predecessor": predecessor,
         **{k: (dict(v) if type(v) is dict else v) for k, v in FIXED.items()},
     }
@@ -198,6 +290,30 @@ def build_record(*, root, seed_paths: list, expected_digests: dict, lock_root, l
 
 
 # --- check --------------------------------------------------------------------------------
+def _same(a, b) -> bool:
+    """Type-exact equality, recursively: 0 is not False, 1 is not True, 1.0 is not 1."""
+    if type(a) is not type(b):
+        return False
+    if type(a) is dict:
+        return set(a) == set(b) and all(_same(a[k], b[k]) for k in a)
+    if type(a) is list:
+        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
+    return a == b
+
+
+def _check_tuple(tuple_, claimed_digest) -> None:
+    if type(tuple_) is not dict or not tuple_:
+        _refuse("tuple_invalid", "non-empty object required")
+    for name, entry in tuple_.items():
+        if not h31._text(name) or type(entry) is not dict or set(entry) != {"repository", "sha", "interfaces"} \
+                or not h31._text(entry["repository"]) or type(entry["sha"]) is not str \
+                or not SHA.fullmatch(entry["sha"]) or type(entry["interfaces"]) is not list \
+                or any(not h31._text(i) for i in entry["interfaces"]):
+            _refuse("tuple_invalid", str(name)[:40])
+    if claimed_digest != h31.tuple_digest(tuple_):
+        _refuse("tuple_digest_mismatch")
+
+
 def _check_file_entry(entry) -> None:
     if type(entry) is not dict or set(entry) != FILE_FIELDS:
         _refuse("unknown_or_missing_member", "file entry")
@@ -225,7 +341,7 @@ def _check_shape(record) -> None:
     if record["canonical_profile"] != CANONICAL_PROFILE:
         _refuse("unknown_canonical_profile")
     for key, expected in FIXED.items():
-        if type(record[key]) is not type(expected) or record[key] != expected:
+        if not _same(record[key], expected):
             _refuse("fixed_field_changed", key)
     if type(record["digest"]) is not str or not DIGEST.fullmatch(record["digest"]):
         _refuse("digest_form")
@@ -239,6 +355,7 @@ def _check_shape(record) -> None:
     for key in ("lock_digest", "tuple_digest"):
         if type(record[key]) is not str or not DIGEST.fullmatch(record[key]):
             _refuse("digest_form", key)
+    _check_tuple(record["tuple"], record["tuple_digest"])
     _check_file_entry(record["lock_file"])
     if record["lock_file"]["sha256"] != record["lock_digest"]:
         _refuse("lock_digest_mismatch")

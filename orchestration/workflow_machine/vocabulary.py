@@ -40,11 +40,12 @@ EVENT_MEMBERS = {
     "reconcile_inconclusive": COMMON_MEMBERS + ("observation_ref",),
 }
 
-# Member-name tokens that mark verdict-, grant-, permission-, pin- or authority-bearing data.
-# A member whose name contains any of these tokens is refused as forbidden (not merely unknown).
+# Member-name tokens that only choose the refusal code (forbidden_member rather than unknown_member).
+# The exact per-event member allow-list (EVENT_MEMBERS) is the guard: any member not on it is refused
+# either way. Substring families (verdict, grant, permission, authority, authoriz) are matched in
+# machine._forbidden, so their token spellings are not repeated here.
 FORBIDDEN_MEMBER_TOKENS = (
-    "verdict", "grant", "grants", "permission", "permissions", "pin", "pins", "authority", "authorization",
-    "authorized", "approve", "approved", "approval", "allow", "allowed", "deny", "denied", "pass",
+    "pin", "pins", "approve", "approved", "approval", "allow", "allowed", "deny", "denied", "pass",
     "passed", "fail", "failed", "success", "succeeded", "verified", "certified", "qualified",
     "result", "outcome", "decision_result", "label", "expectation", "oracle", "retry", "attempts",
 )
@@ -99,6 +100,31 @@ def _refusals() -> dict:
 
 
 REFUSALS = _refusals()
-assert all(code in REFUSAL_CODES for code in REFUSALS.values())
-assert set(TRANSITIONS) | set(REFUSALS) == {(s, e) for s in ALL_STATES for e in EVENT_TYPES}
-assert not set(TRANSITIONS) & set(REFUSALS)
+
+
+def _events_to_terminal() -> dict:
+    """Fewest further events needed to reach a terminal status, per status (breadth-first over the table)."""
+    dist = {s: 0 for s in TERMINAL_STATUSES}
+    changed = True
+    while changed:
+        changed = False
+        for (s, _e), t in TRANSITIONS.items():
+            if t in dist and dist[t] + 1 < dist.get(s, 1 << 30):
+                dist[s] = dist[t] + 1
+                changed = True
+    return dist
+
+
+# Used to reserve final event slots: an event is accepted only if the workflow can still terminate
+# within MAX_EVENTS_PER_WORKFLOW afterwards. Every status can reach a terminal one.
+EVENTS_TO_TERMINAL = _events_to_terminal()
+
+# Explicit raises, not asserts: these checks must survive `python -O`.
+if not all(code in REFUSAL_CODES for code in REFUSALS.values()):
+    raise RuntimeError("vocabulary: refusal code outside the closed set")
+if set(TRANSITIONS) | set(REFUSALS) != {(s, e) for s in ALL_STATES for e in EVENT_TYPES}:
+    raise RuntimeError("vocabulary: table is not total over states x events")
+if set(TRANSITIONS) & set(REFUSALS):
+    raise RuntimeError("vocabulary: a cell is both a transition and a refusal")
+if set(EVENTS_TO_TERMINAL) != set(STATUSES) | {INITIAL}:
+    raise RuntimeError("vocabulary: a status cannot reach a terminal status")

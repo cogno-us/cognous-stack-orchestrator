@@ -86,3 +86,8 @@ Not implemented; no code, test, README or workflow edited. No independent review
 3. Operator authorization of the exact implementation package (files and lines in section 3, with the new tests of the same section).
 4. Confirmation that no real stores in the old shape exist outside tests.
 5. Correct the "unmerged" wording in the decision record, or confirm the intent was "not frozen".
+
+
+## Successor note (step 3.4-A)
+
+Implemented in step 3.4-A (branch `s34-a-execution-standing`): see [README.md](README.md), [observations.py](observations.py) and the tests. The text above is the historical proposal and is not rewritten; it still describes the pre-rename state. Non-authorizing; release and production remain on HOLD.

@@ -42,6 +42,15 @@ EVENT_FILE_RE = re.compile(r'^([0-9]{6})\.json\Z')
 RESERVED_KIND_PREFIX = 'store.'
 KIND_LOCK_BROKEN = 'store.lock_broken'
 KIND_QUARANTINED = 'store.torn_tail_quarantined'
+KIND_ARCHIVE_INTENT = 'store.archive_intent'
+ARCHIVE_RECEIPT_PROFILE = 'ocs-workflow-archive-receipt/0'  # candidate, provisional name; not frozen
+ARCHIVE_RECEIPT_SUFFIX = '.receipt.json'
+# Terminal status strings the caller (the replayed machine) may name, and the closure class each belongs to.
+# The store does not import the machine and cannot replay it: these are four plain strings. Every other
+# status (proposed, awaiting_authority, authorized, dispatched, unresolved, suspended ...) is refused by name,
+# so an open effect is never archived under a completed, failed or cancelled label.
+TERMINAL_CLOSURE = {'observed': 'completed', 'reconciled': 'completed', 'failed': 'failed',
+                    'cancelled': 'cancelled'}
 
 LOCK_NAME = 'LOCK'
 QUARANTINE_DIR = 'quarantine'
@@ -468,6 +477,20 @@ def _raise_conditions(scan):
                            {'files': list(scan.unrecorded)})
 
 
+def _intent_indexes(events):
+    return [i for i, e in enumerate(events) if e['kind'] == KIND_ARCHIVE_INTENT]
+
+
+def _receipt_path(path):
+    return os.path.join(os.path.dirname(path), os.path.basename(path) + ARCHIVE_RECEIPT_SUFFIX)
+
+
+def _raise_if_archive_intent(scan):
+    if _intent_indexes(scan.events):
+        raise StoreRefusal('archive_incomplete', 'an archive intent is recorded: the workflow accepts no further '
+                           'events; repeat archive() to finish moving it', {})
+
+
 def _loaded(scan):
     events = tuple(_deep_copy(e) for e in scan.events)
     return LoadedWorkflow(scan.workflow_id, events, len(events), events[-1]['digest'] if events else None)
@@ -501,6 +524,10 @@ def inspect(directory, *, bounds=DEFAULT_BOUNDS):
         out.append({'code': 'leftover_temp', 'files': list(scan.temps)})
     if scan.unrecorded:
         out.append({'code': 'unrecorded_quarantine', 'files': list(scan.unrecorded)})
+    if _intent_indexes(scan.events) and not os.path.lexists(_receipt_path(scan.path)):
+        # An intent without a receipt next to the directory: not (completely) archived. Once the receipt
+        # exists beside an archived directory this is not reported.
+        out.append({'code': 'archive_incomplete', 'files': []})
     if scan.events and scan.events[-1]['kind'] == KIND_LOCK_BROKEN:
         body = scan.events[-1]['body']
         state, info, sha = _lock_state(scan.path)
@@ -753,6 +780,7 @@ def append(directory, record, *, owner, bounds=DEFAULT_BOUNDS):
         _require_holder(path, owner)
         scan = _scan(path, bounds)
         _raise_conditions(scan)
+        _raise_if_archive_intent(scan)
         return _deep_copy(_append_locked(path, workflow_id, record, bounds, scan))
 
 
@@ -939,12 +967,225 @@ def break_lock(directory, *, expected_owner=None, breaker, reason, timestamp, re
         return _deep_copy(event)
 
 
+# --- archival ---------------------------------------------------------------------------
+
+def _check_archive_root(archive_root, live_root):
+    try:
+        root = os.path.abspath(os.fspath(archive_root))
+    except TypeError:
+        raise StoreRefusal('archive_root_invalid', 'archive root must be a path')
+    live = os.path.abspath(os.fspath(live_root))
+    try:
+        st = os.lstat(root)
+        live_st = os.lstat(live)
+    except OSError as exc:
+        raise StoreRefusal('archive_root_invalid', 'archive root or store root not accessible: %s'
+                           % (exc.strerror or exc.errno))
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+        raise StoreRefusal('archive_root_invalid', 'archive root must be a real directory, not a symbolic link')
+    if root == live or root.startswith(live + '/') or live.startswith(root + '/'):
+        raise StoreRefusal('archive_root_invalid', 'archive root must be outside the live store root and not '
+                           'contain it')
+    if st.st_dev != live_st.st_dev:
+        raise StoreRefusal('archive_root_invalid', 'archive root must be on the same filesystem (an atomic '
+                           'rename, never a copy)')
+    return root
+
+
+def _check_intent(events, k, expected_head, closure_class, terminal_status, external):
+    """The recorded intent must be exactly what the caller now asks for, at exactly the caller's head."""
+    intent = events[k]
+    if len(_intent_indexes(events)) != 1 or any(not _is_store_kind(e) for e in events[k + 1:]):
+        raise StoreRefusal('not_archivable', 'more than one intent, or a non-store event after the intent')
+    if k < 1 or expected_head != (k, events[k - 1]['digest']):
+        raise StoreRefusal('not_archivable', 'expected_head is not the head the intent was recorded at')
+    want = {'head_sequence': k, 'head_digest': events[k - 1]['digest'], 'closure_class': closure_class,
+            'terminal_status': terminal_status, 'external_checkpoint': external}
+    if intent['body'] != want:
+        raise StoreRefusal('archive_incomplete', 'a different archive intent is already recorded for this workflow')
+    return intent
+
+
+def _write_receipt(root, workflow_id, events, k):
+    intent = events[k]
+    body = intent['body']
+    receipt = {'profile': ARCHIVE_RECEIPT_PROFILE, 'workflow_id': workflow_id,
+               'terminal_status': body['terminal_status'], 'closure_class': body['closure_class'],
+               'head_sequence': body['head_sequence'], 'head_digest': body['head_digest'],
+               'intent_sequence': k + 1, 'event_count': len(events),
+               'external_checkpoint': body['external_checkpoint'], 'archived_at': intent['timestamp']}
+    final = os.path.join(root, workflow_id + ARCHIVE_RECEIPT_SUFFIX)
+    tmp = os.path.join(root, TMP_PREFIX + workflow_id + ARCHIVE_RECEIPT_SUFFIX)
+    try:
+        _write_new_file(tmp, jcs_bytes(receipt), EVENT_MODE)
+    except FileExistsError:
+        raise StoreRefusal('leftover_temp', 'temporary receipt file already exists',
+                           {'files': [os.path.basename(tmp)]})
+    except OSError as exc:
+        raise _io(exc, 'archive receipt temporary file')
+    try:
+        os.link(tmp, final)
+    except FileExistsError:
+        os.unlink(tmp)
+        raise StoreRefusal('archive_exists', 'an archive receipt already exists for %s' % workflow_id)
+    except OSError as exc:
+        raise _io(exc, 'archive receipt')
+    try:
+        os.unlink(tmp)
+        _fsync_dir(root)
+    except OSError as exc:
+        raise StoreRefusal('outcome_ambiguous', 'the archive receipt exists but a cleanup step failed (%s)' % exc)
+    return receipt
+
+
+def _finish_archive(root, target, workflow_id, owner, bounds, expected_head, closure_class, terminal_status,
+                    external):
+    """After the rename: drop the caller's own LOCK from the archived directory and write the receipt."""
+    scan = _scan(target, bounds)
+    _raise_conditions(scan)
+    indexes = _intent_indexes(scan.events)
+    if not indexes:
+        raise StoreRefusal('not_archivable', 'directory in the archive records no archive intent')
+    k = indexes[0]
+    _check_intent(scan.events, k, expected_head, closure_class, terminal_status, external)
+    if os.path.lexists(os.path.join(root, workflow_id + ARCHIVE_RECEIPT_SUFFIX)):
+        raise StoreRefusal('archive_exists', 'already archived with a receipt: %s' % workflow_id)
+    state, info, _sha = _lock_state(target)
+    if state == 'ok' and info['owner'] == owner:  # only the caller's own lock; anything else is left untouched
+        try:
+            os.unlink(os.path.join(target, LOCK_NAME))
+            _fsync_dir(target)
+        except OSError as exc:
+            raise StoreRefusal('outcome_ambiguous', 'archived, but removing the lock failed (%s)' % exc)
+    return _write_receipt(root, workflow_id, scan.events, k)
+
+
+def archive(directory, archive_root, *, owner, timestamp, closure_class, terminal_status, expected_head,
+            external_checkpoint_ref=None, bounds=DEFAULT_BOUNDS):
+    """Move a closed workflow's directory out of the live store root into `archive_root`. Never deletes.
+
+    The caller must hold the lock and passes what it replayed: `terminal_status` (one of observed, reconciled,
+    failed, cancelled) with its `closure_class`, and `expected_head` = (sequence, digest) equal to the log head.
+    The store cannot replay the machine, so it trusts neither: it verifies the head and the chain and refuses
+    every non-terminal status name (`not_archivable`); the machine-side check is the adapter's duty.
+
+    Order (crash safe): validate and refuse; append `store.archive_intent` (fsynced); atomic rename of the
+    directory (same filesystem, outside the live root); remove the caller's own LOCK from the archived directory;
+    write `<archive_root>/<workflow id>.receipt.json`. A crash after the intent leaves `archive_incomplete`
+    (reported by `inspect`; the workflow accepts no further events); calling `archive` again with the same
+    arguments finishes the move, also after the rename. The archived directory loads unchanged with `load`.
+    `external_checkpoint_ref` is an opaque caller-declared reference to a custodian checkpoint and is not
+    verified; None records `not_retained`.
+    """
+    _check_owner(owner)
+    if not _text(timestamp, 64):
+        raise StoreRefusal('schema_invalid', 'timestamp must be non-empty opaque text')
+    if external_checkpoint_ref is not None and not _text(external_checkpoint_ref, 256):
+        raise StoreRefusal('schema_invalid', 'external_checkpoint_ref must be opaque text or None')
+    if type(terminal_status) is not str or type(closure_class) is not str \
+            or TERMINAL_CLOSURE.get(terminal_status) != closure_class:
+        raise StoreRefusal('not_archivable', 'only a terminal status with its own closure class may be archived: '
+                           'observed and reconciled are completed, failed, cancelled')
+    if type(expected_head) is not tuple or len(expected_head) != 2 or type(expected_head[0]) is not int \
+            or type(expected_head[1]) is not str:
+        raise StoreRefusal('schema_invalid', 'expected_head is (sequence, digest)')
+    external = {'status': 'not_retained'} if external_checkpoint_ref is None \
+        else {'status': 'caller_declared', 'ref': external_checkpoint_ref}
+    live = os.path.normpath(os.fspath(directory))
+    workflow_id = os.path.basename(live)
+    _check_workflow_id(workflow_id)
+    root = _check_archive_root(archive_root, os.path.dirname(os.path.abspath(live)))
+    target = os.path.join(root, workflow_id)
+    if not os.path.lexists(live):  # repeat after a crash that followed the rename
+        try:
+            tst = os.lstat(target)
+        except OSError:
+            raise StoreRefusal('workflow_not_found', workflow_id)
+        if stat.S_ISLNK(tst.st_mode) or not stat.S_ISDIR(tst.st_mode):
+            raise StoreRefusal('path_escape', 'archived entry is not a real directory')
+        with _mutex(target):
+            return _finish_archive(root, target, workflow_id, owner, bounds, expected_head, closure_class,
+                                   terminal_status, external)
+    path, _ = _check_workflow_dir(live)
+    with _mutex(path):
+        _require_holder(path, owner)
+        scan = _scan(path, bounds)
+        _raise_conditions(scan)
+        indexes = _intent_indexes(scan.events)
+        if os.path.lexists(target) or os.path.lexists(os.path.join(root, workflow_id + ARCHIVE_RECEIPT_SUFFIX)):
+            raise StoreRefusal('archive_exists', 'archive already holds an entry for %s' % workflow_id)
+        if indexes:
+            _check_intent(scan.events, indexes[0], expected_head, closure_class, terminal_status, external)
+        else:
+            if not scan.events:
+                raise StoreRefusal('not_archivable', 'a workflow with no events is not archived')
+            _check_head(scan, expected_head)
+            if expected_head[0] != len(scan.events):
+                raise StoreRefusal('not_archivable', 'expected_head is not the log head: events were recorded '
+                                   'after the state the caller replayed')
+            body = {'head_sequence': len(scan.events), 'head_digest': scan.events[-1]['digest'],
+                    'closure_class': closure_class, 'terminal_status': terminal_status,
+                    'external_checkpoint': external}
+            _append_locked(path, workflow_id, {'kind': KIND_ARCHIVE_INTENT, 'timestamp': timestamp, 'body': body},
+                           bounds, scan, reserved=True)
+        try:
+            os.rename(path, target)  # atomic on one filesystem; the target was checked absent
+        except OSError as exc:
+            raise _io(exc, 'archive move (the intent is recorded; repeat archive() to finish)')
+        try:
+            _fsync_dir(root)
+            _fsync_dir(os.path.dirname(os.path.abspath(live)))
+        except OSError as exc:
+            raise StoreRefusal('outcome_ambiguous', 'the directory was moved but an fsync failed (%s); repeat '
+                               'archive() to finish' % exc)
+    with _mutex(target):
+        return _finish_archive(root, target, workflow_id, owner, bounds, expected_head, closure_class,
+                               terminal_status, external)
+
+
+def verify_archive(archive_root, workflow_id, *, bounds=DEFAULT_BOUNDS):
+    """Validate an archived workflow without reopening it: full chain validation, exactly one intent whose head
+    matches the log, and whether the receipt exists and agrees. Raises `archive_incomplete` if the directory
+    records no intent."""
+    _check_workflow_id(workflow_id)
+    root = os.path.abspath(os.fspath(archive_root))
+    path = os.path.join(root, workflow_id)
+    scan = _scan(path, bounds)
+    _raise_conditions(scan)
+    indexes = _intent_indexes(scan.events)
+    if len(indexes) != 1:
+        raise StoreRefusal('archive_incomplete', 'the directory records %d archive intents' % len(indexes))
+    k = indexes[0]
+    body = scan.events[k]['body']
+    if k < 1 or body.get('head_sequence') != k or body.get('head_digest') != scan.events[k - 1]['digest']:
+        raise StoreRefusal('chain_broken', 'the archive intent does not match the log it sits in')
+    receipt_path = os.path.join(root, workflow_id + ARCHIVE_RECEIPT_SUFFIX)
+    receipt = None
+    if os.path.lexists(receipt_path):
+        try:
+            receipt = loads_strict(_read_regular(receipt_path, CEILING_EVENT_BYTES).decode('utf-8'))
+        except (ValueError, UnicodeDecodeError):
+            receipt = None
+        agrees = isinstance(receipt, dict) and receipt.get('profile') == ARCHIVE_RECEIPT_PROFILE \
+            and receipt.get('head_digest') == body['head_digest'] and receipt.get('head_sequence') == k \
+            and receipt.get('terminal_status') == body['terminal_status'] \
+            and receipt.get('closure_class') == body['closure_class'] and receipt.get('workflow_id') == workflow_id
+        return {'workflow_id': workflow_id, 'terminal_status': body['terminal_status'],
+                'closure_class': body['closure_class'], 'head_sequence': k, 'head_digest': body['head_digest'],
+                'event_count': len(scan.events), 'external_checkpoint': body['external_checkpoint'],
+                'receipt': 'agrees' if agrees else 'disagrees'}
+    return {'workflow_id': workflow_id, 'terminal_status': body['terminal_status'],
+            'closure_class': body['closure_class'], 'head_sequence': k, 'head_digest': body['head_digest'],
+            'event_count': len(scan.events), 'external_checkpoint': body['external_checkpoint'],
+            'receipt': 'missing'}
+
+
 # --- the store --------------------------------------------------------------------------
 
 class Store:
     """A directory of workflow directories, with explicit bounds. Not a service: no clock, no network."""
 
-    def __init__(self, root, bounds=DEFAULT_BOUNDS):
+    def __init__(self, root, bounds=DEFAULT_BOUNDS, archive_root=None):
         if not isinstance(bounds, Bounds):
             raise StoreRefusal('bounds_invalid', 'bounds must be a Bounds')
         path = os.path.abspath(os.fspath(root))
@@ -956,6 +1197,7 @@ class Store:
             raise StoreRefusal('path_escape', 'store root must be a real directory')
         self.root = path
         self.bounds = bounds
+        self.archive_root = None if archive_root is None else _check_archive_root(archive_root, path)
 
     def workflow_dir(self, workflow_id):
         _check_workflow_id(workflow_id)
@@ -971,6 +1213,10 @@ class Store:
 
     def create_workflow(self, workflow_id):
         path = self.workflow_dir(workflow_id)
+        if self.archive_root is not None and (
+                os.path.lexists(os.path.join(self.archive_root, workflow_id))
+                or os.path.lexists(os.path.join(self.archive_root, workflow_id + ARCHIVE_RECEIPT_SUFFIX))):
+            raise StoreRefusal('archive_exists', 'a workflow with this id is archived; ids are never reused')
         if len(self.workflows()) >= self.bounds.max_workflows:
             raise StoreRefusal('store_full', 'maximum workflows per store reached')
         try:
@@ -1016,3 +1262,26 @@ class Store:
                           reason=reason, timestamp=timestamp, recover_torn=recover_torn,
                           corrupt_lock_sha256=corrupt_lock_sha256, bounds=self.bounds,
                           expected_head=expected_head, acknowledge_drop=acknowledge_drop)
+
+    def archive(self, workflow_id, *, owner, timestamp, closure_class, terminal_status, expected_head,
+                external_checkpoint_ref=None):
+        if self.archive_root is None:
+            raise StoreRefusal('archive_root_invalid', 'this Store has no archive root')
+        return archive(self._existing(workflow_id), self.archive_root, owner=owner, timestamp=timestamp,
+                       closure_class=closure_class, terminal_status=terminal_status, expected_head=expected_head,
+                       external_checkpoint_ref=external_checkpoint_ref, bounds=self.bounds)
+
+    def finish_archive(self, workflow_id, *, owner, timestamp, closure_class, terminal_status, expected_head,
+                       external_checkpoint_ref=None):
+        """Repeat `archive` for a workflow whose directory was already moved (crash after the rename)."""
+        if self.archive_root is None:
+            raise StoreRefusal('archive_root_invalid', 'this Store has no archive root')
+        _check_workflow_id(workflow_id)
+        return archive(self.workflow_dir(workflow_id), self.archive_root, owner=owner, timestamp=timestamp,
+                       closure_class=closure_class, terminal_status=terminal_status, expected_head=expected_head,
+                       external_checkpoint_ref=external_checkpoint_ref, bounds=self.bounds)
+
+    def verify_archive(self, workflow_id):
+        if self.archive_root is None:
+            raise StoreRefusal('archive_root_invalid', 'this Store has no archive root')
+        return verify_archive(self.archive_root, workflow_id, bounds=self.bounds)

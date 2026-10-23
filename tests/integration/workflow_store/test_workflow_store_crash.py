@@ -336,7 +336,7 @@ ALLOWED_IMPORTS = {'contextlib', 'errno', 'fcntl', 'hashlib', 'itertools', 'json
 ALLOWED_OS = {'O_CREAT', 'O_DIRECTORY', 'O_EXCL', 'O_NOFOLLOW', 'O_NONBLOCK', 'O_RDONLY', 'O_RDWR', 'O_WRONLY',
               'chmod', 'close', 'fchmod', 'fspath', 'fstat', 'fsync', 'link', 'listdir', 'lstat', 'mkdir', 'open',
               'path', 'read', 'readlink', 'rename', 'replace', 'unlink', 'urandom', 'write'}
-ALLOWED_OS_PATH = {'abspath', 'basename', 'exists', 'isdir', 'islink', 'join', 'lexists', 'normpath'}
+ALLOWED_OS_PATH = {'abspath', 'basename', 'dirname', 'exists', 'isdir', 'islink', 'join', 'lexists', 'normpath'}
 BANNED_NAMES = {'getattr', 'setattr', '__import__', 'eval', 'exec', 'compile', 'globals', 'vars', 'input'}
 ALLOWED_FROM_MODULES = {'dataclasses', '.canonical', '.refusal', '.store'}
 

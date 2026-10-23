@@ -18,7 +18,8 @@ from workflow_machine import vocabulary as voc  # noqa: E402
 W = "wf-1"
 REFS = {"propose": "proposal_ref", "record_authorized": "decision_ref", "dispatch": "dispatch_ref",
         "record_observation": "observation_ref", "reconcile": "observation_ref",
-        "reconcile_inconclusive": "observation_ref"}
+        "reconcile_inconclusive": "observation_ref", "suspend": "suspension_ref", "resume": "resume_ref",
+        "cancel": "cancellation_ref", "fail": "failure_ref"}
 
 
 def ev(etype: str, seq: int, wid: str = W, **over) -> dict:
@@ -40,6 +41,7 @@ def state_at(status: str) -> "wm.State":
         "unresolved": ["propose", "request_authority", "record_authorized", "dispatch", "record_outcome_unknown"],
         "reconciled": ["propose", "request_authority", "record_authorized", "dispatch",
                        "record_outcome_unknown", "reconcile"],
+        "suspended": ["propose", "suspend"], "failed": ["propose", "fail"], "cancelled": ["propose", "cancel"],
     }
     return wm.replay([ev(t, i + 1) for i, t in enumerate(paths[status])])
 
@@ -48,8 +50,8 @@ def state_at(status: str) -> "wm.State":
 
 def test_vocabulary_is_the_reserved_set():
     assert voc.STATUSES == ("proposed", "awaiting_authority", "authorized", "dispatched",
-                            "observed", "unresolved", "reconciled")
-    assert len(set(voc.EVENT_TYPES)) == len(voc.EVENT_TYPES) == 9
+                            "observed", "unresolved", "reconciled", "suspended", "failed", "cancelled")
+    assert len(set(voc.EVENT_TYPES)) == len(voc.EVENT_TYPES) == 13
     assert set(voc.EVENT_MEMBERS) == set(voc.EVENT_TYPES)
 
 
@@ -61,7 +63,8 @@ def test_full_matrix_exhaustive():
         ("dispatched", "crash_recovered"): "unresolved", ("unresolved", "reconcile"): "reconciled",
         ("unresolved", "reconcile_inconclusive"): "unresolved",
     }
-    assert dict(voc.TRANSITIONS) == expected
+    assert expected.items() <= dict(voc.TRANSITIONS).items()  # the nine pre-amendment cells are unchanged
+    expected = dict(voc.TRANSITIONS)  # the full 21-cell table is pinned by test_lifecycle.py against the doc
     for status, etype in itertools.product(voc.ALL_STATES, voc.EVENT_TYPES):
         s = state_at(status)
         event = ev(etype, s.event_count + 1, wid=s.workflow_id or W)
@@ -73,16 +76,20 @@ def test_full_matrix_exhaustive():
             with pytest.raises(wm.Refusal) as ei:
                 wm.apply_event(s, event)
             assert ei.value.code == voc.REFUSALS[(status, etype)]
-            assert ei.value.code in {"illegal_transition", "authority_required", "blind_retry_refused"}
+            assert ei.value.code in {
+                "illegal_transition", "authority_required", "blind_retry_refused", "open_effect_refused",
+                "workflow_closed"}
             assert etype not in wm.next_actions(s)
             assert s == state_at(status)  # input unchanged
 
 
 def test_refusal_codes_for_dispatch_cells():
-    for status in ("initial", "proposed", "awaiting_authority"):
+    for status in ("initial", "proposed", "awaiting_authority", "suspended"):
         assert voc.REFUSALS[(status, "dispatch")] == "authority_required"
     for status in ("dispatched", "observed", "unresolved", "reconciled"):
         assert voc.REFUSALS[(status, "dispatch")] == "blind_retry_refused"
+    for status in ("failed", "cancelled"):
+        assert voc.REFUSALS[(status, "dispatch")] == "workflow_closed"
 
 
 def test_terminal_states_have_no_actions():
@@ -205,7 +212,8 @@ def test_refusal_codes_are_closed_and_each_is_exercised():
     assert set(wm.REFUSAL_CODES) == {
         "schema_invalid", "unknown_event_type", "unknown_member", "forbidden_member", "workflow_mismatch",
         "sequence_mismatch", "authority_required", "blind_retry_refused", "illegal_transition",
-        "bound_events_exceeded", "bound_workflows_exceeded"}
+        "bound_events_exceeded", "bound_execution_slots_exceeded", "bound_waiting_exceeded",
+        "open_effect_refused", "workflow_closed", "not_releasable"}
     with pytest.raises(ValueError):
         wm.Refusal("some_new_code")
 
@@ -314,34 +322,41 @@ def test_bound_events_per_workflow_reserves_final_slot_for_reconcile():
 
 
 def test_no_dead_end_at_the_bound_every_reachable_state_can_terminate():
-    """Exhaustive over legal event-type paths to the bound: every reachable state with room is either
-    terminal or has a legal next action, and following legal actions always reaches a terminal status."""
+    """Exhaustive over reachable (status, event count) pairs to the bound (the machine's accept/refuse choice
+    depends on nothing else): every non-terminal state has a legal next action, a pre-dispatch workflow can
+    always close, a post-dispatch workflow can always complete within the remaining slots."""
     n = wm.MAX_EVENTS_PER_WORKFLOW
-    frontier = [wm.initial_state()]
-    seen = 0
+    seen_pairs, frontier = set(), [wm.initial_state()]
     while frontier:
         nxt = []
         for s in frontier:
-            seen += 1
+            key = (s.status, s.event_count)
+            if key in seen_pairs:
+                continue
+            seen_pairs.add(key)
             acts = wm.next_actions(s)
             if s.status in voc.TERMINAL_STATUSES:
                 assert acts == ()
                 continue
             assert acts, (s.status, s.event_count)  # never a non-terminal dead end
             assert s.event_count < n
-            # a terminating continuation fits in the remaining slots
-            assert n - s.event_count >= voc.EVENTS_TO_TERMINAL[s.status]
+            if s.status in voc.OPEN_EFFECT_STATUSES:
+                assert n - s.event_count >= voc.EVENTS_TO_COMPLETION[s.status]
+                assert not {"suspend", "cancel", "fail"} & set(acts)
+            elif s.status != "initial":
+                assert {"cancel", "fail"} <= set(acts)  # a pre-dispatch workflow can always close
             for a in acts:
                 nxt.append(wm.apply_event(s, ev(a, s.event_count + 1)))
         frontier = nxt
-    assert seen > 30
+    assert len(seen_pairs) > 30
 
 
-def test_every_status_reaches_a_terminal_status_in_the_table():
-    assert set(voc.EVENTS_TO_TERMINAL) == set(voc.ALL_STATES)
-    for t in voc.TERMINAL_STATUSES:
-        assert voc.EVENTS_TO_TERMINAL[t] == 0
-    assert voc.EVENTS_TO_TERMINAL["unresolved"] == 1 and voc.EVENTS_TO_TERMINAL["initial"] == 5
+def test_every_status_reaches_completion_or_closure_in_the_table():
+    assert set(voc.EVENTS_TO_COMPLETION) == (set(voc.STATUSES) - {"failed", "cancelled"}) | {"initial"}
+    for t in ("observed", "reconciled"):
+        assert voc.EVENTS_TO_COMPLETION[t] == 0
+    assert voc.EVENTS_TO_COMPLETION["unresolved"] == 1 and voc.EVENTS_TO_COMPLETION["initial"] == 5
+    assert voc.EVENTS_TO_COMPLETION["suspended"] == 5
 
 
 def test_event_bound_still_refuses_past_the_last_slot():
@@ -352,24 +367,25 @@ def test_event_bound_still_refuses_past_the_last_slot():
     with pytest.raises(wm.Refusal) as ei:
         wm.State("wf-1", "reconciled", 17, wm.replay([ev(t, i + 1) for i, t in enumerate(
             ("propose", "request_authority", "record_authorized", "dispatch", "record_outcome_unknown",
-             "reconcile"))]).refs)
+             "reconcile"))]).refs, ("propose",) * 17)
     assert ei.value.code == "schema_invalid"
 
 
-def test_bound_concurrent_workflows():
-    m = wm.MAX_CONCURRENT_WORKFLOWS
+def test_bound_waiting_records_and_unreleased_terminal_workflows_do_not_count():
+    m = wm.MAX_WAITING_RECORDS
     fleet = wm.replay_fleet([ev("propose", 1, wid=f"w{i}") for i in range(m)])
-    assert fleet.active_count() == m
+    assert fleet.slot_counts() == {"execution": 0, "waiting": m, "closed": 0} and fleet.active_count() == 0
     with pytest.raises(wm.Refusal) as ei:
         wm.apply_fleet(fleet, ev("propose", 1, wid="overflow"))
-    assert ei.value.code == "bound_workflows_exceeded"
+    assert ei.value.code == "bound_waiting_exceeded"
     assert "overflow" not in fleet.states
-    # existing workflows still progress; a terminal one frees a slot
-    done = wm.replay_fleet([ev(t, i + 1, wid="d") for i, t in enumerate(
-        ("propose", "request_authority", "record_authorized", "dispatch", "record_observation"))])
-    assert done.active_count() == 0
+    # existing workflows still progress
     f2 = wm.apply_fleet(fleet, ev("request_authority", 2, wid="w0"))
     assert f2.states["w0"].status == "awaiting_authority" and fleet.states["w0"].status == "proposed"
+    # a terminal workflow is not counted against either bound
+    done = wm.replay_fleet([ev(t, i + 1, wid="d") for i, t in enumerate(
+        ("propose", "request_authority", "record_authorized", "dispatch", "record_observation"))])
+    assert done.slot_counts() == {"execution": 0, "waiting": 0, "closed": 1}
 
 
 def test_fleet_duplicate_propose_and_unknown_workflow_event_refused():
@@ -448,7 +464,7 @@ def test_checks_survive_python_dash_O():
     """Run a probe under -O (asserts stripped): the explicit raises must still fire."""
     code = ("import sys; sys.path.insert(0, %r); import workflow_machine as wm\n"
             "try:\n wm.Refusal('nope')\nexcept ValueError: pass\nelse: raise SystemExit(1)\n"
-            "try:\n wm.State('w','proposed',5,())\nexcept wm.Refusal as e: raise SystemExit(0 if e.code=='schema_invalid' else 3)\n"
+            "try:\n wm.State('w','proposed',5,(),())\nexcept wm.Refusal as e: raise SystemExit(0 if e.code=='schema_invalid' else 3)\n"
             "raise SystemExit(2)\n" % str(ROOT / "orchestration"))
     r = subprocess.run([sys.executable, "-O", "-B", "-c", code], capture_output=True, text=True)
     assert r.returncode == 0, (r.returncode, r.stderr)
@@ -478,15 +494,24 @@ def test_checks_survive_python_dash_O():
     ("w", "proposed", 1, (("bogus", "p"),)), ("w", " w", 1, (("propose", "p"),)),
 ])
 def test_forged_states_are_refused(args):
+    refs = args[3]
+    history = tuple(r[0] for r in refs if isinstance(r, (tuple, list)) and r) if isinstance(refs, (tuple, list)) else ()
     with pytest.raises(wm.Refusal) as ei:
-        wm.State(*args)
+        wm.State(*args, history)
     assert ei.value.code == "schema_invalid"
 
 
 def test_every_replayed_state_passes_its_own_consistency_check():
+    checked = 0
     for path, _ in _all_legal_paths(12):
-        s = wm.replay(_events(path))
-        assert wm.State(s.workflow_id, s.status, s.event_count, s.refs) == s
+        try:
+            s = wm.replay(_events(path))
+        except wm.Refusal as e:  # a table-legal path that Rule R (reserved final slot) refuses
+            assert e.code == "bound_events_exceeded"
+            continue
+        checked += 1
+        assert wm.State(s.workflow_id, s.status, s.event_count, s.refs, s.history) == s
+    assert checked > 100
 
 
 def test_fleet_rejects_inconsistent_entries_and_snapshots_its_input():
@@ -500,10 +525,9 @@ def test_fleet_rejects_inconsistent_entries_and_snapshots_its_input():
     src["wf-1"] = state_at("awaiting_authority")
     src["zzz"] = s
     assert set(f.states) == {"wf-1"} and f.states["wf-1"].status == "proposed"
-    states = {f"w{i}": wm.replay([ev("propose", 1, wid=f"w{i}")]) for i in range(wm.MAX_CONCURRENT_WORKFLOWS + 1)}
-    with pytest.raises(wm.Refusal) as ei:
-        wm.Fleet(states)
-    assert ei.value.code == "bound_workflows_exceeded"
+    # construction and replay never refuse for capacity (a restart must be able to load what exists)
+    states = {f"w{i}": wm.replay([ev("propose", 1, wid=f"w{i}")]) for i in range(wm.MAX_WAITING_RECORDS + 1)}
+    assert wm.Fleet(states).over_limit() == ("waiting",)
 
 
 class Shifty(Mapping):
@@ -579,7 +603,7 @@ def test_subclassed_state_and_fleet_are_refused_even_if_they_skip_post_init():
         def __post_init__(self) -> None:  # skips the consistency check
             pass
 
-    forged = Sneaky("wf-1", "dispatched", 1, ())
+    forged = Sneaky("wf-1", "dispatched", 1, (), ())
     for fn in (lambda: wm.apply_event(forged, ev("record_observation", 2)), lambda: wm.next_actions(forged),
                lambda: wm.describe(forged)):
         with pytest.raises(wm.Refusal) as ei:

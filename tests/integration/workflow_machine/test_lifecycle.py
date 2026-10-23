@@ -214,11 +214,41 @@ def test_rule_r_pins_reachable_pairs_and_highest_accepted_counts():
                 high[a] = max(high.get(a, -1), s.event_count)
                 nxt.append(wm.apply_event(s, ev(a, s.event_count + 1)))
         frontier = nxt
-    assert len(seen) == 116
-    assert high == {"propose": 0, "request_authority": 12, "record_authorized": 13, "dispatch": 14,
-                    "record_observation": 15, "record_outcome_unknown": 14, "crash_recovered": 14,
-                    "reconcile": 15, "reconcile_inconclusive": 14, "suspend": 10, "resume": 11,
-                    "cancel": 14, "fail": 14}
+    assert len(seen) == 108
+    assert high == {"propose": 0, "request_authority": 11, "record_authorized": 12, "dispatch": 13,
+                    "record_observation": 14, "record_outcome_unknown": 14, "crash_recovered": 14,
+                    "reconcile": 15, "reconcile_inconclusive": 14, "suspend": 9, "resume": 10,
+                    "cancel": 13, "fail": 13}
+
+
+def test_every_reachable_dispatched_state_can_record_an_unknown_outcome_and_then_reconcile():
+    """Exhaustive over every reachable history (not only (status, count) pairs): a restart finds `dispatched`
+    and must be able to record crash_recovered; record_outcome_unknown must also be possible; from the
+    resulting `unresolved` a reconcile must fit. No suspend/resume loop can use the slots up first."""
+    seen, frontier, dispatched = set(), [wm.initial_state()], 0
+    while frontier:
+        nxt = []
+        for s in frontier:
+            key = (s.status, s.event_count, s.history)
+            if key in seen:
+                continue
+            seen.add(key)
+            if s.status == "dispatched":
+                dispatched += 1
+                acts = wm.next_actions(s)
+                assert {"record_observation", "record_outcome_unknown", "crash_recovered"} <= set(acts), s.history
+                for etype in ("record_outcome_unknown", "crash_recovered"):
+                    u = wm.apply_event(s, ev(etype, s.event_count + 1))
+                    assert u.status == "unresolved" and "reconcile" in wm.next_actions(u), s.history
+                    assert wm.apply_event(u, ev("reconcile", u.event_count + 1)).status == "reconciled"
+            for a in wm.next_actions(s):
+                nxt.append(wm.apply_event(s, ev(a, s.event_count + 1)))
+        frontier = nxt
+    assert dispatched > 50
+    # a late dispatch (at most event 14, pinned above) still leaves the two slots needed
+    late = run(["propose"] + ["suspend", "resume"] * 4 + ["request_authority"])
+    late = wm.apply_event(wm.apply_event(late, ev("record_authorized", 11)), ev("dispatch", 12))
+    assert late.status == "dispatched" and late.event_count == 12
 
 
 def test_closing_event_needs_no_remaining_slot_but_dispatch_is_refused_late():

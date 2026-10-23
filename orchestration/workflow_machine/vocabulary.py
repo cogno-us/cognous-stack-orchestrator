@@ -166,21 +166,30 @@ COMPLETION_STATUSES = ("observed", "reconciled")
 
 
 def _events_to_completion() -> dict:
-    """Fewest further events needed to reach observed or reconciled, per status (breadth-first over the
-    table). `failed` and `cancelled` cannot complete and are absent."""
+    """Events needed to be certain of reaching observed or reconciled, per status. Every status takes the
+    fewest events over its exits except `dispatched`, which takes the worst exit: the outcome may turn out
+    unknown (`record_outcome_unknown`, `crash_recovered`), after which `reconcile` is still needed, so a
+    dispatched workflow always keeps room for both. `failed` and `cancelled` cannot complete and are absent."""
     dist = {s: 0 for s in COMPLETION_STATUSES}
     changed = True
     while changed:
         changed = False
-        for (s, _e), t in TRANSITIONS.items():
-            if t in dist and dist[t] + 1 < dist.get(s, 1 << 30):
-                dist[s] = dist[t] + 1
+        for s in STATUSES + (INITIAL,):
+            nxt = [t for (a, _e), t in TRANSITIONS.items() if a == s and t in dist and t != s]
+            if not nxt:
+                continue
+            d = 1 + (max(dist[t] for t in nxt) if s == "dispatched" else min(dist[t] for t in nxt))
+            if s in ("dispatched",) and any(t not in dist for (a, _e), t in TRANSITIONS.items()
+                                             if a == s and t != s):
+                continue  # wait until every exit of dispatched is known
+            if d < dist.get(s, 1 << 30):
+                dist[s] = d
                 changed = True
     return dist
 
 
 # Rule R: a non-closing event is accepted only if completion still fits in MAX_EVENTS_PER_WORKFLOW after it,
-# so a post-dispatch workflow can always reach observed/reconciled and the last slot stays reserved.
+# so a dispatched workflow keeps room to record an unknown outcome and then reconcile, and the last slot stays reserved.
 # A closing event (cancel, fail) terminates the workflow and needs no remaining slot.
 EVENTS_TO_COMPLETION = _events_to_completion()
 

@@ -99,7 +99,7 @@ def test_archival_releases_the_live_workflow_slot_it_is_not_a_leak(tmp_path):
     assert s.workflows() == ['b']
     s.create_workflow('c')
     assert s.workflows() == ['b', 'c']
-    refusal('archive_exists', s.create_workflow, 'a')  # an archived id is never reused
+    refusal('archive_exists', s.create_workflow, 'a')  # an id archived under this archive root is not reused
 
 
 def test_external_checkpoint_is_recorded_as_declared_and_never_verified(store):
@@ -291,9 +291,7 @@ def test_finishing_with_other_parameters_or_on_an_unarchived_directory_is_refuse
             **kw)
 
 
-def test_leftover_receipt_temporary_file_is_reported_not_overwritten(store, tmp_path, monkeypatch):
-    seeded(store)
-    h = head(store)
+def _crash_in_receipt_link(store, h, monkeypatch):
     real_link = os.link
 
     def die_on_receipt(src, dst, *a, **k):
@@ -305,10 +303,101 @@ def test_leftover_receipt_temporary_file_is_reported_not_overwritten(store, tmp_
     with pytest.raises(Crash):
         do_archive(store, expected_head=h)
     monkeypatch.undo()
-    assert '.tmp.wf1.receipt.json' in os.listdir(tmp_path / 'archive')
+
+
+def test_our_own_stale_receipt_temporary_file_is_replaced_on_finish(store, tmp_path, monkeypatch):
+    seeded(store)
+    h = head(store)
+    _crash_in_receipt_link(store, h, monkeypatch)
+    tmp = tmp_path / 'archive' / '.tmp.wf1.receipt.json'
+    assert tmp.exists() and store.verify_archive('wf1')['receipt'] == 'missing'
+    kw = dict(owner='w1', timestamp=TS, closure_class='cancelled', terminal_status='cancelled', expected_head=h)
+    assert store.finish_archive('wf1', **kw)['head_sequence'] == 3
+    assert not tmp.exists() and store.verify_archive('wf1')['receipt'] == 'agrees'
+
+
+def test_a_receipt_temporary_name_that_is_not_a_regular_file_is_reported_not_touched(store, tmp_path, monkeypatch):
+    seeded(store)
+    h = head(store)
+    _crash_in_receipt_link(store, h, monkeypatch)
+    tmp = tmp_path / 'archive' / '.tmp.wf1.receipt.json'
+    tmp.unlink()
+    tmp.mkdir()  # not ours: a directory under our temporary name
     kw = dict(owner='w1', timestamp=TS, closure_class='cancelled', terminal_status='cancelled', expected_head=h)
     refusal('leftover_temp', store.finish_archive, 'wf1', **kw)
-    assert store.verify_archive('wf1')['receipt'] == 'missing'
+    assert tmp.is_dir() and store.verify_archive('wf1')['receipt'] == 'missing'
+
+
+def test_archive_root_symlinked_parent_cannot_land_inside_the_live_root(store, tmp_path):
+    seeded(store)
+    h = head(store)
+    os.symlink(str(tmp_path / 'live'), str(tmp_path / 'alias'))
+    inner = tmp_path / 'live' / 'inner'
+    inner.mkdir()
+    for root in (str(tmp_path / 'alias' / 'inner'), str(tmp_path / 'alias')):  # resolves into / onto the live root
+        refusal('archive_root_invalid', ws.archive, store.workflow_dir('wf1'), root, owner='w1', timestamp=TS,
+                closure_class='cancelled', terminal_status='cancelled', expected_head=h)
+        refusal('archive_root_invalid', ws.Store, tmp_path / 'live', archive_root=root)
+    assert store.load('wf1').head_sequence == 3  # nothing was written
+
+
+def _crash_after_intent(store, h, monkeypatch):
+    def die(*a, **k):
+        raise Crash()
+
+    monkeypatch.setattr(os, 'rename', die)
+    with pytest.raises(Crash):
+        do_archive(store, expected_head=h)
+    monkeypatch.undo()
+
+
+def test_a_second_intent_or_a_non_store_event_after_the_intent_is_not_archivable(store, monkeypatch):
+    path = seeded(store)
+    h = head(store)
+    _crash_after_intent(store, h, monkeypatch)
+    loaded = store.load('wf1')
+    intent = loaded.events[-1]
+    scan = store_mod._scan(path, ws.Bounds())
+    with store_mod._mutex(path):  # forge, through the internal writer, what the public API never writes
+        store_mod._append_locked(path, 'wf1', {'kind': 'workflow.late', 'timestamp': TS, 'body': {}}, ws.Bounds(),
+                                 scan, reserved=False)
+    refusal('not_archivable', do_archive, store, expected_head=h)
+    # a second intent
+    seeded(store, wid='wf2')
+    h2 = head(store, 'wf2')
+    _crash_after_intent_for(store, 'wf2', h2, monkeypatch)
+    path2 = store.workflow_dir('wf2')
+    scan = store_mod._scan(path2, ws.Bounds())
+    with store_mod._mutex(path2):
+        store_mod._append_locked(path2, 'wf2', {'kind': 'store.archive_intent', 'timestamp': TS,
+                                                'body': dict(intent['body'])}, ws.Bounds(), scan, reserved=True)
+    refusal('not_archivable', do_archive, store, 'wf2', expected_head=h2)
+    refusal('archive_incomplete', ws.verify_archive, store.root, 'wf2')  # two intents: not a valid archive
+
+
+def _crash_after_intent_for(store, wid, h, monkeypatch):
+    monkeypatch.setattr(os, 'rename', lambda *a, **k: (_ for _ in ()).throw(Crash()))
+    with pytest.raises(Crash):
+        do_archive(store, wid, expected_head=h)
+    monkeypatch.undo()
+
+
+def test_a_malformed_intent_body_fails_closed_in_verify_archive(store, tmp_path, monkeypatch):
+    for n, body in enumerate(({}, {'head_sequence': 3}, {'head_sequence': 'x', 'head_digest': 1,
+                                                       'closure_class': 'completed', 'terminal_status': 'observed',
+                                                       'external_checkpoint': {}},
+                              {'head_sequence': 3, 'head_digest': 'sha256:' + '0' * 64, 'closure_class': 'completed',
+                               'terminal_status': 'unresolved', 'external_checkpoint': {'status': 'not_retained'}},
+                              {'head_sequence': 3, 'head_digest': 'sha256:' + '0' * 64, 'closure_class': 'completed',
+                               'terminal_status': 'observed', 'external_checkpoint': 'none'})):
+        wid = 'm%d' % n
+        path = seeded(store, wid=wid)
+        scan = store_mod._scan(path, ws.Bounds())
+        with store_mod._mutex(path):
+            store_mod._append_locked(path, wid, {'kind': 'store.archive_intent', 'timestamp': TS, 'body': body},
+                                     ws.Bounds(), scan, reserved=True)
+        os.rename(path, str(tmp_path / 'archive' / wid))
+        refusal('archive_incomplete', store.verify_archive, wid)
 
 
 def test_real_process_death_between_the_intent_and_the_move(store):

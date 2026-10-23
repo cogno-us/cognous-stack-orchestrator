@@ -355,8 +355,10 @@ def test_every_status_reaches_completion_or_closure_in_the_table():
     assert set(voc.EVENTS_TO_COMPLETION) == (set(voc.STATUSES) - {"failed", "cancelled"}) | {"initial"}
     for t in ("observed", "reconciled"):
         assert voc.EVENTS_TO_COMPLETION[t] == 0
-    assert voc.EVENTS_TO_COMPLETION["unresolved"] == 1 and voc.EVENTS_TO_COMPLETION["initial"] == 5
-    assert voc.EVENTS_TO_COMPLETION["suspended"] == 5
+    # dispatched keeps room for an unknown outcome and the reconcile after it (worst exit), not only observation
+    assert voc.EVENTS_TO_COMPLETION == {
+        "observed": 0, "reconciled": 0, "unresolved": 1, "dispatched": 2, "authorized": 3,
+        "awaiting_authority": 4, "proposed": 5, "suspended": 6, "initial": 6}
 
 
 def test_event_bound_still_refuses_past_the_last_slot():

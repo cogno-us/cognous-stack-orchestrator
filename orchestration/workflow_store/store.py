@@ -983,9 +983,12 @@ def _check_archive_root(archive_root, live_root):
                            % (exc.strerror or exc.errno))
     if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
         raise StoreRefusal('archive_root_invalid', 'archive root must be a real directory, not a symbolic link')
-    if root == live or root.startswith(live + '/') or live.startswith(root + '/'):
+    # compare resolved paths: a symbolic link in a parent must not put the archive inside the live root
+    real_root, real_live = os.path.realpath(root), os.path.realpath(live)
+    if real_root == real_live or real_root.startswith(real_live + '/') or real_live.startswith(real_root + '/') \
+            or root == live or root.startswith(live + '/') or live.startswith(root + '/'):
         raise StoreRefusal('archive_root_invalid', 'archive root must be outside the live store root and not '
-                           'contain it')
+                           'contain it (resolved paths are compared)')
     if st.st_dev != live_st.st_dev:
         raise StoreRefusal('archive_root_invalid', 'archive root must be on the same filesystem (an atomic '
                            'rename, never a copy)')
@@ -1016,13 +1019,26 @@ def _write_receipt(root, workflow_id, events, k):
                'external_checkpoint': body['external_checkpoint'], 'archived_at': intent['timestamp']}
     final = os.path.join(root, workflow_id + ARCHIVE_RECEIPT_SUFFIX)
     tmp = os.path.join(root, TMP_PREFIX + workflow_id + ARCHIVE_RECEIPT_SUFFIX)
-    try:
-        _write_new_file(tmp, jcs_bytes(receipt), EVENT_MODE)
-    except FileExistsError:
-        raise StoreRefusal('leftover_temp', 'temporary receipt file already exists',
-                           {'files': [os.path.basename(tmp)]})
-    except OSError as exc:
-        raise _io(exc, 'archive receipt temporary file')
+    for attempt in (0, 1):
+        try:
+            _write_new_file(tmp, jcs_bytes(receipt), EVENT_MODE)
+            break
+        except FileExistsError:
+            # Our own stale temporary file from a crashed finish (the name is built only here and the receipt
+            # is derived from the log, so nothing is lost). Anything that is not a regular file is not ours.
+            try:
+                regular = stat.S_ISREG(os.lstat(tmp).st_mode)
+            except OSError:
+                regular = False
+            if attempt or not regular:
+                raise StoreRefusal('leftover_temp', 'temporary receipt file exists and is not a stale regular '
+                                   'file', {'files': [os.path.basename(tmp)]})
+            try:
+                os.unlink(tmp)
+            except OSError as exc:
+                raise _io(exc, 'stale receipt temporary file')
+        except OSError as exc:
+            raise _io(exc, 'archive receipt temporary file')
     try:
         os.link(tmp, final)
     except FileExistsError:
@@ -1066,8 +1082,9 @@ def archive(directory, archive_root, *, owner, timestamp, closure_class, termina
 
     The caller must hold the lock and passes what it replayed: `terminal_status` (one of observed, reconciled,
     failed, cancelled) with its `closure_class`, and `expected_head` = (sequence, digest) equal to the log head.
-    The store cannot replay the machine, so it trusts neither: it verifies the head and the chain and refuses
-    every non-terminal status name (`not_archivable`); the machine-side check is the adapter's duty.
+    The store cannot replay the machine and its event kinds are opaque, so it cannot tell whether the named status
+    is true. It verifies the head and the chain and refuses every status name other than the four terminal ones
+    (`not_archivable`); the truth of the named status is the adapter's duty and is NOT enforced here.
 
     Order (crash safe): validate and refuse; append `store.archive_intent` (fsynced); atomic rename of the
     directory (same filesystem, outside the live root); remove the caller's own LOCK from the archived directory;
@@ -1157,6 +1174,13 @@ def verify_archive(archive_root, workflow_id, *, bounds=DEFAULT_BOUNDS):
         raise StoreRefusal('archive_incomplete', 'the directory records %d archive intents' % len(indexes))
     k = indexes[0]
     body = scan.events[k]['body']
+    ext = body.get('external_checkpoint') if isinstance(body, dict) else None
+    if not isinstance(body, dict) or set(body) != {'head_sequence', 'head_digest', 'closure_class',
+                                                    'terminal_status', 'external_checkpoint'} \
+            or type(body['head_sequence']) is not int or type(body['head_digest']) is not str \
+            or type(body['terminal_status']) is not str \
+            or TERMINAL_CLOSURE.get(body['terminal_status']) != body['closure_class'] or not isinstance(ext, dict):
+        raise StoreRefusal('archive_incomplete', 'the archive intent body is malformed')
     if k < 1 or body.get('head_sequence') != k or body.get('head_digest') != scan.events[k - 1]['digest']:
         raise StoreRefusal('chain_broken', 'the archive intent does not match the log it sits in')
     receipt_path = os.path.join(root, workflow_id + ARCHIVE_RECEIPT_SUFFIX)
@@ -1216,7 +1240,7 @@ class Store:
         if self.archive_root is not None and (
                 os.path.lexists(os.path.join(self.archive_root, workflow_id))
                 or os.path.lexists(os.path.join(self.archive_root, workflow_id + ARCHIVE_RECEIPT_SUFFIX))):
-            raise StoreRefusal('archive_exists', 'a workflow with this id is archived; ids are never reused')
+            raise StoreRefusal('archive_exists', 'a workflow with this id is archived; ids are not reused under this archive root')
         if len(self.workflows()) >= self.bounds.max_workflows:
             raise StoreRefusal('store_full', 'maximum workflows per store reached')
         try:

@@ -839,3 +839,31 @@ def test_lock_temp_names_are_collision_proof_after_pid_reuse(store, monkeypatch)
     assert store.read_lock('wf1')['owner'] == 'w1'
     leftovers = sorted(n for n in os.listdir(os.path.join(path, '.locks')) if n != 'mutex')
     assert leftovers == ['w1.%s.0' % ('01' * 6)]  # crash leftovers in .locks are never cleaned or touched
+
+
+# === third review ===
+
+def test_directory_fsync_failure_after_the_lock_handover_is_ambiguous_not_incomplete(store, monkeypatch):
+    seeded(store, n=1)
+    # the break appends its event first (two directory fsyncs), then replaces LOCK, then fsyncs the directory
+    dir_fsync_fails(monkeypatch, after=2)
+    e = refusal('outcome_ambiguous', store.break_lock, 'wf1', expected_owner='w1', breaker='w2', reason='stale',
+                timestamp='t2')
+    assert 'WAS handed over' in str(e) and e.detail == {'sequence': 2}
+    monkeypatch.undo()
+    assert store.read_lock('wf1')['owner'] == 'w2'
+    assert store.inspect('wf1') == [] and store.load('wf1').events[-1]['kind'] == 'store.lock_broken'
+
+
+def test_old_format_lock_without_lock_id_is_a_corrupt_lock(store):
+    path = seeded(store, n=1, hold=False)
+    old = canonical.jcs_bytes({'profile': 'ocs-workflow-lock/0', 'owner': 'w1', 'timestamp': TS})
+    force_write(os.path.join(path, 'LOCK'), old)
+    sha = 'sha256:' + hashlib.sha256(old).hexdigest()
+    refusal('lock_corrupt', store.read_lock, 'wf1')
+    refusal('lock_corrupt', store.append, 'wf1', rec(), owner='w1')
+    refusal('lock_corrupt', store.release, 'wf1', owner='w1')
+    refusal('lock_held', store.acquire, 'wf1', owner='w2', timestamp=TS)
+    refusal('lock_corrupt', store.break_lock, 'wf1', expected_owner='w1', breaker='w2', reason='r', timestamp=TS)
+    store.break_lock('wf1', breaker='w2', reason='old format', timestamp=TS, corrupt_lock_sha256=sha)
+    assert store.read_lock('wf1')['owner'] == 'w2'

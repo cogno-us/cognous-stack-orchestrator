@@ -920,13 +920,19 @@ def break_lock(directory, *, expected_owner=None, breaker, reason, timestamp, re
                                                        'body': body}, bounds, scan, reserved=True)
             try:
                 os.replace(staged, os.path.join(path, LOCK_NAME))  # atomic: no gap with no lock
-                staged = None
-                _fsync_dir(path)
             except OSError as exc:
                 raise StoreRefusal('lock_break_incomplete',
                                    'the break event %06d is recorded but the lock was not handed over (%s); '
                                    'inspect() reports it; repeat break_lock' % (event['sequence'], exc),
                                    {'sequence': event['sequence']})
+            staged = None
+            try:
+                _fsync_dir(path)
+            except OSError as exc:
+                raise StoreRefusal('outcome_ambiguous',
+                                   'the lock WAS handed over to %s and break event %06d is recorded, but the '
+                                   'directory fsync failed (%s); confirm with read_lock() and inspect()'
+                                   % (breaker, event['sequence'], exc), {'sequence': event['sequence']})
         finally:
             if staged is not None and os.path.lexists(staged):
                 os.unlink(staged)

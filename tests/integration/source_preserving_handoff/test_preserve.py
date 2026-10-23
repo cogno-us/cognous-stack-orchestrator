@@ -389,9 +389,11 @@ def test_missing_member_refused(hub):
     ("intent", "promote"), ("qualification_reference", "run-1"),
     ("operational_trust", {"state": "established", "independent_operator_evidence": None}),
     ("preservation", {"mode": "normalized", "reads_per_file": 2, "seed_files_modified": False,
-                      "normalized_or_reserialized": False, "symlinks_followed": False}),
+                      "normalized_or_reserialized": False, "symlinks_followed": False,
+                      "root_ancestors_resolved_by_os": True}),
     ("preservation", {"mode": "bytes_by_digest_only", "reads_per_file": 2, "seed_files_modified": True,
-                      "normalized_or_reserialized": False, "symlinks_followed": False}),
+                      "normalized_or_reserialized": False, "symlinks_followed": False,
+                      "root_ancestors_resolved_by_os": True}),
 ])
 def test_fixed_fields_cannot_change_even_with_valid_digest(hub, key, value):
     rec = p.build_record(**args(hub))
@@ -453,32 +455,77 @@ def test_historical_o6_q5_constants_unchanged():
     assert p.h31.PROFILE == "cognous-lock-driven-evidence-handoff/0"
 
 
-def test_module_uses_no_subprocess_network_or_write_modes():
+def test_platform_capability_probe_is_true_on_this_interpreter():
+    assert p._DIRFD_OK is True
+    p._need_platform()  # must not refuse
+
+
+def test_record_scopes_symlink_statement_to_below_the_root(hub):
+    pres = p.build_record(**args(hub))["preservation"]
+    assert pres["symlinks_followed"] is False and pres["root_ancestors_resolved_by_os"] is True
+
+
+def test_root_ancestors_flag_cannot_change(hub):
+    rec = p.build_record(**args(hub))
+    rec["preservation"]["root_ancestors_resolved_by_os"] = False
+    with pytest.raises(p.HandoffRefused) as ctx:
+        p.check_record(redigest(rec))
+    assert ctx.value.code == "fixed_field_changed"
+
+
+def test_module_static_allow_list_of_imports_and_os_calls():
+    """Static allow-list check of imports, names and `os` attributes. It is a tripwire, not proof of
+    purity; the runtime no-write-flag test above (every os.open flag, every builtin open mode) backs it."""
     tree = ast.parse(SCRIPT.read_text())
-    banned_modules = {"subprocess", "socket", "urllib", "http", "shutil", "tempfile", "ssl", "ftplib", "requests"}
-    imported = set()
+    allowed_modules = {"__future__", "errno", "hashlib", "importlib", "os", "re", "stat", "pathlib"}
+    allowed_from = {("__future__", "annotations"), ("pathlib", "Path")}
+    allowed_os = {"O_RDONLY", "O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK", "O_CLOEXEC", "PathLike", "close",
+                  "fspath", "fstat", "getcwd", "lstat", "open", "path", "read", "stat", "supports_dir_fd"}
+    allowed_os_path = {"isabs", "join"}
+    allowed_importlib = {"util"}
+    allowed_importlib_util = {"spec_from_file_location", "module_from_spec"}
+    banned_names = {"__import__", "ctypes", "getattr", "setattr", "hasattr", "delattr", "eval", "exec", "compile",
+                    "open", "globals", "locals", "vars", "subprocess", "socket", "urllib", "shutil", "tempfile",
+                    "O_WRONLY", "O_RDWR", "O_CREAT", "O_TRUNC", "O_APPEND", "O_EXCL", "utime", "fork",
+                    "touch", "write_bytes", "write_text", "unlink", "rename", "replace", "mkdir", "chmod"}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            imported |= {a.name.split(".")[0] for a in node.names}
+            assert {a.name.split(".")[0] for a in node.names} <= allowed_modules, ast.dump(node)
+            assert all(a.name in allowed_modules | {"importlib.util"} for a in node.names), ast.dump(node)
         elif isinstance(node, ast.ImportFrom):
-            imported.add((node.module or "").split(".")[0])
-    assert not imported & banned_modules, imported & banned_modules
-    banned_calls = {"open", "exec", "eval", "compile", "system", "popen", "Popen", "run", "call", "check_call",
-                    "check_output", "write", "write_bytes", "write_text", "rename", "replace", "remove", "unlink",
-                    "rmdir", "mkdir", "makedirs", "chmod", "truncate", "symlink", "link", "urlopen", "connect"}
-    banned_names = {"O_WRONLY", "O_RDWR", "O_CREAT", "O_TRUNC", "O_APPEND"}
-    for node in ast.walk(tree):
+            assert node.level == 0 and all((node.module, a.name) in allowed_from for a in node.names), ast.dump(node)
+        elif isinstance(node, ast.Name):
+            assert node.id not in banned_names, node.id
+        elif isinstance(node, ast.Attribute):
+            owner = node.value.id if isinstance(node.value, ast.Name) else None
+            assert node.attr not in banned_names or (owner, node.attr) in {("os", "open"), ("re", "compile")}, \
+                node.attr
+            base = node.value
+            if isinstance(base, ast.Name) and base.id == "os":
+                assert node.attr in allowed_os, f"os.{node.attr}"
+            if isinstance(base, ast.Attribute) and isinstance(base.value, ast.Name) and base.value.id == "os" \
+                    and base.attr == "path":
+                assert node.attr in allowed_os_path, f"os.path.{node.attr}"
+            if isinstance(base, ast.Name) and base.id == "importlib":
+                assert node.attr in allowed_importlib, node.attr
+            if isinstance(base, ast.Attribute) and isinstance(base.value, ast.Name) \
+                    and base.value.id == "importlib" and base.attr == "util":
+                assert node.attr in allowed_importlib_util, node.attr
         if isinstance(node, ast.Call):
             fn = node.func
-            name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
-            if name == "open" and isinstance(fn, ast.Attribute) and fn.attr == "open" \
-                    and getattr(fn.value, "id", "") == "os":
-                continue  # os.open with the fixed read-only flag constants checked below
-            if name == "compile" and getattr(fn, "value", None) is not None and getattr(fn.value, "id", "") == "re":
-                continue  # re.compile is the only allowed compile
-            assert name not in banned_calls, name
-        if isinstance(node, (ast.Name, ast.Attribute)):
-            assert (node.id if isinstance(node, ast.Name) else node.attr) not in banned_names
+            if isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name) and fn.value.id == "os" \
+                    and fn.attr == "open":
+                # the flag argument must be one of the two module-level read-only constants
+                assert len(node.args) >= 2 and isinstance(node.args[1], (ast.Name, ast.IfExp)), ast.dump(node)
+                names = {n.id for n in ast.walk(node.args[1]) if isinstance(n, ast.Name)}
+                assert names <= {"_DIR_FLAGS", "_FILE_FLAGS", "want_dir"}, names
+    # the two flag constants themselves are read-only combinations
+    assigns = {t.id: n.value for n in tree.body if isinstance(n, ast.Assign) for t in n.targets
+               if isinstance(t, ast.Name) and t.id in ("_DIR_FLAGS", "_FILE_FLAGS")}
+    assert set(assigns) == {"_DIR_FLAGS", "_FILE_FLAGS"}
+    for value in assigns.values():
+        attrs = {n.attr for n in ast.walk(value) if isinstance(n, ast.Attribute)}
+        assert attrs <= {"O_RDONLY", "O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK", "O_CLOEXEC"}, attrs
 
 
 # --- safe reader: races, special files, hardlinks, root --------------------------------------
@@ -661,13 +708,17 @@ def test_tuple_not_an_object_is_refused(hub):
 
 @pytest.mark.parametrize("key,value", [
     ("preservation", {"mode": "bytes_by_digest_only", "reads_per_file": 2, "seed_files_modified": 0,
-                      "normalized_or_reserialized": False, "symlinks_followed": False}),
+                      "normalized_or_reserialized": False, "symlinks_followed": False,
+                      "root_ancestors_resolved_by_os": True}),
     ("preservation", {"mode": "bytes_by_digest_only", "reads_per_file": 2, "seed_files_modified": False,
-                      "normalized_or_reserialized": 0, "symlinks_followed": False}),
+                      "normalized_or_reserialized": 0, "symlinks_followed": False,
+                      "root_ancestors_resolved_by_os": True}),
     ("preservation", {"mode": "bytes_by_digest_only", "reads_per_file": 2, "seed_files_modified": False,
-                      "normalized_or_reserialized": False, "symlinks_followed": 0}),
+                      "normalized_or_reserialized": False, "symlinks_followed": 0,
+                      "root_ancestors_resolved_by_os": True}),
     ("preservation", {"mode": "bytes_by_digest_only", "reads_per_file": True, "seed_files_modified": False,
-                      "normalized_or_reserialized": False, "symlinks_followed": False}),
+                      "normalized_or_reserialized": False, "symlinks_followed": False,
+                      "root_ancestors_resolved_by_os": True}),
     ("qualification_reference", 0),
     ("qualification_reference", False),
 ])

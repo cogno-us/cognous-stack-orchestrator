@@ -55,7 +55,8 @@ FIXED = {
     "operational_trust": h31.FIXED["operational_trust"],
     "qualification_reference": None,
     "preservation": {"mode": "bytes_by_digest_only", "reads_per_file": 2, "seed_files_modified": False,
-                     "normalized_or_reserialized": False, "symlinks_followed": False},
+                     "normalized_or_reserialized": False, "symlinks_followed": False,
+                     "root_ancestors_resolved_by_os": True},
 }
 # Names that would turn a record into a decision; refused with their own code (a subset of "unknown").
 VERDICT_LIKE = re.compile(r"verdict|pin|expect|pass|fail|approv|grant|accept|decision|select|promot|"
@@ -89,18 +90,18 @@ def _split(rel) -> list[str]:
     return parts
 
 
-_DIRFD_OK = os.open in os.supports_dir_fd and os.lstat in os.supports_dir_fd  # fixed at import
+_DIRFD_OK = os.open in os.supports_dir_fd and os.stat in os.supports_dir_fd  # fixed at import; os.lstat is not
+# listed by supports_dir_fd on CPython 3.11/3.12 although lstat(dir_fd=) works, so os.stat stands in
 
 
 def _need_platform() -> None:
-    needed = ("O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK")
-    if any(not hasattr(os, n) for n in needed) or not _DIRFD_OK:
-        _refuse("file_unreadable", "platform lacks dir_fd and O_NOFOLLOW/O_DIRECTORY support")
+    if not _DIRFD_OK:
+        _refuse("file_unreadable", "platform lacks dir_fd support")
 
 
-_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
-_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_DIRECTORY", 0) | _CLOEXEC
-_FILE_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | _CLOEXEC
+# POSIX flags named directly: on a platform without them the import fails closed.
+_DIR_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY | os.O_CLOEXEC
+_FILE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
 
 
 def _same_inode(a, b) -> bool:
@@ -206,7 +207,8 @@ def _read_once(root: str, parts: list[str], max_bytes: int) -> bytes:
 def _root(root) -> str:
     """The root as given (made absolute without resolving anything). A root that is itself a symlink
     is refused (`root_symlink_refused`); symlinks in the root's own ancestors are resolved by the
-    operating system and are outside what `symlinks_followed` states (see README)."""
+    operating system and are outside what `symlinks_followed` states: that member is false only for
+    components below the root, and the record says so with `root_ancestors_resolved_by_os: true`."""
     if not isinstance(root, (str, os.PathLike)):
         _refuse("root_invalid")
     text = os.fspath(root)

@@ -30,7 +30,8 @@ class Result:
     detail: dict = field(default_factory=dict)
 
     def __post_init__(self):
-        assert self.verdict in VERDICTS and self.code in RESULT_CODES
+        if self.verdict not in VERDICTS or self.code not in RESULT_CODES:
+            raise ValueError('result outside the closed sets')
 
 
 def _r(verdict, code, **detail):
@@ -88,8 +89,6 @@ def _verify(custody_root, workflow_id, c):
     except CheckpointRefusal as exc:
         code = {'sequence_gap': 'missing_checkpoint', 'duplicate_checkpoint': 'duplicate_checkpoint',
                 'io_failure': 'custody_unavailable'}.get(exc.code)
-        if exc.code == 'workflow_mismatch':
-            return _r(MISMATCH, 'workflow_mismatch')
         return _r(UNVERIFIABLE, code or 'checkpoint_corrupt')
     if not recs:
         return _r(UNVERIFIABLE, 'no_checkpoints')

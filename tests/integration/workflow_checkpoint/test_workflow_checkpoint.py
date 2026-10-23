@@ -84,12 +84,12 @@ def test_workflow_and_profile_mismatch(cust):
     assert pair(v(cust, 'wf', 3, store_profile='ocs-workflow-event/1')) == ('mismatch', 'profile_mismatch')
 
 
-def test_foreign_record_in_directory_is_workflow_mismatch(cust):
+def test_foreign_record_in_directory_is_corrupt(cust):
     put(cust, 'a', [3])
     put(cust, 'b', [3])
     os.chmod(os.path.join(cust.root, 'a', '000001.json'), 0o644)
     os.replace(os.path.join(cust.root, 'b', '000001.json'), os.path.join(cust.root, 'a', '000001.json'))
-    assert pair(v(cust, 'a', 3)) == ('mismatch', 'workflow_mismatch')
+    assert pair(v(cust, 'a', 3)) == ('unverifiable', 'checkpoint_corrupt')
 
 
 def test_no_checkpoints_and_unavailable(cust, tmp_path):
@@ -208,6 +208,155 @@ def test_closed_codes():
 def test_no_authority_or_verdict_words_in_records(cust):
     cp = put(cust, 'wf', [1])
     assert not {'verdict', 'pin', 'grant', 'authority'} & set(cp)
+
+
+def rewrite(cust, wid, seq, rec):
+    p = os.path.join(cust.root, wid, '%06d.json' % seq)
+    if os.path.lexists(p):
+        os.chmod(p, 0o644)
+        os.unlink(p)
+    with open(p, 'wb') as fh:
+        fh.write(jcs_bytes(rec))
+    return p
+
+
+def resign(rec, **kw):
+    rec = dict(rec, **kw)
+    rec['digest'] = object_digest(rec)
+    return rec
+
+
+def test_symlinks_refused(cust, tmp_path):
+    put(cust, 'wf', [1, 2])
+    d = os.path.join(cust.root, 'wf')
+    # symlinked record file
+    real = tmp_path / 'elsewhere.json'
+    shutil.copy(os.path.join(d, '000002.json'), real)
+    os.chmod(os.path.join(d, '000002.json'), 0o644)
+    os.unlink(os.path.join(d, '000002.json'))
+    os.symlink(real, os.path.join(d, '000002.json'))
+    assert pair(v(cust, 'wf', 2)) == ('unverifiable', 'checkpoint_corrupt')
+    # symlinked workflow dir
+    put(cust, 'real', [1])
+    os.symlink(os.path.join(cust.root, 'real'), os.path.join(cust.root, 'lnk'))
+    assert pair(wc.verify(cust.root, 'lnk', wc.Candidate('lnk', 1, dg(1)))) == ('unverifiable', 'checkpoint_corrupt')
+    # symlinked custody root
+    link = tmp_path / 'rootlink'
+    os.symlink(cust.root, link)
+    assert pair(wc.verify(link, 'real', wc.Candidate('real', 1, dg(1)))) == ('unverifiable', 'custody_unavailable')
+    with pytest.raises(wc.CheckpointRefusal):
+        wc.Custodian(link)
+
+
+def test_non_ascii_digits_name_fails_closed(cust):
+    put(cust, 'wf', [1])
+    d = os.path.join(cust.root, 'wf')
+    open(os.path.join(d, '\u0661\u0662\u0663\u0664\u0665\u0666.json'), 'w').close()
+    assert pair(v(cust, 'wf', 1)) == ('unverifiable', 'checkpoint_corrupt')
+
+
+def test_stale_temp_ignored_other_strays_refused(cust):
+    first = put(cust, 'wf', [1])
+    d = os.path.join(cust.root, 'wf')
+    stale = os.path.join(d, '.tmp.' + 'a' * 32)
+    open(stale, 'w').write('junk')
+    assert pair(v(cust, 'wf', 1)) == ('match', 'head_matches_latest')
+    cust.retain(wc.checkpoint_from_head('wf', 2, dg(2), 'orch-1', first))
+    open(os.path.join(d, '.tmp.12345'), 'w').close()  # not our pattern
+    assert v(cust, 'wf', 2).verdict == 'unverifiable'
+
+
+def test_temp_cleaned_on_failed_link(cust, monkeypatch):
+    first = put(cust, 'wf', [1])
+    def boom(*a, **k):
+        raise PermissionError('x')
+    monkeypatch.setattr(os, 'link', boom)
+    assert refused(cust, wc.checkpoint_from_head('wf', 2, dg(2), 'orch-1', first)) == 'io_failure'
+    monkeypatch.undo()
+    assert sorted(os.listdir(os.path.join(cust.root, 'wf'))) == ['000001.json']
+
+
+def test_internal_exception_fails_closed(cust, monkeypatch):
+    put(cust, 'wf', [1])
+    def boom(*a, **k):
+        raise RuntimeError('internal')
+    monkeypatch.setattr(wc.verifier.custodian, 'read_all', boom)
+    r = v(cust, 'wf', 1)
+    assert r.verdict == 'unverifiable'
+
+
+def test_result_invariant_is_explicit_raise():
+    with pytest.raises(ValueError):
+        wc.Result('pass', 'head_matches_latest')
+    with pytest.raises(ValueError):
+        wc.Result('match', 'made_up')
+
+
+def test_chain_shape_checks(cust):
+    put(cust, 'wf', [2])
+    assert v(cust, 'wf', 2, chain_digests=chain(1)).code == 'input_invalid'
+    assert v(cust, 'wf', 2, chain_digests=chain(3)).code == 'input_invalid'
+    bad_tail = chain(2)
+    bad_tail[-1] = dg(999)
+    assert v(cust, 'wf', 2, chain_digests=bad_tail).code == 'input_invalid'
+    assert v(cust, 'wf', 2, chain_digests='ab').code == 'input_invalid'
+
+
+def test_below_latest_with_chain(cust):
+    put(cust, 'wf', [2, 5])
+    assert pair(v(cust, 'wf', 4, chain_digests=chain(4))) == ('mismatch', 'truncation')
+    assert pair(v(cust, 'wf', 2, chain_digests=chain(2))) == ('mismatch', 'rollback')
+    assert pair(v(cust, 'wf', 0)) == ('mismatch', 'truncation')
+
+
+def test_producer_change_inside_retained_set(cust):
+    put(cust, 'wf', [1, 2])
+    p = os.path.join(cust.root, 'wf', '000002.json')
+    rec = resign(loads_strict(open(p, 'rb').read()), producer='orch-2')
+    rewrite(cust, 'wf', 2, rec)
+    assert pair(v(cust, 'wf', 2)) == ('unverifiable', 'retained_inconsistent')
+
+
+def test_first_record_predecessor_and_pairing(cust):
+    with pytest.raises(wc.CheckpointRefusal):
+        wc.build('wf', 1, dg(1), 'p', 1, dg(2))
+    with pytest.raises(wc.CheckpointRefusal):
+        wc.build('wf', 1, dg(1), 'p', 2, None)
+    put(cust, 'wf', [1, 2])
+    p1 = os.path.join(cust.root, 'wf', '000001.json')
+    p2 = os.path.join(cust.root, 'wf', '000002.json')
+    r2 = loads_strict(open(p2, 'rb').read())
+    # a sequence-2 record in file 000001 (name/sequence disagree), set otherwise looks plausible
+    rewrite(cust, 'wf', 1, r2)
+    os.chmod(p2, 0o644)
+    os.unlink(p2)
+    assert pair(v(cust, 'wf', 2)) == ('unverifiable', 'checkpoint_corrupt')
+
+
+def test_file_name_sequence_disagree(cust):
+    put(cust, 'wf', [1, 2])
+    d = os.path.join(cust.root, 'wf')
+    os.chmod(os.path.join(d, '000002.json'), 0o644)
+    os.rename(os.path.join(d, '000002.json'), os.path.join(d, '000003.json'))
+    assert v(cust, 'wf', 2).verdict == 'unverifiable'
+
+
+def test_retain_same_count_same_digest_ok_fork_refused(cust):
+    first = put(cust, 'wf', [3])
+    second = wc.checkpoint_from_head('wf', 3, dg(3), 'orch-1', first)
+    cust.retain(second)
+    assert refused(cust, wc.checkpoint_from_head('wf', 3, dg(8), 'orch-1', second)) == 'head_fork'
+    assert refused(cust, wc.build('wf', 4, dg(4), 'orch-1', 1)) == 'duplicate_checkpoint'
+
+
+def test_trailing_newline_workflow_id(cust):
+    with pytest.raises(wc.CheckpointRefusal):
+        wc.build('wf\n', 1, dg(1), 'p', 1)
+    put(cust, 'wf', [1])
+    assert wc.verify(cust.root, 'wf\n', wc.Candidate('wf', 1, dg(1))).verdict == 'unverifiable'
+    assert wc.verify(cust.root, 'wf', wc.Candidate('wf\n', 1, dg(1))).verdict == 'unverifiable'
+    with pytest.raises(wc.CheckpointRefusal):
+        wc.build('wf', 1, dg(1), 'p\n', 1)
 
 
 # integration with the real store (read-only use of its head; the store is not modified)

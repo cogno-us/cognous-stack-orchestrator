@@ -14,7 +14,7 @@ Canonical JSON (same `rfc8785-jcs` subset as the store), members: `profile`, `sc
 
 ## 3. Custodian retention rules (refusal codes, closed)
 
-`schema_invalid`, `invalid_workflow_id`, `unsupported_profile`, `workflow_mismatch`, `producer_mismatch` (producer fixed per series), `duplicate_checkpoint`, `sequence_gap`, `predecessor_mismatch`, `head_regression` (count decreased), `head_fork` (same count, different digest, anywhere in the series), `io_failure`, `custody_corrupt`. A refusal changes nothing. There is no delete, rewrite or truncate operation; files are created by exclusive link at mode 0444.
+`schema_invalid`, `invalid_workflow_id`, `unsupported_profile`, `workflow_mismatch`, `producer_mismatch` (producer fixed per series), `duplicate_checkpoint`, `sequence_gap`, `predecessor_mismatch`, `head_regression` (count decreased), `head_fork` (same count, different digest, anywhere in the series), `io_failure`, `custody_corrupt`. A refusal changes nothing. There is no delete, rewrite or truncate operation; files are created by exclusive link at mode 0444 from a randomly named temp file that is removed on failure; a stale temp of that exact pattern is ignored, any other stray entry fails closed. Reads refuse symlinks (O_NOFOLLOW, lstat).
 
 ## 4. Verifier result (closed)
 
@@ -25,10 +25,10 @@ Verdict words: `match`, `mismatch`, `unverifiable` only.
 | mismatch | `truncation` | candidate count below the latest retained count and no retained checkpoint at that count |
 | mismatch | `rollback` | candidate equals an older retained checkpoint (count and digest) |
 | mismatch | `fork` | digest differs from a retained digest at the same count, or (with `chain_digests`) at a retained count inside the chain |
-| mismatch | `workflow_mismatch`, `profile_mismatch` | candidate or retained record names another workflow, or another store profile |
+| mismatch | `workflow_mismatch`, `profile_mismatch` | the candidate names another workflow than the one requested, or another store profile than the checkpoints describe |
 | unverifiable | `missing_checkpoint` | gap in the retained sequence |
 | unverifiable | `duplicate_checkpoint` | two retained records claim one sequence |
-| unverifiable | `checkpoint_corrupt`, `retained_inconsistent` | unreadable, non-canonical, bad digest, foreign file; or a retained set that regresses, forks or breaks its predecessor chain |
+| unverifiable | `checkpoint_corrupt`, `retained_inconsistent` | unreadable, non-canonical, bad digest, unexpected file, symlinked record, workflow directory or custody root (a symlinked root is `custody_unavailable`); a retained record with an unsupported profile, or naming another workflow than its directory (a foreign file); or a retained set that regresses, forks or breaks its predecessor chain |
 | unverifiable | `no_checkpoints`, `custody_unavailable`, `input_invalid` | nothing retained, custody unreadable, malformed candidate |
 | unverifiable | `extension_unproven` | candidate longer than the latest checkpoint and no `chain_digests` given: the extra events are not covered |
 | match | `head_matches_latest`, `chain_matches_all` | agreement with the latest checkpoint; or with every retained checkpoint through the supplied chain |

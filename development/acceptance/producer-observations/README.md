@@ -1,0 +1,13 @@
+# Immutable producer observations (step 3.4, part A)
+
+Candidate, non-authorizing, read-only toward every other component. Defined by the hub engineering register step 3.4 (cogno-us/cognous-open-control-stack, `docs/program-v0.2/engineering-register.md`) and hub contract 1.4 (`docs/program-v0.2/s02/contracts/1.4-evidence-handoff.md`). Release and production remain on HOLD.
+
+`observations.py` is an append-only, content-addressed, hash-chained directory of what the Orchestrator observed about its own handoffs (profile `cognous-producer-observation/0`, a candidate wire name). It sits beside the 3.1 handoff in `../lock-driven-handoff/`; it does not change it.
+
+Record members (exactly): `profile`, `schema_version`, `canonical_profile`, `digest`, `observation_id` (`obs_` plus the digest hex), `kind` (closed set: `handoff_envelope_produced`, `handoff_envelope_checked`, `source_revision_observed`, `ci_run_observed`), `subject` (a reference, at most 256 characters), `source_revisions` (sorted unique 40-hex), `lock_digest` (required for the two handoff kinds, null otherwise), `observed_at` (caller-supplied RFC 3339 UTC, `Z`, whole seconds; there is no clock in the module), `sequence`, `predecessor` (digest of the previous record, null for the first), and the fixed `disposition` = `hold`. The digest is sha256 over the RFC 8785 subset form without `digest` and `observation_id`.
+
+Store behavior: one file per record named by sequence (`000000000001.json`), published by an atomic exclusive hard link so a second writer for the same slot gets `store_conflict`; files are mode 0444 and a writable file is refused on load; every read re-validates each record, canonical bytes, file name and the whole chain (strict JSON, no duplicate keys, no floats); size and count bounds are explicit; symlinks, directories and foreign files are refused. Only the directory the caller names is created or written; no network, no subprocess.
+
+What it does not do: carry or accept a verdict, pass, pin, expectation, grant or authority (such member names are refused as `forbidden_member`, other unknown members as `unknown_member`); select or write a pin; promote anything; or ingest anything into Qualification. Any Qualification ingestion job is Qualification-owned.
+
+Limits: removal of the newest records cannot be seen from the directory alone; `verify_chain(expected_head=..., expected_count=...)` detects it against values the caller holds elsewhere. File modes do not stop a privileged writer; tamper is detected by re-validation, not prevented. Not independently qualified: `tests/integration/producer_observations/` holds developer tests only.

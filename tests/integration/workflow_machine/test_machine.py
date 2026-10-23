@@ -391,7 +391,27 @@ def test_state_and_fleet_are_immutable():
 
 
 ALLOWED_IMPORTS = {"re", "dataclasses", "types", "typing", "__future__"}
-BANNED_CALLS = {"open", "__import__", "eval", "exec"}
+BANNED_NAMES = {"open", "__import__", "eval", "exec", "compile", "globals", "__builtins__"}
+# `re.compile` is an allowed attribute call; every other banned name is refused as a bare name or attribute.
+BANNED_ATTRS = BANNED_NAMES - {"compile"}
+
+
+def purity_violations(tree: ast.AST, name: str = "?") -> list:
+    """Imports outside the allow-list (or not package-relative at level 1) and banned names/attributes."""
+    out = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out += [(name, a.name) for a in node.names if a.name.split(".")[0] not in ALLOWED_IMPORTS]
+        elif isinstance(node, ast.ImportFrom):
+            if node.level == 0 and (node.module or "").split(".")[0] not in ALLOWED_IMPORTS:
+                out.append((name, node.module))
+            elif node.level > 1:
+                out.append((name, "." * node.level + (node.module or "")))
+        elif isinstance(node, ast.Name) and node.id in BANNED_NAMES:
+            out.append((name, node.id))
+        elif isinstance(node, ast.Attribute) and node.attr in BANNED_ATTRS:
+            out.append((name, node.attr))
+    return out
 
 
 def _package_trees():
@@ -399,34 +419,23 @@ def _package_trees():
         yield p.name, ast.parse(p.read_text())
 
 
-def test_modules_import_only_the_allow_list_and_call_no_banned_builtins():
-    checked = 0
+def test_modules_import_only_the_allow_list_and_use_no_banned_names():
+    count = 0
     for name, tree in _package_trees():
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for a in node.names:
-                    assert a.name.split(".")[0] in ALLOWED_IMPORTS, (name, a.name)
-            elif isinstance(node, ast.ImportFrom):
-                if node.level == 0:  # absolute import: allow-list only
-                    assert (node.module or "").split(".")[0] in ALLOWED_IMPORTS, (name, node.module)
-                else:  # package-relative only: no `from .. import x` escaping the package
-                    assert node.level == 1, (name, node.level)
-            elif isinstance(node, ast.Call):
-                f = node.func
-                called = f.id if isinstance(f, ast.Name) else getattr(f, "attr", None)
-                assert called not in BANNED_CALLS, (name, called)
-            elif isinstance(node, ast.Name) and node.id in BANNED_CALLS:
-                raise AssertionError((name, node.id))  # also catches aliasing: f = open
-            checked += 1
-    assert checked > 500
+        assert purity_violations(tree, name) == [], name
+        count += sum(1 for _ in ast.walk(tree))
+    assert count > 500
 
 
 def test_purity_walk_detects_a_violation():
-    bad = ast.parse("import os\nfrom time import time\nx = open('f')\n")
-    mods = {(n.names[0].name if isinstance(n, ast.Import) else n.module).split(".")[0]
-            for n in ast.walk(bad) if isinstance(n, (ast.Import, ast.ImportFrom))}
-    assert mods - ALLOWED_IMPORTS == {"os", "time"}
-    assert any(isinstance(n, ast.Name) and n.id in BANNED_CALLS for n in ast.walk(bad))
+    planted = ast.parse(
+        "import os\nfrom time import time\nfrom .. import up\nfrom .ok import fine\nimport re\n"
+        "x = open('f')\ny = eval('1')\nz = compile('1', 'f', 'eval')\ng = globals()\nb = __builtins__\n"
+        "i = __import__('os')\nexec('1')\nre.compile('x')\nq = obj.open\n")
+    found = {v[1] for v in purity_violations(planted, "planted")}
+    assert found == {"os", "time", "..", "open", "eval", "compile", "globals", "__builtins__",
+                     "__import__", "exec"}
+    assert purity_violations(ast.parse("import re\nre.compile('x')\nfrom .a import b\n")) == []
 
 
 def test_package_has_no_assert_statements():
@@ -563,3 +572,29 @@ def test_forbidden_tokens_only_choose_the_refusal_code():
     assert refusal(wm.initial_state(), ev("propose", 1, grant="x")) == "forbidden_member"
     for tok in voc.FORBIDDEN_MEMBER_TOKENS:
         assert wm.machine._forbidden(tok)
+
+
+def test_subclassed_state_and_fleet_are_refused_even_if_they_skip_post_init():
+    class Sneaky(wm.State):
+        def __post_init__(self) -> None:  # skips the consistency check
+            pass
+
+    forged = Sneaky("wf-1", "dispatched", 1, ())
+    for fn in (lambda: wm.apply_event(forged, ev("record_observation", 2)), lambda: wm.next_actions(forged),
+               lambda: wm.describe(forged)):
+        with pytest.raises(wm.Refusal) as ei:
+            fn()
+        assert ei.value.code == "schema_invalid"
+
+    class SneakyFleet(wm.Fleet):
+        def __post_init__(self) -> None:
+            pass
+
+    ff = SneakyFleet({"wf-1": forged})
+    with pytest.raises(wm.Refusal) as ei:
+        wm.apply_fleet(ff, ev("propose", 1, wid="new"))
+    assert ei.value.code == "schema_invalid"
+    with pytest.raises(wm.Refusal):
+        wm.apply_fleet({}, ev("propose", 1))  # type: ignore[arg-type]
+    with pytest.raises(wm.Refusal):
+        wm.describe(None)  # type: ignore[arg-type]

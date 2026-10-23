@@ -146,7 +146,7 @@ def apply_event(state: State, event) -> State:
     reserved final slot. A transition is refused (`bound_events_exceeded`) if, after it, the workflow
     could no longer reach a terminal status within MAX_EVENTS_PER_WORKFLOW; so the last slot is kept
     for an event that terminates (for example `reconcile_inconclusive` is refused at event 16)."""
-    if not isinstance(state, State) or state.status not in ALL_STATES:
+    if type(state) is not State or state.status not in ALL_STATES:
         raise Refusal("schema_invalid", "invalid state")
     ev = _validate_event(event)
     if state.workflow_id is not None and ev["workflow_id"] != state.workflow_id:
@@ -179,7 +179,7 @@ def replay(events: Iterable) -> State:
 
 def next_actions(state: State) -> tuple:
     """Event types legal for `state` right now, in canonical order. Performs nothing."""
-    if not isinstance(state, State) or state.status not in ALL_STATES:
+    if type(state) is not State or state.status not in ALL_STATES:
         raise Refusal("schema_invalid", "invalid state")
     if state.event_count >= MAX_EVENTS_PER_WORKFLOW:
         return ()
@@ -192,6 +192,8 @@ def describe(state: State) -> dict:
     it is `none` (nothing dispatched), `unknown` (dispatched or unresolved), or a reference status.
     `observation_referenced` and `reconciliation_referenced` mean only that a reference string was
     recorded: its content is never dereferenced or checked here (`refs_content_checked` is False)."""
+    if type(state) is not State or state.status not in ALL_STATES:
+        raise Refusal("schema_invalid", "invalid state")
     if state.status in (INITIAL, "proposed", "awaiting_authority", "authorized"):
         outcome = "none"
     elif state.status in ("dispatched", "unresolved"):
@@ -237,6 +239,8 @@ def apply_fleet(fleet: Fleet, event) -> Fleet:
     """Apply an event to its workflow. Order: shape, fleet bound (propose for a new workflow), then the
     machine's own order (workflow, sequence, event bound, transition, reserved final slot). A propose that would exceed MAX_CONCURRENT_WORKFLOWS
     active workflows is refused; a duplicate propose for a known workflow is refused by the machine."""
+    if type(fleet) is not Fleet:
+        raise Refusal("schema_invalid", "invalid fleet")
     ev = _validate_event(event)
     wid = ev["workflow_id"]
     current = fleet.states.get(wid)

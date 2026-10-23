@@ -467,6 +467,45 @@ def test_deeply_nested_file_is_not_strict_json(tmp_path):
     refused("not_strict_json", st.verify_chain)
 
 
+def test_recursion_error_maps_to_not_strict_json_version_independent(tmp_path, monkeypatch):
+    st = fill(store(tmp_path), 1)
+
+    def boom(data):
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr(o, "loads_strict", boom)
+    refused("not_strict_json", st.verify_chain)
+
+
+def test_refused_append_on_missing_dir_creates_nothing(tmp_path):
+    st = store(tmp_path)
+    first = make()
+    refused("chain_break", st.append, first, expected_count=1)
+    refused("chain_break", st.append, first, expected_head=LOCK)
+    refused("unknown_member", st.append, {"x": 1})
+    assert not (tmp_path / "obs").exists()
+    st.append(first, expected_count=0)  # 0 asserts an empty (here: absent) store
+    assert len(st.verify_chain()) == 1
+
+
+def test_held_value_types_and_zero_semantics(tmp_path):
+    st = fill(store(tmp_path), 1)
+    for bad in (True, False, 1.0, "1", -1):
+        with pytest.raises(ValueError):
+            st.verify_chain(expected_count=bad)
+    with pytest.raises(ValueError):
+        st.verify_chain(expected_head=5)
+    with pytest.raises(ValueError):
+        st.append(make(seq=2, pred=st.verify_chain()[0], kind="ci_run_observed"), expected_count=True)
+    refused("chain_break", st.verify_chain, expected_count=0)
+    assert st.verify_chain(expected_head=None)  # None means unchecked
+    empty = store(tmp_path / "e")
+    (tmp_path / "e").mkdir()
+    (tmp_path / "e" / "obs").mkdir()
+    assert empty.verify_chain(expected_count=0) == []
+    assert empty.verify_chain(expected_head=None) == []
+
+
 def test_bom_trailing_bytes_are_refused(tmp_path):
     st = fill(store(tmp_path), 1)
     p = tmp_path / "obs" / "000000000001.json"

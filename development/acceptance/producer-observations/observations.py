@@ -236,6 +236,20 @@ def build(*, kind: str, subject: str, source_revisions: list, lock_digest, obser
     return obs
 
 
+def _check_held_types(expected_head, expected_count) -> None:
+    if expected_head is not None and type(expected_head) is not str:
+        raise ValueError("expected_head must be a digest string or None (None means unchecked)")
+    if expected_count is not None and (type(expected_count) is not int or expected_count < 0):
+        raise ValueError("expected_count must be a non-negative int or None (0 asserts an empty store)")
+
+
+def _check_held(digests: list, expected_head, expected_count) -> None:
+    if expected_count is not None and expected_count != len(digests):
+        _refuse("chain_break", "record count differs from the held count")
+    if expected_head is not None and expected_head != (digests[-1] if digests else None):
+        _refuse("chain_break", "head differs from the held head")
+
+
 # --- store --------------------------------------------------------------------------------
 class ObservationStore:
     """Append-only directory: one read-only file per observation, named by sequence.
@@ -291,8 +305,10 @@ class ObservationStore:
         """Read-only. Re-validate every record and the whole chain; return the digests in order.
 
         expected_head / expected_count are values the caller holds outside the store; they are
-        the only way to notice removal of the newest records.
+        the only way to notice removal of the newest records. expected_head=None means "not
+        checked" (it cannot assert an empty store); expected_count=0 asserts an empty store.
         """
+        _check_held_types(expected_head, expected_count)
         names = self._entries()
         if len(names) > self.max_records:
             _refuse("store_bound_exceeded", "record count")
@@ -304,10 +320,7 @@ class ObservationStore:
             if obs["predecessor"] != (digests[-1] if digests else None):
                 _refuse("chain_break", f"predecessor mismatch at {index}")
             digests.append(obs["digest"])
-        if expected_count is not None and expected_count != len(digests):
-            _refuse("chain_break", "record count differs from the held count")
-        if expected_head is not None and expected_head != (digests[-1] if digests else None):
-            _refuse("chain_break", "head differs from the held head")
+        _check_held(digests, expected_head, expected_count)
         return digests
 
     def load(self, observation_id: str) -> dict:
@@ -339,7 +352,10 @@ class ObservationStore:
             _refuse("store_bound_exceeded", "record too large")
         if self.directory.is_symlink():
             _refuse("store_integrity", "store directory is a symlink")
+        _check_held_types(expected_head, expected_count)
         if not self.directory.exists():
+            # a missing store is an empty chain; held values are checked before anything is created
+            _check_held([], expected_head, expected_count)
             try:
                 os.mkdir(self.directory)  # only the named directory; parents must exist
             except FileNotFoundError:

@@ -13,6 +13,8 @@ CODES = frozenset({
     'sequence_mismatch', 'sequence_gap', 'chain_broken', 'truncated', 'sequence_conflict',
     # torn-write conditions (reported, never silently repaired)
     'torn_tail', 'leftover_temp', 'unrecorded_quarantine', 'nothing_to_recover',
+    # recovery guards and ambiguous outcomes
+    'complete_event_in_tail', 'outcome_ambiguous', 'lock_break_incomplete',
 })
 
 

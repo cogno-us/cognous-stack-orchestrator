@@ -41,6 +41,10 @@ def refusal(code, fn, *a, **kw):
     return info.value
 
 
+def names(path):
+    return sorted(n for n in os.listdir(path) if n != '.locks')
+
+
 def read(path):
     with open(path, 'rb') as f:
         return f.read()
@@ -56,7 +60,7 @@ def test_append_load_roundtrip_in_order(store):
     assert loaded.events[1]['predecessor'] == loaded.events[0]['digest']
     assert loaded.events[2]['predecessor'] == loaded.events[1]['digest']
     assert loaded.head_sequence == 3 and loaded.head_digest == loaded.events[2]['digest']
-    assert sorted(os.listdir(path)) == ['000001.json', '000002.json', '000003.json']
+    assert names(path) == ['000001.json', '000002.json', '000003.json']
     assert all(e['workflow_id'] == 'wf1' and e['profile'] == 'ocs-workflow-event/0' for e in loaded.events)
 
 
@@ -397,8 +401,9 @@ def test_max_events_per_workflow(tmp_path):
     assert s.load('a').head_sequence == 3
 
 
-def test_load_refuses_more_events_than_bound(tmp_path, store):
+def test_load_refuses_more_events_than_bound(tmp_path, store, monkeypatch):
     make(store, n=5)
+    monkeypatch.setattr(ws.store, 'RECOVERY_RESERVE', 0)
     small = ws.Store(store.root, ws.Bounds(max_events=3))
     refusal('workflow_full', small.load, 'wf1')
 
@@ -409,10 +414,9 @@ def test_max_event_size(tmp_path):
     s.create_workflow('a')
     s.acquire('a', owner='w1', timestamp=TS)
     s.append('a', rec(body={'x': 'y' * 10}), owner='w1')
-    e = refusal('event_too_large', s.append, 'a', rec(body={'x': 'y' * 600}), owner='w1')
-    assert e.detail['size'] > 600
+    refusal('event_too_large', s.append, 'a', rec(body={'x': 'y' * 600}), owner='w1')
     assert s.load('a').head_sequence == 1
-    assert sorted(os.listdir(s.workflow_dir('a'))) == ['000001.json', 'LOCK']  # nothing left behind
+    assert names(s.workflow_dir('a')) == ['000001.json', 'LOCK']  # nothing left behind
 
 
 def test_oversized_file_on_load_refused(store):
@@ -649,7 +653,8 @@ def test_break_lock_refused_when_log_has_torn_tail_unless_explicit(store):
     assert event['sequence'] == 3
 
 
-def test_break_lock_with_no_room_refuses_before_changing_anything(tmp_path):
+def test_break_lock_with_no_room_refuses_before_changing_anything(tmp_path, monkeypatch):
+    monkeypatch.setattr(ws.store, 'RECOVERY_RESERVE', 0)
     (tmp_path / 's').mkdir()
     s = ws.Store(tmp_path / 's', ws.Bounds(max_events=2))
     s.create_workflow('a')

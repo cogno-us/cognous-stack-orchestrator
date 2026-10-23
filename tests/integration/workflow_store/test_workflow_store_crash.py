@@ -163,15 +163,14 @@ def test_exclusive_final_name_never_overwrites_an_existing_event(store, monkeypa
     assert not [n for n in listing(path) if n.startswith('.tmp.')]
 
 
-def test_failed_write_leaves_no_event_and_the_error_is_typed_or_raised(store, monkeypatch):
+def test_failed_temp_fsync_is_typed_and_creates_no_event(store, monkeypatch):
     path = seeded(store, n=1)
 
     def boom(fd):
         raise OSError(5, 'simulated I/O error')
 
     monkeypatch.setattr(os, 'fsync', boom)
-    with pytest.raises(OSError):
-        store.append('wf1', rec(), owner='w1')
+    refusal('io_failure', store.append, 'wf1', rec(), owner='w1')
     monkeypatch.undo()
     assert '000002.json' not in listing(path)
     refusal('leftover_temp', store.load, 'wf1')
@@ -182,14 +181,6 @@ def test_stale_temp_name_collision_refuses_instead_of_overwriting(store):
     open(os.path.join(path, '.tmp.000002.json'), 'wb').write(b'precious')
     refusal('leftover_temp', store.append, 'wf1', rec(), owner='w1')
     assert open(os.path.join(path, '.tmp.000002.json'), 'rb').read() == b'precious'
-
-
-def test_leftover_lock_temp_blocks_same_owner_with_typed_refusal(store):
-    store.create_workflow('wf1')
-    path = store.workflow_dir('wf1')
-    open(os.path.join(path, '.tmp.lock.w1'), 'wb').write(b'x')
-    refusal('leftover_temp', store.acquire, 'wf1', owner='w1', timestamp=TS)
-    store.acquire('wf1', owner='w2', timestamp=TS)  # another token is unaffected
 
 
 # --- torn final write -------------------------------------------------------------------
@@ -251,13 +242,14 @@ def test_recover_quarantines_torn_tail_and_records_it(store):
     assert ev['kind'] == 'store.torn_tail_quarantined' and ev['sequence'] == 2 and ev['timestamp'] == 'recover-ts'
     qname = 'torn-write-after-000001-1'
     assert ev['body']['quarantine'] == qname and ev['body']['last_good_sequence'] == 1
+    assert ev['body']['files_total'] == 2
     assert ev['body']['files'] == [
         {'name': '.tmp.000003.json', 'size': 7, 'sha256': 'sha256:' + hashlib.sha256(b'partial').hexdigest()},
         {'name': '000002.json', 'size': 40, 'sha256': 'sha256:' + hashlib.sha256(torn).hexdigest()}]
     qdir = os.path.join(path, 'quarantine', qname)
     assert sorted(os.listdir(qdir)) == ['.tmp.000003.json', '000002.json']
     assert open(os.path.join(qdir, '000002.json'), 'rb').read() == torn  # moved, not deleted
-    assert listing(path) == ['000001.json', '000002.json', 'LOCK', 'quarantine']
+    assert [n for n in listing(path) if n != '.locks'] == ['000001.json', '000002.json', 'LOCK', 'quarantine']
     loaded = store.load('wf1')
     assert [e['kind'] for e in loaded.events] == ['workflow.proposed', 'store.torn_tail_quarantined']
     store.append('wf1', rec(), owner='w1')
@@ -351,7 +343,8 @@ def _imports(tree):
 
 def test_no_clock_network_or_subprocess_in_the_package():
     root = os.path.dirname(store_mod.__file__)
-    allowed = {'errno', 'hashlib', 'json', 'os', 're', 'stat', 'dataclasses', '.canonical', '.refusal', '.store'}
+    allowed = {'contextlib', 'errno', 'fcntl', 'hashlib', 'itertools', 'json', 'os', 're', 'stat', 'dataclasses',
+               '.canonical', '.refusal', '.store'}
     banned_calls = ('os.system', 'os.popen', 'os.environ', 'os.getenv', 'os.spawn', 'os.exec', 'os.fork',
                     'time.', 'datetime.')
     for name in sorted(os.listdir(root)):

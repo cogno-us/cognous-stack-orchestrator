@@ -28,7 +28,7 @@ def _jcs_string(value):
     return text
 
 
-def jcs_dumps(value):
+def _jcs(value):
     """Canonical text for dict, list, str, bool, None and safe integers; ValueError otherwise."""
     if value is None:
         return 'null'
@@ -43,25 +43,28 @@ def jcs_dumps(value):
     if type(value) is str:
         return _jcs_string(value)
     if type(value) is list:
-        return '[' + ','.join(jcs_dumps(v) for v in value) + ']'
+        return '[' + ','.join(_jcs(v) for v in value) + ']'
     if type(value) is dict:
         if any(type(k) is not str for k in value):
             raise ValueError('object keys must be strings')
         keys = sorted(value, key=lambda k: k.encode('utf-16-be', 'surrogatepass'))
-        return '{' + ','.join(_jcs_string(k) + ':' + jcs_dumps(value[k]) for k in keys) + '}'
+        return '{' + ','.join(_jcs_string(k) + ':' + _jcs(value[k]) for k in keys) + '}'
     raise ValueError('type not representable in the profile')
+
+
+def jcs_dumps(value):
+    """Canonical text for dict, list, str, bool, None and safe integers; ValueError otherwise."""
+    try:
+        return _jcs(value)
+    except RecursionError:
+        raise ValueError('nesting too deep')
 
 
 def jcs_bytes(value):
     return jcs_dumps(value).encode('utf-8')
 
 
-def loads_strict(data):
-    """Parse JSON refusing duplicate keys, floats and non-finite constants.
-
-    Malformed JSON raises json.JSONDecodeError; a profile violation (duplicate key, float,
-    constant) raises a plain ValueError, so callers can tell a torn write from a violation.
-    """
+def _decoder():
     def pairs(items):
         keys = [k for k, _ in items]
         if len(set(keys)) != len(keys):
@@ -74,7 +77,34 @@ def loads_strict(data):
     def no_constant(text):
         raise ValueError('non-finite constant')
 
-    return json.loads(data, object_pairs_hook=pairs, parse_float=no_float, parse_constant=no_constant)
+    return json.JSONDecoder(object_pairs_hook=pairs, parse_float=no_float, parse_constant=no_constant)
+
+
+def loads_strict(data):
+    """Parse JSON refusing duplicate keys, floats and non-finite constants.
+
+    Malformed JSON raises json.JSONDecodeError; a profile violation (duplicate key, float,
+    constant, nesting beyond the interpreter's recursion limit) raises a plain ValueError, so
+    callers can tell a torn write from a violation.
+    """
+    if isinstance(data, (bytes, bytearray)):
+        data = bytes(data).decode('utf-8')
+    try:
+        start = json.decoder.WHITESPACE.match(data, 0).end()
+        obj, end = _decoder().raw_decode(data, start)
+        if data[end:].strip(' \t\r\n'):
+            raise json.JSONDecodeError('Extra data', data, end)
+        return obj
+    except RecursionError:
+        raise ValueError('nesting too deep')
+
+
+def raw_decode_strict(text):
+    """Decode one JSON value at the start of text; return (value, end index). Same refusals as loads_strict."""
+    try:
+        return _decoder().raw_decode(text)
+    except RecursionError:
+        raise ValueError('nesting too deep')
 
 
 def sha256_digest(data):

@@ -389,7 +389,10 @@ def test_a_malformed_intent_body_fails_closed_in_verify_archive(store, tmp_path,
                               {'head_sequence': 3, 'head_digest': 'sha256:' + '0' * 64, 'closure_class': 'completed',
                                'terminal_status': 'unresolved', 'external_checkpoint': {'status': 'not_retained'}},
                               {'head_sequence': 3, 'head_digest': 'sha256:' + '0' * 64, 'closure_class': 'completed',
-                               'terminal_status': 'observed', 'external_checkpoint': 'none'})):
+                               'terminal_status': 'observed', 'external_checkpoint': 'none'},
+                              {'head_sequence': 'x', 'head_digest': 'sha256:' + '0' * 64,
+                               'closure_class': 'completed', 'terminal_status': 'observed',
+                               'external_checkpoint': {'status': 'not_retained'}})):  # single fault: head_sequence type
         wid = 'm%d' % n
         path = seeded(store, wid=wid)
         scan = store_mod._scan(path, ws.Bounds())

@@ -16,7 +16,7 @@ import re
 import stat
 from dataclasses import dataclass
 
-from .canonical import (CANONICAL_PROFILE_NAME, MAX_SAFE_INT, jcs_bytes, loads_strict,
+from .canonical import (CANONICAL_PROFILE_NAME, MAX_SAFE_INT, NestingError, jcs_bytes, loads_strict,
                         object_digest, raw_decode_strict)
 from .refusal import StoreRefusal
 
@@ -37,6 +37,7 @@ KIND_RE = re.compile(r'^[a-z][a-z0-9_.-]{0,63}\Z')
 WORKFLOW_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z')
 OWNER_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z')
 DIGEST_RE = re.compile(r'^sha256:[0-9a-f]{64}\Z')
+LOCK_ID_RE = re.compile(r'^[0-9a-f]{32}\Z')
 EVENT_FILE_RE = re.compile(r'^([0-9]{6})\.json\Z')
 RESERVED_KIND_PREFIX = 'store.'
 KIND_LOCK_BROKEN = 'store.lock_broken'
@@ -69,9 +70,9 @@ class Bounds:
     max_workflows: int = 1000
 
     def __post_init__(self):
-        for name, ceiling in (('max_events', CEILING_EVENTS), ('max_event_bytes', CEILING_EVENT_BYTES),
-                              ('max_workflows', CEILING_WORKFLOWS)):
-            value = getattr(self, name)
+        for name, value, ceiling in (('max_events', self.max_events, CEILING_EVENTS),
+                                     ('max_event_bytes', self.max_event_bytes, CEILING_EVENT_BYTES),
+                                     ('max_workflows', self.max_workflows, CEILING_WORKFLOWS)):
             if type(value) is not int or not 1 <= value <= ceiling:
                 raise StoreRefusal('bounds_invalid', '%s must be an integer in 1..%d' % (name, ceiling))
 
@@ -348,7 +349,9 @@ def _scan(directory, bounds):
             numbers.append((int(match.group(1)), name))
         elif is_temp:
             pass
-        elif name in (LOCK_NAME, LOCKS_DIR):
+        elif name == LOCK_NAME:
+            continue  # classified by _lock_state (a non-regular LOCK is a breakable corrupt lock)
+        elif name == LOCKS_DIR:
             pass
         elif name == QUARANTINE_DIR:
             has_quarantine = True
@@ -357,8 +360,7 @@ def _scan(directory, bounds):
         try:
             st = os.lstat(os.path.join(path, name))
         except FileNotFoundError:
-            if is_temp or name == LOCK_NAME:  # a concurrent writer finished or released
-                numbers = [n for n in numbers if n[1] != name]
+            if is_temp:  # a concurrent writer finished
                 continue
             raise StoreRefusal('io_failure', 'entry vanished: %s' % name[:80])
         except OSError as exc:
@@ -396,6 +398,11 @@ def _scan(directory, bounds):
                 torn.append(name)
                 break
             raise StoreRefusal('event_corrupt', 'event %06d is not valid JSON' % index, {'sequence': index})
+        except NestingError:
+            if final:  # no valid event nests this deep: a junk or torn final file
+                torn.append(name)
+                break
+            raise StoreRefusal('noncanonical_event', 'event %06d nests too deeply' % index, {'sequence': index})
         except ValueError as exc:
             raise StoreRefusal('noncanonical_event', 'event %06d: %s' % (index, exc), {'sequence': index})
         _check_stored_event(event, workflow_id)
@@ -441,7 +448,8 @@ def _check_head(scan, expected_head):
     if seq < 1:
         raise StoreRefusal('schema_invalid', 'expected_head sequence must be at least 1')
     if seq > len(scan.events):
-        raise StoreRefusal('truncated', 'log ends at %d, caller-held head is %d' % (len(scan.events), seq),
+        raise StoreRefusal('truncated', 'log ends at %d, caller-held head is %d (to discard on purpose, '
+                           'recover(acknowledge_drop=True) is the explicit override)' % (len(scan.events), seq),
                            {'have': len(scan.events), 'expected': seq})
     if scan.events[seq - 1]['digest'] != digest:
         raise StoreRefusal('chain_broken', 'event %06d differs from the caller-held head' % seq,
@@ -494,31 +502,55 @@ def inspect(directory, *, bounds=DEFAULT_BOUNDS):
     if scan.unrecorded:
         out.append({'code': 'unrecorded_quarantine', 'files': list(scan.unrecorded)})
     if scan.events and scan.events[-1]['kind'] == KIND_LOCK_BROKEN:
-        last = scan.events[-1]
-        state, info, _ = _lock_state(scan.path)
-        body = last['body']
-        if state == 'ok' and info['owner'] == body.get('broken_owner') \
-                and info['timestamp'] == body.get('broken_lock_timestamp') \
-                and (body.get('breaker') != info['owner'] or last['timestamp'] != info['timestamp']):
+        body = scan.events[-1]['body']
+        state, info, sha = _lock_state(scan.path)
+        old_ok = state == 'ok' and body.get('broken_lock_id') is not None \
+            and info['lock_id'] == body['broken_lock_id']
+        old_corrupt = state == 'corrupt' and body.get('corrupt_lock_sha256') is not None \
+            and sha == body['corrupt_lock_sha256']
+        if old_ok or old_corrupt:  # the lock the break event names is still in place
             out.append({'code': 'lock_break_incomplete', 'files': []})
     return out
 
 
 # --- locking ----------------------------------------------------------------------------
 
-def _lock_bytes(owner, timestamp):
-    return jcs_bytes({'profile': LOCK_PROFILE, 'owner': owner, 'timestamp': timestamp})
+def _new_lock_id():
+    return os.urandom(16).hex()
+
+
+def _lock_bytes(owner, timestamp, lock_id):
+    return jcs_bytes({'profile': LOCK_PROFILE, 'owner': owner, 'timestamp': timestamp, 'lock_id': lock_id})
+
+
+def _marker_sha(marker):
+    return 'sha256:' + hashlib.sha256(marker).hexdigest()
 
 
 def _lock_state(path):
     """Return (state, info, sha256) with state 'absent', 'ok' or 'corrupt'."""
+    lock = os.path.join(path, LOCK_NAME)
     try:
-        fd, st = _open_regular(os.path.join(path, LOCK_NAME))
+        st = os.lstat(lock)
+    except FileNotFoundError:
+        return 'absent', None, None
+    except OSError as exc:
+        raise _io(exc, LOCK_NAME)
+    if stat.S_ISLNK(st.st_mode):  # a symlink is replaced, never followed
+        try:
+            target = os.readlink(lock)
+        except OSError:
+            target = ''
+        return 'corrupt', None, _marker_sha(b'symlink:' + target.encode('utf-8', 'surrogateescape'))
+    if not stat.S_ISREG(st.st_mode):  # FIFO, socket, device or directory: described by its file type
+        return 'corrupt', None, _marker_sha(('nonregular:%o' % stat.S_IFMT(st.st_mode)).encode())
+    try:
+        fd, st = _open_regular(lock)
     except StoreRefusal as exc:
         if exc.detail.get('missing'):
             return 'absent', None, None
         if exc.code == 'unexpected_file':
-            return 'corrupt', None, None
+            return 'corrupt', None, _marker_sha(b'nonregular:raced')
         raise
     try:
         digest, size, head = hashlib.sha256(), 0, b''
@@ -539,10 +571,12 @@ def _lock_state(path):
         obj = loads_strict(head.decode('utf-8'))
     except (ValueError, UnicodeDecodeError):
         return 'corrupt', None, sha
-    if type(obj) is not dict or set(obj) != {'profile', 'owner', 'timestamp'} or obj['profile'] != LOCK_PROFILE \
-            or type(obj['owner']) is not str or not OWNER_RE.match(obj['owner']) or not _text(obj['timestamp'], 64):
+    if type(obj) is not dict or set(obj) != {'profile', 'owner', 'timestamp', 'lock_id'} \
+            or obj['profile'] != LOCK_PROFILE \
+            or type(obj['owner']) is not str or not OWNER_RE.match(obj['owner']) or not _text(obj['timestamp'], 64) \
+            or type(obj['lock_id']) is not str or not LOCK_ID_RE.match(obj['lock_id']):
         return 'corrupt', None, sha
-    return 'ok', {'owner': obj['owner'], 'timestamp': obj['timestamp']}, sha
+    return 'ok', {'owner': obj['owner'], 'timestamp': obj['timestamp'], 'lock_id': obj['lock_id']}, sha
 
 
 def read_lock(directory):
@@ -552,7 +586,7 @@ def read_lock(directory):
     if state == 'corrupt':
         raise StoreRefusal('lock_corrupt', 'lock file is not valid; see break_lock(corrupt_lock_sha256=...)',
                            {'sha256': sha})
-    return info
+    return None if info is None else {'owner': info['owner'], 'timestamp': info['timestamp']}
 
 
 @contextlib.contextmanager
@@ -578,24 +612,38 @@ def _mutex(path):
     except OSError as exc:
         raise _io(exc, LOCKS_DIR)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        yield
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        except OSError as exc:
+            raise StoreRefusal('io_failure', 'flock failed (%s); a local filesystem with flock is required'
+                               % (exc.strerror or exc.errno))
+        try:
+            yield
+        finally:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)  # a forked child may share the descriptor: release explicitly
+            except OSError:
+                pass
     finally:
         os.close(fd)
 
 
-def _lock_temp(path, label):
-    return os.path.join(path, LOCKS_DIR, '%s.%d.%d' % (label, os.getpid(), next(_COUNTER)))
+def _stage_lock(path, owner, timestamp, lock_id):
+    """Write a new lock file's content to a uniquely named temporary file in .locks and return its path.
 
-
-def _stage_lock(path, owner, timestamp):
-    """Write a new lock file's content to a temporary file in .locks and return its path."""
-    tmp = _lock_temp(path, owner)
-    try:
-        _write_new_file(tmp, _lock_bytes(owner, timestamp), LOCK_MODE)
-    except OSError as exc:
-        raise _io(exc, 'lock temporary file')
-    return tmp
+    The name carries random bytes and creation is exclusive, retried, so pid reuse cannot collide.
+    """
+    data = _lock_bytes(owner, timestamp, lock_id)
+    for _ in range(8):
+        tmp = os.path.join(path, LOCKS_DIR, '%s.%s.%d' % (owner, os.urandom(6).hex(), next(_COUNTER)))
+        try:
+            _write_new_file(tmp, data, LOCK_MODE)
+            return tmp
+        except FileExistsError:
+            continue
+        except OSError as exc:
+            raise _io(exc, 'lock temporary file')
+    raise StoreRefusal('io_failure', 'could not create a unique lock temporary file')
 
 
 def acquire(directory, *, owner, timestamp):
@@ -607,8 +655,11 @@ def acquire(directory, *, owner, timestamp):
     with _mutex(path):
         state, info, sha = _lock_state(path)
         if state != 'absent':
-            raise StoreRefusal('lock_held', 'workflow is locked', {'holder': info, 'corrupt': state == 'corrupt'})
-        tmp = _stage_lock(path, owner, timestamp)
+            raise StoreRefusal('lock_held', 'workflow is locked',
+                               {'holder': None if info is None else {'owner': info['owner'],
+                                                                     'timestamp': info['timestamp']},
+                                'corrupt': state == 'corrupt'})
+        tmp = _stage_lock(path, owner, timestamp, _new_lock_id())
         try:
             os.link(tmp, os.path.join(path, LOCK_NAME))  # exclusive even against callers outside this API
         except FileExistsError:
@@ -617,7 +668,11 @@ def acquire(directory, *, owner, timestamp):
             raise _io(exc, 'lock')
         finally:
             os.unlink(tmp)
-        _fsync_dir(path)
+        try:
+            _fsync_dir(path)
+        except OSError as exc:
+            raise StoreRefusal('outcome_ambiguous', 'the lock was created but the directory fsync failed (%s); '
+                               'it may be held: check read_lock()' % exc)
 
 
 def release(directory, *, owner):
@@ -626,7 +681,11 @@ def release(directory, *, owner):
     with _mutex(path):
         _require_holder(path, owner)
         os.unlink(os.path.join(path, LOCK_NAME))
-        _fsync_dir(path)
+        try:
+            _fsync_dir(path)
+        except OSError as exc:
+            raise StoreRefusal('outcome_ambiguous', 'the lock was removed but the directory fsync failed (%s); '
+                               'it may still be reported as held after a crash: check read_lock()' % exc)
 
 
 def _require_holder(path, owner):
@@ -724,32 +783,47 @@ def _recover_locked(path, workflow_id, timestamp, bounds, expected_head, acknowl
     if scan.torn:
         data = _read_prefix(os.path.join(path, scan.torn[0]), CEILING_EVENT_BYTES)
         discarded = _complete_prefix(data, workflow_id, scan)
-        if discarded is not None and expected_head is None and not acknowledge_drop:
-            raise StoreRefusal('complete_event_in_tail',
-                               'the torn tail begins with a complete, valid event that may have been '
-                               'acknowledged; pass expected_head (the last head you were given) or '
-                               'acknowledge_drop=True', {'digest': discarded})
+        if discarded is not None and not acknowledge_drop:
+            last_digest = scan.events[-1]['digest'] if scan.events else None
+            if expected_head is None:
+                raise StoreRefusal('complete_event_in_tail',
+                                   'the torn tail begins with a complete, valid event that may have been '
+                                   'acknowledged; pass expected_head equal to the log head (the last head you '
+                                   'were given) or acknowledge_drop=True', {'digest': discarded})
+            if expected_head[0] != len(scan.events) or expected_head[1] != last_digest:
+                raise StoreRefusal('complete_event_in_tail',
+                                   'expected_head is behind the log head (%d valid events): events up to the '
+                                   'head were acknowledged, so the tail event cannot be dropped on that '
+                                   'basis; acknowledge_drop=True is the explicit override'
+                                   % len(scan.events), {'digest': discarded})
     qroot = os.path.join(path, QUARANTINE_DIR)
     pre = {}
     if moved:
         last = len(scan.events)
-        facts = [_stream_facts(os.path.join(path, name), name) for name in sorted(moved)]  # before any move
-        if not os.path.isdir(qroot):
-            os.mkdir(qroot, DIR_MODE)
-            os.chmod(qroot, DIR_MODE)
-        existing = set(os.listdir(qroot))
-        k = 1
-        while 'torn-write-after-%06d-%d' % (last, k) in existing:
-            k += 1
-        qname = 'torn-write-after-%06d-%d' % (last, k)
-        qdir = os.path.join(qroot, qname)
-        os.mkdir(qdir, DIR_MODE)
-        os.chmod(qdir, DIR_MODE)
-        for name in moved:
-            os.rename(os.path.join(path, name), os.path.join(qdir, name))
-        _fsync_dir(qdir)
-        _fsync_dir(qroot)
-        _fsync_dir(path)
+        try:
+            facts = [_stream_facts(os.path.join(path, name), name) for name in sorted(moved)]  # before any move
+        except OSError as exc:
+            raise _io(exc, 'quarantine facts (nothing was moved)')
+        try:
+            if not os.path.isdir(qroot):
+                os.mkdir(qroot, DIR_MODE)
+                os.chmod(qroot, DIR_MODE)
+            existing = set(os.listdir(qroot))
+            k = 1
+            while 'torn-write-after-%06d-%d' % (last, k) in existing:
+                k += 1
+            qname = 'torn-write-after-%06d-%d' % (last, k)
+            qdir = os.path.join(qroot, qname)
+            os.mkdir(qdir, DIR_MODE)
+            os.chmod(qdir, DIR_MODE)
+            for name in moved:
+                os.rename(os.path.join(path, name), os.path.join(qdir, name))
+            _fsync_dir(qdir)
+            _fsync_dir(qroot)
+            _fsync_dir(path)
+        except OSError as exc:
+            raise StoreRefusal('outcome_ambiguous',
+                               'quarantine may be partly done (%s); run inspect() and recover() again' % exc)
         pre[qname] = facts
     recorded = []
     scan = _scan(path, bounds)
@@ -816,7 +890,8 @@ def break_lock(directory, *, expected_owner=None, breaker, reason, timestamp, re
                 raise StoreRefusal('schema_invalid', 'name the lock owner you observed (expected_owner)')
             if info['owner'] != expected_owner:
                 raise StoreRefusal('lock_owner_mismatch', 'lock is held by another owner')
-            broken = {'broken_owner': info['owner'], 'broken_lock_timestamp': info['timestamp']}
+            broken = {'broken_owner': info['owner'], 'broken_lock_timestamp': info['timestamp'],
+                      'broken_lock_id': info['lock_id']}
         else:
             if expected_owner is not None or corrupt_lock_sha256 is None:
                 raise StoreRefusal('lock_corrupt', 'lock file is not valid; pass expected_owner=None and '
@@ -824,19 +899,23 @@ def break_lock(directory, *, expected_owner=None, breaker, reason, timestamp, re
             if sha is None or corrupt_lock_sha256 != sha:
                 raise StoreRefusal('lock_owner_mismatch', 'corrupt lock bytes differ from the acknowledged digest',
                                    {'sha256': sha})
-            broken = {'broken_owner': None, 'broken_lock_timestamp': None, 'corrupt_lock_sha256': sha}
+            broken = {'broken_owner': None, 'broken_lock_timestamp': None, 'broken_lock_id': None,
+                      'corrupt_lock_sha256': sha}
+            if stat.S_ISDIR(os.lstat(os.path.join(path, LOCK_NAME)).st_mode):
+                raise StoreRefusal('io_failure', 'LOCK is a directory: remove it by hand (out-of-band)')
         scan = _scan(path, bounds)
         if (scan.torn or scan.temps or scan.unrecorded) and not recover_torn:
             _raise_conditions(scan)
         if len(scan.events) + 2 > bounds.max_events + RECOVERY_RESERVE:
             raise StoreRefusal('workflow_full', 'no room to record the break')
-        staged = _stage_lock(path, breaker, timestamp)
+        new_lock_id = _new_lock_id()
+        staged = _stage_lock(path, breaker, timestamp, new_lock_id)
         try:
             if scan.torn or scan.temps or scan.unrecorded:
                 _recover_locked(path, workflow_id, timestamp, bounds, expected_head, acknowledge_drop)
                 scan = _scan(path, bounds)
             body = dict(broken)
-            body.update({'breaker': breaker, 'reason': reason})
+            body.update({'breaker': breaker, 'new_lock_id': new_lock_id, 'reason': reason})
             event = _append_locked(path, workflow_id, {'kind': KIND_LOCK_BROKEN, 'timestamp': timestamp,
                                                        'body': body}, bounds, scan, reserved=True)
             try:

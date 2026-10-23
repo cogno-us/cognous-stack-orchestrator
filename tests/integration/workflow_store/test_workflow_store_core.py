@@ -617,8 +617,10 @@ def test_break_lock_records_event_and_hands_over(store):
     event = store.break_lock('wf1', expected_owner='dead', breaker='w2', reason='holder process gone',
                              timestamp='new')
     assert event['kind'] == 'store.lock_broken' and event['sequence'] == 2
-    assert event['body'] == {'broken_owner': 'dead', 'broken_lock_timestamp': 'old', 'breaker': 'w2',
-                             'reason': 'holder process gone'}
+    body = dict(event['body'])
+    assert len(body.pop('broken_lock_id')) == 32 and len(body.pop('new_lock_id')) == 32
+    assert body == {'broken_owner': 'dead', 'broken_lock_timestamp': 'old', 'breaker': 'w2',
+                    'reason': 'holder process gone'}
     assert store.read_lock('wf1') == {'owner': 'w2', 'timestamp': 'new'}
     store.append('wf1', rec(), owner='w2')
     refusal('lock_owner_mismatch', store.append, 'wf1', rec(), owner='dead')

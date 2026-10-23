@@ -588,3 +588,254 @@ def test_oversized_record_is_refused_before_canonicalization(store, monkeypatch)
     body = {'k%d' % i: 'v' * 1000 for i in range(100)}  # ~100 KB > 64 KiB default bound
     refusal('event_too_large', store.append, 'wf1', rec(body=body), owner='w1')
     refusal('event_too_large', store.append, 'wf1', rec(body={'big': ['x' * 70000]}), owner='w1')
+
+
+# === second re-review: exact head, fork-safe mutex, typed fsync/flock failures, break ids ============
+
+import errno  # noqa: E402
+import fcntl  # noqa: E402
+
+
+def dir_fsync_fails(monkeypatch, after=0):
+    real = os.fsync
+    state = {'dir_calls': 0}
+
+    def fsync(fd):
+        if os.path.isdir('/proc/self/fd/%d' % fd):
+            state['dir_calls'] += 1
+            if state['dir_calls'] > after:
+                raise OSError(5, 'simulated directory fsync failure')
+        return real(fd)
+
+    monkeypatch.setattr(os, 'fsync', fsync)
+
+
+def chain_with_complete_tail(store, acked=3):
+    """acked events, then a complete valid next event followed by garbage in its file."""
+    path = seeded(store, n=acked, hold=False)
+    heads = [(e['sequence'], e['digest']) for e in store.load('wf1').events]
+    store.acquire('wf1', owner='w1', timestamp=TS)
+    ev = store.append('wf1', rec(body={'tail': True}), owner='w1')
+    final = os.path.join(path, '%06d.json' % ev['sequence'])
+    force_write(final, open(final, 'rb').read() + b'#junk')
+    return path, heads, ev
+
+
+# --- 1 ---
+
+def test_expected_head_must_equal_the_log_head_to_discard_a_complete_event(store):
+    path, heads, ev = chain_with_complete_tail(store, acked=3)
+    # a caller who saw event 3 (the log head) may discard the unacknowledged tail event 4
+    # a caller whose head is OLDER than the log head must not
+    e = refusal('complete_event_in_tail', store.recover, 'wf1', owner='w1', timestamp=TS, expected_head=heads[1])
+    assert 'behind the log head' in str(e) and 'acknowledge_drop' in str(e)
+    refusal('complete_event_in_tail', store.break_lock, 'wf1', expected_owner='w1', breaker='w2', reason='r',
+            timestamp=TS, recover_torn=True, expected_head=heads[0])
+    assert os.path.exists(os.path.join(path, '000004.json')) and store.read_lock('wf1')['owner'] == 'w1'
+    store.recover('wf1', owner='w1', timestamp=TS, expected_head=heads[2])
+    assert store.load('wf1').events[3]['body']['complete_event_discarded'] == ev['digest']
+
+
+def test_expected_head_beyond_the_log_points_at_acknowledge_drop(store):
+    path, heads, ev = chain_with_complete_tail(store, acked=2)
+    e = refusal('truncated', store.recover, 'wf1', owner='w1', timestamp=TS, expected_head=(3, ev['digest']))
+    assert 'acknowledge_drop' in str(e)
+
+
+# --- 2 ---
+
+def test_mutex_is_released_even_while_a_forked_child_holds_the_descriptor(store):
+    path = seeded(store, n=0, hold=False)
+    r, w = os.pipe()
+    with store_mod._mutex(path):
+        pid = os.fork()
+        if pid == 0:
+            os.read(r, 1)  # the child lives on, still holding any inherited descriptor
+            os._exit(0)
+    try:
+        fd = os.open(os.path.join(path, '.locks', 'mutex'), os.O_RDWR)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # raises BlockingIOError if the mutex leaked
+        finally:
+            os.close(fd)
+        store.acquire('wf1', owner='w1', timestamp=TS)  # and the API itself is not wedged
+    finally:
+        os.write(w, b'x')
+        os.waitpid(pid, 0)
+
+
+# --- 3 ---
+
+def test_flock_failure_is_a_typed_io_failure(store, monkeypatch):
+    seeded(store, n=0, hold=False)
+
+    def enolck(fd, op):
+        raise OSError(errno.ENOLCK, 'No locks available')
+
+    monkeypatch.setattr(fcntl, 'flock', enolck)
+    e = refusal('io_failure', store.acquire, 'wf1', owner='w1', timestamp=TS)
+    assert 'flock' in str(e)
+    refusal('io_failure', store.append, 'wf1', rec(), owner='w1')
+    monkeypatch.undo()
+    store.acquire('wf1', owner='w1', timestamp=TS)
+
+
+# --- 4 ---
+
+def test_corrupt_lock_break_with_failed_replace_is_reported_incomplete(store, monkeypatch):
+    path = seeded(store, n=1, hold=False)
+    content = b'garbage'
+    force_write(os.path.join(path, 'LOCK'), content)
+    sha = 'sha256:' + hashlib.sha256(content).hexdigest()
+
+    def nope(*a, **k):
+        raise OSError(1, 'denied')
+
+    monkeypatch.setattr(os, 'replace', nope)
+    refusal('lock_break_incomplete', store.break_lock, 'wf1', breaker='w2', reason='r', timestamp=TS,
+            corrupt_lock_sha256=sha)
+    monkeypatch.undo()
+    assert store.inspect('wf1') == [{'code': 'lock_break_incomplete', 'files': []}]
+    store.break_lock('wf1', breaker='w2', reason='again', timestamp=TS, corrupt_lock_sha256=sha)
+    assert store.inspect('wf1') == []
+
+
+def test_no_false_positive_when_the_original_owner_reacquires_with_an_identical_timestamp(store):
+    seeded(store, n=0, hold=False)
+    store.acquire('wf1', owner='old', timestamp='T')
+    store.break_lock('wf1', expected_owner='old', breaker='new', reason='stale', timestamp='T2')
+    store.release('wf1', owner='new')
+    store.acquire('wf1', owner='old', timestamp='T')  # same owner token and timestamp as the broken lock
+    assert store.load('wf1').events[-1]['kind'] == 'store.lock_broken'
+    assert store.inspect('wf1') == []
+
+
+def test_old_holder_can_still_append_during_the_incomplete_window(store, monkeypatch):
+    seeded(store, n=1)
+
+    def die(*a, **k):
+        raise Crash()
+
+    monkeypatch.setattr(os, 'replace', die)
+    with pytest.raises(Crash):
+        store.break_lock('wf1', expected_owner='w1', breaker='w2', reason='stale', timestamp='t2')
+    monkeypatch.undo()
+    assert store.inspect('wf1') == [{'code': 'lock_break_incomplete', 'files': []}]
+    store.append('wf1', rec(body={'late': 1}), owner='w1')  # documented: the old holder still holds LOCK
+    assert store.inspect('wf1') == []  # the break event is no longer the latest
+
+
+# --- 5 ---
+
+def test_acquire_directory_fsync_failure_is_typed(store, monkeypatch):
+    path = seeded(store, n=0, hold=False)
+    dir_fsync_fails(monkeypatch)
+    e = refusal('outcome_ambiguous', store.acquire, 'wf1', owner='w1', timestamp=TS)
+    assert 'read_lock' in str(e)
+    monkeypatch.undo()
+    assert store.read_lock('wf1')['owner'] == 'w1'  # the change did happen
+
+
+def test_release_directory_fsync_failure_is_typed(store, monkeypatch):
+    seeded(store, n=0)
+    dir_fsync_fails(monkeypatch)
+    refusal('outcome_ambiguous', store.release, 'wf1', owner='w1')
+    monkeypatch.undo()
+    assert store.read_lock('wf1') is None
+
+
+def test_recover_directory_fsync_failure_is_typed_and_resumable(store, monkeypatch):
+    path = seeded(store, n=1)
+    force_write(os.path.join(path, '.tmp.000002.json'), b'x')
+    dir_fsync_fails(monkeypatch)
+    e = refusal('outcome_ambiguous', store.recover, 'wf1', owner='w1', timestamp=TS)
+    assert 'inspect' in str(e)
+    monkeypatch.undo()
+    refusal('unrecorded_quarantine', store.load, 'wf1')
+    store.recover('wf1', owner='w1', timestamp=TS)
+    assert store.load('wf1').head_sequence == 2
+
+
+def test_recover_fact_failure_moves_nothing(store, monkeypatch):
+    path = seeded(store, n=1)
+    force_write(os.path.join(path, '.tmp.000002.json'), b'x')
+
+    def boom(*a, **k):
+        raise OSError(5, 'read error')
+
+    monkeypatch.setattr(store_mod, '_stream_facts', boom)
+    refusal('io_failure', store.recover, 'wf1', owner='w1', timestamp=TS)
+    monkeypatch.undo()
+    assert '.tmp.000002.json' in os.listdir(path) and not os.path.exists(os.path.join(path, 'quarantine'))
+
+
+# --- 6 ---
+
+def test_fifo_lock_is_a_breakable_corrupt_lock(store):
+    path = seeded(store, n=1, hold=False)
+    os.mkfifo(os.path.join(path, 'LOCK'))
+    e = refusal('lock_corrupt', store.read_lock, 'wf1')
+    sha = e.detail['sha256']
+    assert sha == 'sha256:' + hashlib.sha256(('nonregular:%o' % 0o010000).encode()).hexdigest()
+    store.break_lock('wf1', breaker='w2', reason='fifo', timestamp=TS, corrupt_lock_sha256=sha)
+    assert store.read_lock('wf1')['owner'] == 'w2'
+    store.append('wf1', rec(), owner='w2')
+
+
+def test_symlink_lock_is_a_breakable_corrupt_lock_and_the_target_is_untouched(store, tmp_path):
+    path = seeded(store, n=0, hold=False)
+    target = tmp_path / 'target.txt'
+    target.write_text('keep')
+    os.symlink(target, os.path.join(path, 'LOCK'))
+    e = refusal('lock_corrupt', store.read_lock, 'wf1')
+    store.break_lock('wf1', breaker='w2', reason='symlink', timestamp=TS, corrupt_lock_sha256=e.detail['sha256'])
+    assert target.read_text() == 'keep' and store.read_lock('wf1')['owner'] == 'w2'
+
+
+def test_directory_lock_needs_manual_removal(store):
+    path = seeded(store, n=0, hold=False)
+    os.mkdir(os.path.join(path, 'LOCK'))
+    e = refusal('lock_corrupt', store.read_lock, 'wf1')
+    refusal('io_failure', store.break_lock, 'wf1', breaker='w2', reason='dir', timestamp=TS,
+            corrupt_lock_sha256=e.detail['sha256'])
+    refusal('lock_held', store.acquire, 'wf1', owner='w2', timestamp=TS)
+
+
+def test_junk_final_file_of_deep_unclosed_brackets_is_a_recoverable_torn_tail(store, monkeypatch):
+    path = seeded(store, n=1)
+    force_write(os.path.join(path, '000002.json'), b'[' * 100000)
+    refusal('torn_tail', store.load, 'wf1')
+    store.recover('wf1', owner='w1', timestamp=TS)
+    assert store.load('wf1').head_sequence == 2
+    # the same through an interpreter that raises RecursionError, and a deep NON-final file stays corruption
+    class Boom:
+        def raw_decode(self, *a, **k):
+            raise RecursionError()
+
+    path2 = seeded(store, n=3, wid='wf2')
+    monkeypatch.setattr(canonical, '_decoder', lambda: Boom())
+    refusal('noncanonical_event', store.load, 'wf2')  # first event "nests too deeply": non-final
+    monkeypatch.undo()
+    assert store.load('wf2').head_sequence == 3
+
+
+# --- 8 ---
+
+def test_lock_temp_names_are_collision_proof_after_pid_reuse(store, monkeypatch):
+    path = seeded(store, n=0, hold=False)
+    real = os.urandom
+    seq = iter([b'\x01' * 6, b'\x01' * 6, b'\x02' * 6, real(16)])
+
+    def fixed(n):
+        return next(seq) if n == 6 else real(n)
+
+    # a crashed process left a temp whose name the next attempt would pick first
+    os.makedirs(os.path.join(path, '.locks'), exist_ok=True)
+    force_write(os.path.join(path, '.locks', 'w1.%s.0' % ('01' * 6)), b'stale from a dead pid')
+    monkeypatch.setattr(os, 'urandom', fixed)
+    monkeypatch.setattr(store_mod, '_COUNTER', iter([0, 0, 1, 2, 3]))
+    store.acquire('wf1', owner='w1', timestamp=TS)  # retries past the existing name instead of failing
+    monkeypatch.undo()
+    assert store.read_lock('wf1')['owner'] == 'w1'
+    leftovers = sorted(n for n in os.listdir(os.path.join(path, '.locks')) if n != 'mutex')
+    assert leftovers == ['w1.%s.0' % ('01' * 6)]  # crash leftovers in .locks are never cleaned or touched

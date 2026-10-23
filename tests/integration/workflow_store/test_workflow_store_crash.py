@@ -331,28 +331,58 @@ def test_quarantine_must_be_a_directory(store):
 
 # --- strictness of the module surface ---------------------------------------------------
 
-def _imports(tree):
-    names = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            names.update(a.name.split('.')[0] for a in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            names.add(('.' * node.level) + (node.module or ''))
-    return names
+ALLOWED_IMPORTS = {'contextlib', 'errno', 'fcntl', 'hashlib', 'itertools', 'json', 'os', 're', 'stat',
+                   'dataclasses', '.canonical', '.refusal', '.store'}
+ALLOWED_OS = {'O_CREAT', 'O_DIRECTORY', 'O_EXCL', 'O_NOFOLLOW', 'O_NONBLOCK', 'O_RDONLY', 'O_RDWR', 'O_WRONLY',
+              'chmod', 'close', 'fchmod', 'fspath', 'fstat', 'fsync', 'link', 'listdir', 'lstat', 'mkdir', 'open',
+              'path', 'read', 'readlink', 'rename', 'replace', 'unlink', 'urandom', 'write'}
+ALLOWED_OS_PATH = {'abspath', 'basename', 'exists', 'isdir', 'islink', 'join', 'lexists', 'normpath'}
+BANNED_NAMES = {'getattr', 'setattr', '__import__', 'eval', 'exec', 'compile', 'globals', 'vars', 'input'}
+ALLOWED_FROM_MODULES = {'dataclasses', '.canonical', '.refusal', '.store'}
 
 
 def test_no_clock_network_or_subprocess_in_the_package():
+    """By AST names and attributes, not substrings: imports, os attributes and dynamic access are allow-listed."""
     root = os.path.dirname(store_mod.__file__)
-    allowed = {'contextlib', 'errno', 'fcntl', 'hashlib', 'itertools', 'json', 'os', 're', 'stat', 'dataclasses',
-               '.canonical', '.refusal', '.store'}
-    banned_calls = ('os.system', 'os.popen', 'os.environ', 'os.getenv', 'os.spawn', 'os.exec', 'os.fork',
-                    'time.', 'datetime.')
     for name in sorted(os.listdir(root)):
-        if name.endswith('.py'):
-            text = open(os.path.join(root, name)).read()
-            assert _imports(ast.parse(text)) <= allowed, name
-            for token in banned_calls:
-                assert token not in text, '%s uses %s' % (name, token)
+        if not name.endswith('.py'):
+            continue
+        tree = ast.parse(open(os.path.join(root, name)).read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                assert {a.name for a in node.names} <= ALLOWED_IMPORTS, (name, node.lineno)
+            elif isinstance(node, ast.ImportFrom):
+                module = ('.' * node.level) + (node.module or '')
+                assert module in ALLOWED_FROM_MODULES, (name, module)
+                if module == 'dataclasses':
+                    assert {a.name for a in node.names} == {'dataclass'}
+            elif isinstance(node, ast.Name):
+                assert node.id not in BANNED_NAMES, (name, node.id, node.lineno)
+            elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == 'os':
+                assert node.attr in ALLOWED_OS, (name, node.attr, node.lineno)
+            elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Attribute) \
+                    and isinstance(node.value.value, ast.Name) and node.value.value.id == 'os' \
+                    and node.value.attr == 'path':
+                assert node.attr in ALLOWED_OS_PATH, (name, node.attr, node.lineno)
+            elif isinstance(node, ast.Attribute):
+                # only module attributes of allow-listed modules; no time, socket, subprocess, environ
+                assert node.attr not in {'environ', 'getenv', 'system', 'popen', 'fork', 'time', 'now'} \
+                    or not isinstance(node.value, ast.Name) or node.value.id not in {'os', 'time', 'datetime'}
+
+
+def test_the_ast_check_catches_a_banned_construct():
+    bad = ast.parse('import subprocess\nimport os\nos.environ\ngetattr(os, "x")\nfrom os import system')
+    kinds = set()
+    for node in ast.walk(bad):
+        if isinstance(node, ast.Import) and not {a.name for a in node.names} <= ALLOWED_IMPORTS:
+            kinds.add('import')
+        if isinstance(node, ast.Attribute) and node.attr not in ALLOWED_OS:
+            kinds.add('os-attr')
+        if isinstance(node, ast.Name) and node.id in BANNED_NAMES:
+            kinds.add('name')
+        if isinstance(node, ast.ImportFrom) and node.module not in ALLOWED_FROM_MODULES:
+            kinds.add('from')
+    assert kinds == {'import', 'os-attr', 'name', 'from'}
 
 
 def test_package_does_not_import_the_state_machine_or_other_orchestration_code():

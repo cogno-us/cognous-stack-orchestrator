@@ -14,6 +14,10 @@ CANONICAL_PROFILE_NAME = 'rfc8785-jcs'
 _ESCAPES = {'"': '\\"', '\\': '\\\\', '\b': '\\b', '\f': '\\f', '\n': '\\n', '\r': '\\r', '\t': '\\t'}
 
 
+class NestingError(ValueError):
+    """Nesting beyond the interpreter's recursion limit (a ValueError: a profile violation)."""
+
+
 def _jcs_string(value):
     out = []
     for ch in value:
@@ -57,7 +61,7 @@ def jcs_dumps(value):
     try:
         return _jcs(value)
     except RecursionError:
-        raise ValueError('nesting too deep')
+        raise NestingError('nesting too deep')
 
 
 def jcs_bytes(value):
@@ -96,7 +100,7 @@ def loads_strict(data):
             raise json.JSONDecodeError('Extra data', data, end)
         return obj
     except RecursionError:
-        raise ValueError('nesting too deep')
+        raise NestingError('nesting too deep')
 
 
 def raw_decode_strict(text):
@@ -104,7 +108,7 @@ def raw_decode_strict(text):
     try:
         return _decoder().raw_decode(text)
     except RecursionError:
-        raise ValueError('nesting too deep')
+        raise NestingError('nesting too deep')
 
 
 def sha256_digest(data):

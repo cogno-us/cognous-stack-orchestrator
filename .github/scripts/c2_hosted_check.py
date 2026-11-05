@@ -450,7 +450,7 @@ def check():
                          "replay_status": "reconstruction_partial", "findings": [["B004", "warning"]], "n1_message": N1_MESSAGE, "n2_message": N2_MESSAGE,
                          "journal": {"event_decision_linkage": "NOT_ESTABLISHED", "event_decision_ids": None, "proposal_level_association_only": True}},
               "oracle_references": {"freeze": "Hub #273 comment 6665625039", "contract": "Hub #273 comment 6665220369",
-                                    "journal_amendment": "Hub #273 comment 6667028276", "original_discrepancy": "freeze §14 event decision_id equality (REJECTED, preserved)"},
+                                    "journal_amendment": "Hub #273 comment 6667028276", "original_discrepancy": "freeze section 14 event decision_id equality (REJECTED, preserved)"},
               "dependency_lock_sha256": (ctx.get("host_sources") or {}).get(".github/locks/cryptography-pydantic-pytest-513753.txt"),
               "host_source_sha256": ctx.get("host_sources"), "limitations": list(LIMITATIONS), "not_executed": list(NOT_EXECUTED)}
     manifest = {"schema": MANIFEST_SCHEMA, "stable_identity": stable,

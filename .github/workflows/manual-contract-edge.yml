@@ -15,11 +15,18 @@ name: Manual contract edge (manual only)
 #   (P1 positive, N1 stored-tenant tamper, N2 original-C1 incompatibility) against the pinned Control Plane and Replay Bundle
 #   source. Decision-only: no execute/reconcile/apply, no executor, no provider or secret, a TEST-ONLY public Ed25519 key. Hosted
 #   developer evidence only: NOT independent qualification, authenticity or complete reconstruction. Allowed only from main.
+# - Real C3 group (c3_p1_n1_n3_n5_hosted_group): one bounded, provider-free run of the merged C3 harness (real Replay Bundle output
+#   -> the Governance Evidence Pack's native importer and validator) against the pinned Control Plane, Replay Bundle, Evidence Pack
+#   and Action Manifest source: P1 positive, N1-TEN tenant tamper, N3 partial-as-complete (two variants), N5-REV wrong revision.
+#   Decision-only: no execute/reconcile/apply, no executor, no provider or secret, a TEST-ONLY public Ed25519 key. The Pack's Replay
+#   pin is a PROVISIONAL, UNQUALIFIED development row. Hosted developer evidence only: NOT independent qualification, approval,
+#   authenticity, custody, freshness, complete reconstruction or effect proof. Allowed only from main; the main/event/case guard
+#   runs as the first executed step (never as a job-level condition) so a wrong ref FAILS the job instead of skipping it.
 on:
   workflow_dispatch:
     inputs:
       case_id:
-        description: Allowlisted case to run. mock_* are synthetic mock-only cases (no network); c1_* run the real pinned Action Manifest and Control Plane source, imported by path, decision-only, after network fetches of GitHub sources and PyPI wheels. c2_p1_n1_n2_hosted_group runs the pinned Control Plane to Replay Bundle P1/N1/N2 cases (decision-only, main only). None is qualification. Hub 280 is OPEN; only the fully populated frozen Manifest 1.1 is supported. Manual only.
+        description: Allowlisted case to run. mock_* are synthetic mock-only cases (no network); c1_* run the real pinned Action Manifest and Control Plane source, imported by path, decision-only, after network fetches of GitHub sources and PyPI wheels. c2_p1_n1_n2_hosted_group runs the pinned Control Plane to Replay Bundle P1/N1/N2 cases (decision-only, main only). c3_p1_n1_n3_n5_hosted_group runs the merged C3 Replay Bundle to Governance Evidence Pack harness P1/N1-TEN/N3/N5-REV (decision-only, main only). None is qualification. Hub 280 is OPEN; only the fully populated frozen Manifest 1.1 is supported. Manual only.
         type: choice
         required: true
         default: mock_accept_expected_accept
@@ -33,13 +40,14 @@ on:
           - c1_manifest_to_cp_authorized
           - c1_manifest_to_cp_no_authority
           - c2_p1_n1_n2_hosted_group
+          - c3_p1_n1_n3_n5_hosted_group
 
 permissions:
   contents: read
 
 jobs:
   contract-edge:
-    if: ${{ !startsWith(inputs.case_id, 'c1_') && !startsWith(inputs.case_id, 'c2_') }}
+    if: ${{ !startsWith(inputs.case_id, 'c1_') && !startsWith(inputs.case_id, 'c2_') && inputs.case_id != 'c3_p1_n1_n3_n5_hosted_group' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -989,4 +997,206 @@ jobs:
         with:
           name: c2-evidence-${{ inputs.case_id }}
           path: ${{ runner.temp }}/c2-evidence/
+          if-no-files-found: warn
+
+  c3-real-edge:
+    if: ${{ inputs.case_id == 'c3_p1_n1_n3_n5_hosted_group' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      C3_CP_SHA: 484fdbd297235dd24148ddb0703f2055a31eabff
+      C3_CP_TREE: c182939882103015f12c5360fccf377c54e2c4f9
+      C3_RB_SHA: 93a76e281fcae6a65d2cd1d35376f87442dafb95
+      C3_RB_TREE: aca6e6b8bdd33d51db3b34bc0c75eff93b9ff88f
+      C3_PACK_SHA: 065150852cc2a8abeb748777bb69d72ccd0e03d8
+      C3_PACK_TREE: fe428a89da2e74346648cdfe014462ddc8624c77
+      C3_AM_SHA: fa170815ef96a54c233d0dd9da821b60debabf8b
+      C3_AM_TREE: 3b0e3772e944aa668c8f4b879588c7cc3e2c32be
+      COGNOUS_C3_CONTROL_PLANE_ROOT: ${{ github.workspace }}/.c3-src/control-plane
+      COGNOUS_C3_REPLAY_BUNDLE_ROOT: ${{ github.workspace }}/.c3-src/replay-bundle
+      COGNOUS_C3_EVIDENCE_PACK_ROOT: ${{ github.workspace }}/.c3-src/evidence-pack
+      COGNOUS_C3_ACTION_MANIFEST_ROOT: ${{ github.workspace }}/.c3-src/action-manifest
+      CASE_ID: ${{ inputs.case_id }}
+    steps:
+      # Fail-closed guard, executed as a real step (a job-level condition could silently skip the only validation job). It reads
+      # only the runner-provided environment, executes no repository code, and fails the job unless the run is a manual dispatch of
+      # the C3 case from refs/heads/main. `check_gate` in c3_hosted_check.py repeats the same test against the checked-out SHA.
+      - name: Refuse unless this is a manual dispatch of the C3 case from main
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ] || [ "${GITHUB_REF}" != "refs/heads/main" ] || [ "${CASE_ID}" != "c3_p1_n1_n3_n5_hosted_group" ]; then
+            echo "REFUSED: C3 hosted validation runs only as a workflow_dispatch of c3_p1_n1_n3_n5_hosted_group from refs/heads/main" >&2
+            exit 1
+          fi
+      # The orchestrator checkout comes first and keeps full history: the merged integrity tests read the recorded base commit. A later
+      # checkout with clean enabled would delete the nested component checkouts.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout Control Plane at the frozen SHA
+        id: checkout_cp
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-control-plane
+          ref: ${{ env.C3_CP_SHA }}
+          path: .c3-src/control-plane
+          persist-credentials: false
+      - name: Checkout Replay Bundle at the frozen SHA
+        id: checkout_rb
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-replay-bundle
+          ref: ${{ env.C3_RB_SHA }}
+          path: .c3-src/replay-bundle
+          persist-credentials: false
+      - name: Checkout Governance Evidence Pack at the frozen SHA
+        id: checkout_pack
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-governance-evidence-pack
+          ref: ${{ env.C3_PACK_SHA }}
+          path: .c3-src/evidence-pack
+          persist-credentials: false
+      - name: Checkout Action Manifest at the frozen SHA
+        id: checkout_am
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-action-manifest
+          ref: ${{ env.C3_AM_SHA }}
+          path: .c3-src/action-manifest
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      # Hash-locked wheels from PyPI (the same lock as C2: the Evidence Pack needs only pydantic, the Control Plane cryptography).
+      # The components are not installed; the harness imports their source by path.
+      - name: Install the hash-locked dependencies
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes --only-binary=:all: -r .github/locks/cryptography-pydantic-pytest-513753.txt
+      - name: Verify the exact sources and context (no component code is executed)
+        id: verify
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c3-evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          PIP_VERSION_TEXT="$(python -m pip --version)"
+          export PIP_VERSION_TEXT
+          python -I -B .github/scripts/c3_hosted_check.py verify
+      - name: Focused C3 suites (functional 26 + integrity 76; any failure, skip or expected failure fails the job)
+        id: tests
+        if: steps.verify.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c3-evidence
+        shell: bash
+        run: |
+          set -u -o pipefail
+          set +e  # an explicit `shell: bash` runs as `bash -eo pipefail`: record the real exit codes and evidence BEFORE failing
+          mkdir -p "$EVIDENCE_DIR"
+          : > "$EVIDENCE_DIR/tests.log"
+          REQ=(--require-env COGNOUS_C3_CONTROL_PLANE_ROOT --require-env COGNOUS_C3_REPLAY_BUNDLE_ROOT --require-env COGNOUS_C3_EVIDENCE_PACK_ROOT --require-env COGNOUS_C3_ACTION_MANIFEST_ROOT)
+          echo "=== suite: test_real_c3.py ===" | tee -a "$EVIDENCE_DIR/tests.log"
+          python -I -B .github/scripts/run_unittest_no_skips.py tests/manual_contract/c3 --pattern test_real_c3.py "${REQ[@]}" 2>&1 | tee -a "$EVIDENCE_DIR/tests.log"
+          RC_FUNCTIONAL="${PIPESTATUS[0]}"
+          echo "=== suite: test_real_c3_integrity.py ===" | tee -a "$EVIDENCE_DIR/tests.log"
+          python -I -B .github/scripts/run_unittest_no_skips.py tests/manual_contract/c3 --pattern test_real_c3_integrity.py "${REQ[@]}" 2>&1 | tee -a "$EVIDENCE_DIR/tests.log"
+          RC_INTEGRITY="${PIPESTATUS[0]}"
+          export RC_FUNCTIONAL RC_INTEGRITY
+          TESTS_RC=0
+          python3 -I -B - <<'PY' || TESTS_RC=1
+          import json, os, re
+          log = open(os.path.join(os.environ["EVIDENCE_DIR"], "tests.log"), encoding="utf-8").read()
+          suites = []
+          ok = True
+          for pattern, rc_name, expected in (("test_real_c3.py", "RC_FUNCTIONAL", 26), ("test_real_c3_integrity.py", "RC_INTEGRITY", 76)):
+              marker = "=== suite: %s ===" % pattern
+              start = log.find(marker)
+              nxt = [log.find("=== suite:", start + 1)] if start >= 0 else [-1]
+              body = log[start + len(marker):nxt[0] if nxt[0] > 0 else len(log)] if start >= 0 else ""
+              m = re.findall(r"^Ran (\d+) tests? in ", body, re.M)
+              observed = int(m[0]) if len(m) == 1 else None
+              rc = int(os.environ[rc_name])
+              good = rc == 0 and observed == expected
+              ok = ok and good
+              suites.append({"pattern": pattern, "exit_code": rc, "expected_tests": expected, "observed_tests": observed,
+                             "outcome": "PASSED" if good else "FAILED"})
+          doc = {"command": "python -I -B .github/scripts/run_unittest_no_skips.py tests/manual_contract/c3 --pattern <file> --require-env <4 roots>",
+                 "suites": suites, "total_expected": 102, "outcome": "PASSED" if ok else "FAILED"}
+          with open(os.path.join(os.environ["EVIDENCE_DIR"], "tests.json"), "w", encoding="utf-8") as fh:
+              json.dump(doc, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          raise SystemExit(0 if ok else 1)
+          PY
+          if [ "$RC_FUNCTIONAL" -ne 0 ] || [ "$RC_INTEGRITY" -ne 0 ] || [ "$TESTS_RC" -ne 0 ]; then exit 1; fi
+          exit 0
+      - name: Run P1, N1-TEN, N3 and N5-REV through the harness (one invocation; all four cases always run)
+        id: cases
+        if: always() && steps.verify.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c3-evidence
+          WORK_ROOT: ${{ runner.temp }}/c3-work
+        shell: bash
+        run: |
+          set -u -o pipefail
+          set +e  # keep the evidence copies and the real exit code under the runner's -e
+          mkdir -p "$EVIDENCE_DIR"
+          python -I -B tests/manual_contract/real_c3.py --case all --workdir "$WORK_ROOT/c3" --out "$EVIDENCE_DIR/c3.result.json"
+          CASES_RC=$?
+          export CASES_RC
+          # Keep the harness's own persisted files (the independently observed state), whatever the outcome.
+          [ -f "$WORK_ROOT/c3/run/run.json" ] && cp "$WORK_ROOT/c3/run/run.json" "$EVIDENCE_DIR/c3.native-records.json"
+          [ -f "$WORK_ROOT/c3/run/destination.json" ] && cp "$WORK_ROOT/c3/run/destination.json" "$EVIDENCE_DIR/c3.native-destination.json"
+          [ -f "$WORK_ROOT/c3/reconstruction-bundle.json" ] && cp "$WORK_ROOT/c3/reconstruction-bundle.json" "$EVIDENCE_DIR/c3.reconstruction-bundle.json"
+          [ -f "$WORK_ROOT/c3/evidence-pack.json" ] && cp "$WORK_ROOT/c3/evidence-pack.json" "$EVIDENCE_DIR/c3.evidence-pack.json"
+          python3 -I -B - <<'PY'
+          import json, os
+          with open(os.path.join(os.environ["EVIDENCE_DIR"], "cases.json"), "w", encoding="utf-8") as fh:
+              json.dump({"exit_code": int(os.environ["CASES_RC"]), "invocations": 1,
+                         "command": "python -I -B tests/manual_contract/real_c3.py --case all --workdir <fresh> --out <file>"}, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
+          if [ "$CASES_RC" -ne 0 ]; then exit 1; fi
+          exit 0
+      - name: Frozen-literal comparison (orchestrator-owned, not independent; a CLI exit code alone is not enough)
+        id: oracle
+        if: always() && steps.verify.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c3-evidence
+          WORK_ROOT: ${{ runner.temp }}/c3-work
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -I -B .github/scripts/c3_hosted_check.py check
+      - name: Job summary
+        if: always()
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c3-evidence
+          STEP_GUARD: ${{ steps.guard.outcome }}
+          STEP_CHECKOUT_CP: ${{ steps.checkout_cp.outcome }}
+          STEP_CHECKOUT_RB: ${{ steps.checkout_rb.outcome }}
+          STEP_CHECKOUT_PACK: ${{ steps.checkout_pack.outcome }}
+          STEP_CHECKOUT_AM: ${{ steps.checkout_am.outcome }}
+          STEP_INSTALL: ${{ steps.install.outcome }}
+          STEP_VERIFY: ${{ steps.verify.outcome }}
+          STEP_TESTS: ${{ steps.tests.outcome }}
+          STEP_CASES: ${{ steps.cases.outcome }}
+          STEP_ORACLE: ${{ steps.oracle.outcome }}
+        shell: bash
+        run: |
+          python -I -B .github/scripts/c3_hosted_check.py summary || true
+      - name: Keep the C3 evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: c3-evidence-${{ inputs.case_id }}
+          path: ${{ runner.temp }}/c3-evidence/
           if-no-files-found: warn

@@ -11,11 +11,15 @@ name: Manual contract edge (manual only)
 #   sources and of hash-locked PyPI wheels, and uses no secrets beyond the read-only default token. An authorized decision is
 #   a decision, not an executed authorization or effect. Authority is a synthetic unauthenticated resolver, not institutional
 #   authority. The job fails unless the exact-source check, the focused suite, the case and the frozen-oracle check all succeed.
+# - Real C2 group (c2_p1_n1_n2_hosted_group): one bounded, provider-free run of the merged Control Plane -> Replay Bundle adapter
+#   (P1 positive, N1 stored-tenant tamper, N2 original-C1 incompatibility) against the pinned Control Plane and Replay Bundle
+#   source. Decision-only: no execute/reconcile/apply, no executor, no provider or secret, a TEST-ONLY public Ed25519 key. Hosted
+#   developer evidence only: NOT independent qualification, authenticity or complete reconstruction. Allowed only from main.
 on:
   workflow_dispatch:
     inputs:
       case_id:
-        description: Allowlisted case to run. mock_* are synthetic mock-only cases (no network); c1_* run the real pinned Action Manifest and Control Plane source, imported by path, decision-only, after network fetches of GitHub sources and PyPI wheels. Neither is qualification. Hub 280 is OPEN; only the fully populated frozen Manifest 1.1 is supported. Manual only.
+        description: Allowlisted case to run. mock_* are synthetic mock-only cases (no network); c1_* run the real pinned Action Manifest and Control Plane source, imported by path, decision-only, after network fetches of GitHub sources and PyPI wheels. c2_p1_n1_n2_hosted_group runs the pinned Control Plane to Replay Bundle P1/N1/N2 cases (decision-only, main only). None is qualification. Hub 280 is OPEN; only the fully populated frozen Manifest 1.1 is supported. Manual only.
         type: choice
         required: true
         default: mock_accept_expected_accept
@@ -28,13 +32,14 @@ on:
           - mock_fanout_unexpected_refusal
           - c1_manifest_to_cp_authorized
           - c1_manifest_to_cp_no_authority
+          - c2_p1_n1_n2_hosted_group
 
 permissions:
   contents: read
 
 jobs:
   contract-edge:
-    if: ${{ !startsWith(inputs.case_id, 'c1_') }}
+    if: ${{ !startsWith(inputs.case_id, 'c1_') && !startsWith(inputs.case_id, 'c2_') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -834,4 +839,154 @@ jobs:
         with:
           name: c1-evidence-${{ inputs.case_id }}
           path: ${{ runner.temp }}/c1-evidence/
+          if-no-files-found: warn
+
+  c2-real-edge:
+    if: ${{ inputs.case_id == 'c2_p1_n1_n2_hosted_group' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      C2_CP_SHA: 484fdbd297235dd24148ddb0703f2055a31eabff
+      C2_CP_TREE: c182939882103015f12c5360fccf377c54e2c4f9
+      C2_RB_SHA: 93a76e281fcae6a65d2cd1d35376f87442dafb95
+      C2_RB_TREE: aca6e6b8bdd33d51db3b34bc0c75eff93b9ff88f
+      COGNOUS_C2_CONTROL_PLANE_ROOT: ${{ github.workspace }}/.c2-src/control-plane
+      COGNOUS_C2_REPLAY_BUNDLE_ROOT: ${{ github.workspace }}/.c2-src/replay-bundle
+      CASE_ID: ${{ inputs.case_id }}
+    steps:
+      # The orchestrator checkout comes first: a later checkout with clean enabled would delete the nested component checkouts.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Checkout Control Plane at the frozen SHA
+        id: checkout_cp
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-control-plane
+          ref: ${{ env.C2_CP_SHA }}
+          path: .c2-src/control-plane
+          persist-credentials: false
+      - name: Checkout Replay Bundle at the frozen SHA
+        id: checkout_rb
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-replay-bundle
+          ref: ${{ env.C2_RB_SHA }}
+          path: .c2-src/replay-bundle
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      # Hash-locked wheels from PyPI. The components are not installed; the adapter imports their source by path.
+      - name: Install the hash-locked dependencies
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes --only-binary=:all: -r .github/locks/cryptography-pydantic-pytest-513753.txt
+      - name: Verify the exact sources and context (no component code is executed)
+        id: verify
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c2-evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          PIP_VERSION_TEXT="$(python -m pip --version)"
+          export PIP_VERSION_TEXT
+          python -I -B .github/scripts/c2_hosted_check.py verify
+      - name: Focused C2 suite (full oracle; any failure, skip or expected failure fails the job)
+        id: tests
+        if: steps.verify.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c2-evidence
+        shell: bash
+        run: |
+          set -u -o pipefail
+          set +e  # an explicit `shell: bash` runs as `bash -eo pipefail`: record the real exit code and evidence BEFORE failing
+          mkdir -p "$EVIDENCE_DIR"
+          TESTS_CMD=(python -I -B .github/scripts/run_unittest_no_skips.py tests/manual_contract/c2 --require-env COGNOUS_C2_CONTROL_PLANE_ROOT --require-env COGNOUS_C2_REPLAY_BUNDLE_ROOT)
+          "${TESTS_CMD[@]}" 2>&1 | tee "$EVIDENCE_DIR/tests.log"
+          TESTS_RC="${PIPESTATUS[0]}"
+          TESTS_EXPECTED=55
+          if [ "$TESTS_RC" -eq 0 ] && ! grep -q "^Ran ${TESTS_EXPECTED} tests in " "$EVIDENCE_DIR/tests.log"; then
+            echo "UNEXPECTED TEST COUNT: the merged C2 suite has exactly ${TESTS_EXPECTED} tests" | tee -a "$EVIDENCE_DIR/tests.log" >&2
+            TESTS_RC=1
+          fi
+          TESTS_COMMAND="${TESTS_CMD[*]}"
+          export TESTS_COMMAND TESTS_RC TESTS_EXPECTED
+          python3 -I -B - <<'PY'
+          import json, os
+          rc = int(os.environ["TESTS_RC"])
+          doc = {"command": os.environ["TESTS_COMMAND"], "exit_code": rc, "expected_tests": int(os.environ["TESTS_EXPECTED"]),
+                 "outcome": "PASSED" if rc == 0 else "FAILED"}
+          with open(os.path.join(os.environ["EVIDENCE_DIR"], "tests.json"), "w", encoding="utf-8") as fh:
+              json.dump(doc, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
+          exit "$TESTS_RC"
+      - name: Run P1, N1 and N2 through the adapter (all three always run)
+        id: cases
+        if: always() && steps.verify.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c2-evidence
+          WORK_ROOT: ${{ runner.temp }}/c2-work
+        shell: bash
+        run: |
+          set -u -o pipefail
+          set +e  # keep the evidence copies and the real exit codes under the runner's -e
+          mkdir -p "$EVIDENCE_DIR"
+          python -I -B tests/manual_contract/real_c2.py --case c2_p1_runtime_profile_partial --workdir "$WORK_ROOT/p1" --out "$EVIDENCE_DIR/p1.result.json"
+          P1_RC=$?
+          python -I -B tests/manual_contract/real_c2.py --case c2_n1_stored_tenant_tamper --workdir "$WORK_ROOT/n1" --out "$EVIDENCE_DIR/n1.result.json"
+          N1_RC=$?
+          python -I -B tests/manual_contract/real_c2.py --case c2_n2_c1_records_incompatible --out "$EVIDENCE_DIR/n2.result.json"
+          N2_RC=$?
+          export P1_RC N1_RC N2_RC
+          # Keep the adapter's own persisted record and destination files (the independently observed state), whatever the outcome.
+          for c in p1 n1; do
+            [ -f "$WORK_ROOT/$c/run/run.json" ] && cp "$WORK_ROOT/$c/run/run.json" "$EVIDENCE_DIR/$c.native-records.json"
+            [ -f "$WORK_ROOT/$c/run/destination.json" ] && cp "$WORK_ROOT/$c/run/destination.json" "$EVIDENCE_DIR/$c.native-destination.json"
+          done
+          python3 -I -B - <<'PY'
+          import json, os
+          rcs = {"c2_p1_runtime_profile_partial": int(os.environ["P1_RC"]), "c2_n1_stored_tenant_tamper": int(os.environ["N1_RC"]),
+                 "c2_n2_c1_records_incompatible": int(os.environ["N2_RC"])}
+          with open(os.path.join(os.environ["EVIDENCE_DIR"], "cases.json"), "w", encoding="utf-8") as fh:
+              json.dump({"exit_codes": rcs, "command": "python -I -B tests/manual_contract/real_c2.py --case <case> [--workdir <fresh>] --out <file>"}, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
+          if [ "$P1_RC" -ne 0 ] || [ "$N1_RC" -ne 0 ] || [ "$N2_RC" -ne 0 ]; then exit 1; fi
+          exit 0
+      - name: Frozen-literal comparison (orchestrator-owned, not independent; a CLI exit code alone is not enough)
+        id: oracle
+        if: always() && steps.verify.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c2-evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -I -B .github/scripts/c2_hosted_check.py check
+      - name: Job summary
+        if: always()
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c2-evidence
+          STEP_CHECKOUT_CP: ${{ steps.checkout_cp.outcome }}
+          STEP_CHECKOUT_RB: ${{ steps.checkout_rb.outcome }}
+          STEP_INSTALL: ${{ steps.install.outcome }}
+          STEP_VERIFY: ${{ steps.verify.outcome }}
+          STEP_TESTS: ${{ steps.tests.outcome }}
+          STEP_CASES: ${{ steps.cases.outcome }}
+          STEP_ORACLE: ${{ steps.oracle.outcome }}
+        shell: bash
+        run: |
+          python -I -B .github/scripts/c2_hosted_check.py summary || true
+      - name: Keep the C2 evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: c2-evidence-${{ inputs.case_id }}
+          path: ${{ runner.temp }}/c2-evidence/
           if-no-files-found: warn

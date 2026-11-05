@@ -32,6 +32,7 @@ C1_FIXTURES = MANUAL_CONTRACT / "c1" / "fixtures"
 C2_FIXTURES = HERE / "fixtures"
 sys.path.insert(0, str(MANUAL_CONTRACT))
 import real_c2  # noqa: E402  (must not import any component at module import time; checked in SourceIdentityTests)
+import c2_producer  # noqa: E402  (stdlib-only at import time; component imports are lazy inside produce())
 
 ENV_CP, ENV_RB = "COGNOUS_C2_CONTROL_PLANE_ROOT", "COGNOUS_C2_REPLAY_BUNDLE_ROOT"
 CASE_P1, CASE_N1, CASE_N2 = "c2_p1_runtime_profile_partial", "c2_n1_stored_tenant_tamper", "c2_n2_c1_records_incompatible"
@@ -247,15 +248,10 @@ class P1Tests(unittest.TestCase):
         self.assertEqual(d["reason_vocabulary_version"], VOCAB)
         self.assertEqual(record["run_id"], RUN_ID)
         self.assertNotEqual(d["decision_id"], C1_POSITIVE_DECISION_ID)  # NEW (random uuid4), never equal to C1's
-        # (4) journal: top-level non-empty check_events, every event bound to this decision, vocabulary version present
+        # (4) journal (amended section 14, Hub #273 comment 6667028276): see test_p1_journal_amended_oracle
         events = record["check_events"]
         self.assertIsInstance(events, list)
         self.assertGreater(len(events), 0)
-        for e in events:
-            self.assertEqual(e["reason_vocabulary_version"], VOCAB)
-        # NOTE: the frozen "event decision_id == decisions[0].decision_id" assertion is test_p1_check_events_decision_id_frozen_oracle
-        # (expected failure at these pins, see its docstring); here only that the journal is one check is asserted (events' check_id also differs from resolution_checks[0].check_id at these pins).
-        self.assertEqual(len({e["check_id"] for e in events}), 1, "one journalled check")
         self.assertEqual(len(d["resolution_inputs"]), 11)
         self.assertEqual(len(record["resolution_checks"]), 1)
         # (5) no attempts/observations/reconciliations/closeouts persisted by a decide-only run
@@ -265,23 +261,50 @@ class P1Tests(unittest.TestCase):
         dest = json.loads((self.spy.work / "run" / "destination.json").read_text(encoding="utf-8") or "{}")
         self.assertEqual(dest.get("effects", {}), {})
 
-    @unittest.expectedFailure
-    def test_p1_check_events_decision_id_frozen_oracle(self):
-        """FROZEN literal (contract section 14, 'P1 journal assertions'): every check_events entry's decision_id equals
-        decisions[0].decision_id. OBSERVED at CP 484fdbd2 with a decide-only run: every entry has decision_id None, because
-        the journal is written before the decision exists. This test states the frozen oracle and FAILS against the real
-        record, hence expectedFailure: it is a reported oracle/behaviour mismatch (see report), NOT a pass. If CP ever
-        starts linking events, this flips to an 'unexpected success' error and must be revisited deliberately."""
-        _, record = self.independent_record()
-        did = record["decisions"][0]["decision_id"]
-        for e in record["check_events"]:
-            self.assertEqual(e["decision_id"], did)
+    def test_p1_journal_amended_oracle(self):
+        """AMENDED section 14 (Architect, Hub #273 comment 6667028276). The predecessor assertion 'every check_events[].decision_id
+        equals decisions[0].decision_id' was an inaccurate assumption at CP 484fdbd2 and is retained only as historical evidence
+        in GitHub (PR #145 history, the freeze comment) and in the adapter evidence `frozen_oracle_deviations`. Active acceptance:
+        a non-empty preserved journal; each event has decision_id PRESENT and null (fixture-specific, not an all-revisions
+        invariant); each event's proposal commitment equals the independently pinned one and the persisted decision's; check ids
+        are reported as observed (event check_id != resolution_checks[0].check_id) with NO inferred equivalence or event-to-decision
+        mapping; no event is invented or mutated (Replay receives the persisted events and re-emits one record per event)."""
+        data, record = self.independent_record()
+        d, events = record["decisions"][0], record["check_events"]
+        self.assertIsInstance(events, list)
+        self.assertEqual(len(events), 13)  # fixture-observed literal at these pins, not a contract invariant
+        for e in events:
+            self.assertIn("decision_id", e)
+            self.assertIsNone(e["decision_id"])
+            self.assertEqual(e["proposal_commitment"], PROPOSAL_COMMITMENT)  # independently pinned literal
+            self.assertEqual(e["proposal_commitment"], d["binding"]["proposal_commitment"])
+            self.assertEqual(e["proposal_commitment"], d["operation_horizon"]["proposal_commitment"])
+            self.assertEqual(e["reason_vocabulary_version"], VOCAB)
+        self.assertEqual(len({e["check_id"] for e in events}), 1)
+        self.assertNotEqual(events[0]["check_id"], record["resolution_checks"][0]["check_id"])  # reported as observed, not reconciled
+        # source-preserved: this test's own Replay call receives exactly the persisted events, and Replay re-emits one event record each
+        self.assertEqual(self.spy.rb_calls[0]["record"]["check_events"], events)
+        bundle = IMP.import_bounded_workflow(record, proposal=proposal_obj(), control_plane_revision=CP_SHA)
+        self.assertEqual(sum(1 for r in bundle.records if r.record_type == "resolution_check_event"), len(events))
+        # evidence: machine-readable limitation and the preserved predecessor discrepancy
+        j = self.ev["journal"]
+        self.assertEqual((j["event_decision_linkage"], j["event_decision_ids"], j["proposal_level_association_only"]),
+                         ("NOT_ESTABLISHED", None, True))
+        self.assertIs(j["event_check_id_equals_resolution_check_id"], False)
+        lim = self.ev["limits"]
+        self.assertEqual((lim["event_decision_linkage"], lim["event_decision_ids"], lim["journal_association"]),
+                         ("NOT_ESTABLISHED", None, "proposal_level_association_only"))
+        self.assertIn("not established at the pinned Control Plane revision", j["statement"])
+        names = {c["name"]: c for c in self.ev["oracle"]["checks"]}
+        for n in ("check_events_decision_id_present_and_null", "check_events_proposal_commitment",
+                  "check_events_proposal_commitment_equals_persisted_decision"):
+            self.assertTrue(names[n]["ok"], n)
 
-    def test_p1_check_events_decision_id_observed(self):
-        """Observation that documents the mismatch above (so it cannot drift silently)."""
-        _, record = self.independent_record()
-        self.assertEqual({e["decision_id"] for e in record["check_events"]}, {None})
-        self.assertEqual(len(record["check_events"]), 13)  # fixture-observed literal, not a contract invariant (section 7 / 14)
+    def test_p1_journal_evidence_makes_no_identity_linkage_claim(self):
+        text = json.dumps(self.ev).lower()
+        for phrase in ("journal identities consistent", "bound to the decision", "bound to this decision", "direct decision-to-journal linkage verified",
+                       "event-to-decision identity is established", "linkage verified"):
+            self.assertNotIn(phrase, text, phrase)
 
     def test_p1_adapter_evidence_agrees_with_independent_observation(self):
         ev = self.ev
@@ -779,17 +802,22 @@ class ProvenanceAndDeviationTests(unittest.TestCase):
         self.assertIn("NO RuntimeAuthorityProfile", prod["c1_configuration_contrast"])
         self.assertIn("agent_replay_bundle.ingress.check_depth", prod["other_symbols_used"])
 
-    def test_frozen_oracle_deviation_is_machine_readable(self):
+    def test_frozen_oracle_deviation_is_preserved_and_superseded(self):
         dev = self.ev["frozen_oracle_deviations"]
         self.assertEqual(len(dev), 1)
         self.assertIn("freeze", dev[0]["contract_section"])
+        self.assertEqual(dev[0]["frozen_text"], "every check_events entry's decision_id equals decisions[0].decision_id")
+        self.assertIn("REJECTED", dev[0]["frozen_text_status"])
         self.assertEqual(dev[0]["observed"]["event_decision_ids"], ["None"])
         self.assertEqual(dev[0]["observed"]["event_count"], 13)
         self.assertIs(dev[0]["observed"]["events_check_id_equals_resolution_check_id"], False)
-        self.assertEqual(dev[0]["disposition"], "contract amendment requested from the Architect")
-        names = {c["name"]: c for c in self.ev["oracle"]["checks"]}
-        self.assertTrue(names["check_events_decision_id_observed_null"]["ok"])
-        self.assertTrue(names["check_events_proposal_commitment"]["ok"])
+        self.assertIn("6667028276", dev[0]["superseded_by"])
+        self.assertTrue(dev[0]["disposition"].startswith("AMENDED"))
+
+    def test_no_expected_failure_or_skip_in_the_c2_suite(self):
+        src = pathlib.Path(__file__).read_text(encoding="utf-8")
+        for token in ("@unittest.expectedFailure", "@unittest.skip", "skipTest(", "unittest.skipIf", "unittest.skipUnless"):
+            self.assertNotIn(token, src.replace('"' + token + '"', ""), token)
 
 
 class ModuleGuardTests(unittest.TestCase):
@@ -845,6 +873,39 @@ class ModuleGuardTests(unittest.TestCase):
             root, name = self.make_repo(tmp, symlink=True)
             with self.assertRaisesRegex(real_c2.SourceIdentityError, "symlink or gitlink"):
                 real_c2._check_modules(root, {}, name, required=(name,))
+
+
+class ProducerBlobGuardTests(unittest.TestCase):
+    """The producer's own pre-import blob guard (the CP test helpers are executed on import, so they are checked first)."""
+
+    def make_repo(self, tmp):
+        root = pathlib.Path(tmp).resolve()
+        (root / "tests").mkdir()
+        (root / "tests" / "helper.py").write_text("X = 1\n")
+        env = {"PATH": os.environ["PATH"], "HOME": "/nonexistent", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
+        for args in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "x"]):
+            subprocess.run(["git", "-C", str(root), *args], check=True, env=env, capture_output=True)
+        return root
+
+    def test_clean_file_returns_its_blob_record(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.make_repo(tmp)
+            rec = c2_producer._blob(root, root / "tests" / "helper.py")
+            self.assertEqual(rec["file"], "tests/helper.py")
+            self.assertEqual(rec["sha256"], sha256(b"X = 1\n"))
+
+    def test_tampered_file_refused_by_the_producer_guard(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.make_repo(tmp)
+            (root / "tests" / "helper.py").write_text("X = 2\n")  # working-tree edit; the HEAD blob is unchanged
+            with self.assertRaisesRegex(c2_producer.ProducerError, "differs from its pinned blob"):
+                c2_producer._blob(root, root / "tests" / "helper.py")
+
+    def test_file_outside_the_root_refused(self):
+        with tempfile.TemporaryDirectory() as tmp, tempfile.NamedTemporaryFile() as other:
+            root = self.make_repo(tmp)
+            with self.assertRaisesRegex(c2_producer.ProducerError, "outside the CP root"):
+                c2_producer._blob(root, other.name)
 
 
 class StaticEffectPathGuardTests(unittest.TestCase):

@@ -52,6 +52,9 @@ ORACLE = {
     "n2_message": "typed refusal profile: resolution journal missing",
 }
 N1_PATH = "decisions[0].binding.tenant_id"
+AMENDMENT = "Hub #273 comment 6667028276 (Architect journal-oracle amendment, 2026-11-05)"
+JOURNAL_STATEMENT = ("Journal events are source-preserved and associated through the proposal commitment. Direct event-to-decision "
+                     "identity linkage is not established at the pinned Control Plane revision.")
 HERE = pathlib.Path(__file__).resolve().parent
 PROPOSAL_PATH = real_c1.FIXTURE_DIR / real_c1.FIXTURE_FILES["proposal"]
 C1_RECORDS = {  # key -> (fixture path, frozen sha256, hosted run id, artifact id)
@@ -71,6 +74,7 @@ LIMITS = {  # frozen contract section 8 + section 14 keys, verbatim labels
     "producer_revision_basis": "measured_source_pin_required; no_revision_or_profile_id_in_cp_record",
     "lineage": "identity_and_proposal_level_not_decision_exact",
     "correlation_id": "not persisted by CP and not independently checked by RB", "hold_bindings": "null",
+    "event_decision_linkage": "NOT_ESTABLISHED", "event_decision_ids": None, "journal_association": "proposal_level_association_only",
     "private_cp_api_dependency": "_canonical_bytes (breaks silently on CP change; pin plus file-sha256 check mandatory)",
     "synthetic_key_scope": "public key bytes(range(32)) valid only in this test profile",
     "development_only_fixture_scoped": True, "not_independent_qualification": True, "not_institutional_authority": True,
@@ -385,8 +389,10 @@ def _p1(cp_root, rb_root, workdir):
         _check("reason_vocabulary_version", ORACLE["reason_vocabulary_version"], d.get("reason_vocabulary_version")),
         _check("runtime_authority_profile", ORACLE["runtime_authority_profile"], (bind.get("runtime_authority") or {}).get("profile")),
         _check("check_events_present", True, has_ce),
-        _check("check_events_decision_id_observed_null", True, bool(events) and all("decision_id" in e and e["decision_id"] is None for e in events)),
+        _check("check_events_decision_id_present_and_null", True, bool(events) and all("decision_id" in e and e["decision_id"] is None for e in events)),
         _check("check_events_proposal_commitment", True, bool(events) and all(e.get("proposal_commitment") == ORACLE["proposal_commitment"] for e in events)),
+        _check("check_events_proposal_commitment_equals_persisted_decision", True,
+               bool(events) and all(e.get("proposal_commitment") == bind.get("proposal_commitment") == (d.get("operation_horizon") or {}).get("proposal_commitment") for e in events)),
         _check("check_events_vocabulary", True, bool(events) and all(e.get("reason_vocabulary_version") for e in events)),
         _check("resolution_inputs", ORACLE["resolution_inputs"], len(d.get("resolution_inputs") or [])),
         _check("resolution_checks", ORACLE["resolution_checks"], len(record.get("resolution_checks") or [])),
@@ -410,15 +416,25 @@ def _p1(cp_root, rb_root, workdir):
         "forbidden_claims": ["same decision", "C1 record accepted by RB"]}
     ok = all(c["ok"] for c in checks)
     ev["oracle"] = {"checks": checks, "all_ok": ok}
-    ev["frozen_oracle_deviations"] = [{
+    ev["journal"] = {
+        "event_count": len(events), "event_decision_linkage": "NOT_ESTABLISHED",
+        "event_decision_ids": None if events and all(e.get("decision_id") is None for e in events) else sorted({str(e.get("decision_id")) for e in events}),
+        "proposal_level_association_only": True, "event_proposal_commitments": sorted({str(e.get("proposal_commitment")) for e in events}),
+        "event_check_ids": sorted({str(e.get("check_id")) for e in events}),
+        "resolution_check_id": (record.get("resolution_checks") or [{}])[0].get("check_id"),
+        "event_check_id_equals_resolution_check_id": any(e.get("check_id") == (record.get("resolution_checks") or [{}])[0].get("check_id") for e in events),
+        "statement": JOURNAL_STATEMENT,
+        "note": "fixture-specific observation at the pinned Control Plane and Replay revisions, not an all-revisions invariant; the proposal "
+                "commitment alone cannot establish a unique journal-to-decision association across repeated decisions on the same proposal"}
+    ev["frozen_oracle_deviations"] = [{  # predecessor evidence is preserved, not erased
         "contract_section": "freeze §14 'P1 journal assertions' (Hub #273 comment 6665220369)",
         "frozen_text": "every check_events entry's decision_id equals decisions[0].decision_id",
+        "frozen_text_status": "REJECTED as an inaccurate contract assumption at the pinned Control Plane; retained historically",
         "observed": {"event_decision_ids": sorted({str(e.get("decision_id")) for e in events}), "event_count": len(events),
                      "event_check_ids_distinct": len({e.get("check_id") for e in events}),
                      "events_check_id_equals_resolution_check_id": any(e.get("check_id") == (record.get("resolution_checks") or [{}])[0].get("check_id") for e in events)},
-        "handling": "frozen text NOT silently replaced: the observed value is asserted instead (all null); a frozen-literal test is kept as an expected failure",
-        "identity_binding_asserted_instead": "every check_event proposal_commitment equals the decision's proposal commitment",
-        "disposition": "contract amendment requested from the Architect"}]
+        "superseded_by": AMENDMENT, "disposition": "AMENDED by the Architect; the amended assertion is the active acceptance check",
+        "active_assertion": "each event: decision_id present and null; proposal_commitment equals the pinned proposal commitment and the persisted decision's"}]
     ev.update(outcome="IMPORTED", status="PASS" if ok else "FAIL")
     return ev, record, proposal, measured, rec_sha
 

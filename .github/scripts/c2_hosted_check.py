@@ -481,7 +481,9 @@ def summary():
             (label, names.get(os.environ.get(var, ""), "NOT EXECUTED")) for label, var in
             (("Exact-source verification", "STEP_VERIFY"), ("Focused C2 suite", "STEP_TESTS"), ("P1/N1/N2 cases", "STEP_CASES"), ("Frozen-literal comparison (orchestrator-owned, not independent)", "STEP_ORACLE"))]
         overall = "BLOCKED" if blocked else "PASS" if all(s == "PASS" for _, s in steps) else ("FAIL" if any(s == "FAIL" for _, s in steps) else "NOT PASSED")
-        clean = lambda v: " ".join(str(v).split()).replace("`", "'").replace("|", "/").replace("<", "&lt;").replace(">", "&gt;")[:200]  # noqa: E731
+        def clean(v):  # printable ASCII only: control characters, bidi marks and markup cannot reach the summary
+            s = "".join(ch if " " <= ch <= "~" else "?" for ch in " ".join(str(v).split()))
+            return s.replace("`", "'").replace("|", "/").replace("<", "&lt;").replace(">", "&gt;")[:200]
         out = ["### C2 hosted run (developer evidence, manual only)", "", "**Developer check result: %s** (hosted developer evidence, **not** independent qualification, authenticity, effect proof or complete reconstruction)" % overall, "",
                "| Stage | Status |", "|---|---|"] + ["| %s | %s |" % (a, b) for a, b in steps] + [""]
         try:

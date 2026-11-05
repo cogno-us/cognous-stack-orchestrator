@@ -1,10 +1,10 @@
-"""VSLICE-C1 adapter: real Action Manifest producer -> real Control Plane consumer (Python API and CLI).
+"""VSLICE-C1 adapter: real Action Manifest producer -> real Control Plane consumer (Python API, plus this module's own `main`).
 
 Development-only and fixture-scoped. The authority context and resolver state are synthetic and unauthenticated: they
 are test fixtures, not issued authority. The contract exercised here is a CANDIDATE and is not adopted. The Hub #280
 digest-basis defect is OPEN and is gated (the producer refuses on divergence), not fixed. Non-authorizing: ACCEPTED means
-only that the Control Plane returned "authorized" under synthetic, unauthenticated authority; any gate failure, missing
-authority or unknown verdict is HOLD / refusal, never production readiness. No effect path is ever used: only
+only that the Control Plane returned "authorized" under synthetic, unauthenticated authority; a producer-gate failure is
+BLOCKED with the consumer NOT_INVOKED, missing authority is a native "hold" (runner REFUSED), an unmapped verdict is UNKNOWN. No effect path is ever used: only
 BoundedAuthorizationWorkflow.decide() is called, never execute(), reconcile() or the `acp run` CLI.
 """
 import argparse

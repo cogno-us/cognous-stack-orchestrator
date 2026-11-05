@@ -1,5 +1,9 @@
 """Focused tests for the VSLICE-C1 adapter (real_c1). Expectations come from the frozen oracle literals below and from
 direct Action Manifest / Control Plane calls, never from values read back from the adapter. stdlib unittest only."""
+import sys
+
+sys.dont_write_bytecode = True  # never write .pyc into the pinned checkouts: their cleanliness is part of the source gate
+
 import contextlib
 import copy
 import hashlib
@@ -9,7 +13,6 @@ import json
 import os
 import pathlib
 import subprocess
-import sys
 import tempfile
 import types
 import unittest
@@ -25,7 +28,7 @@ import real_c1  # noqa: E402
 ENV_AM, ENV_CP = "COGNOUS_C1_ACTION_MANIFEST_ROOT", "COGNOUS_C1_CONTROL_PLANE_ROOT"
 MANIFEST_REL = "examples/refund_integration_v1_1.manifest.json"
 CASE_A, CASE_B = "c1_manifest_to_cp_authorized", "c1_manifest_to_cp_no_authority"
-# ---- frozen oracle literals (INTERFACE_C1.md) ----
+# ---- frozen oracle literals (cogno-us/cognous-stack-orchestrator#138 comment 6660750456, Hub #273 comment 6660913875) ----
 MANIFEST_FILE_SHA = "789ad39596b9e1ef84a726a671883e1cb6b83343da3a31db0a1120906d68c074"
 MANIFEST_DIGEST = "sha256:4d1ad6c96bc242c63998231b4df3ad7c86dc2e5e59cdae63afe7bff86e60f6ac"
 PROPOSAL_DIGEST = "sha256:becaea3f10b5edf56ea181e0cd62793ebe8262238f948fb72dc5c0389c7f8c53"
@@ -101,10 +104,15 @@ def run_case(case_id, **overrides):
 
 
 def run_spied(case_id, **overrides):
-    """Run a case while wrapping the REAL BoundedAuthorizationWorkflow.decide; returns (result, ctx, spy)."""
-    original = CP.BoundedAuthorizationWorkflow.decide
-    with mock.patch.object(CP.BoundedAuthorizationWorkflow, "decide", autospec=True, side_effect=original) as spy:
+    """Run a case while wrapping the REAL BoundedAuthorizationWorkflow.decide and every effect path; returns (result, ctx, spy).
+    `spy` is the decide() spy; `spy.forbidden` holds the execute/reconcile/apply spies, which must never be called."""
+    W, D = CP.BoundedAuthorizationWorkflow, CP.LocalRefundDestination
+    with mock.patch.object(W, "decide", autospec=True, side_effect=W.decide) as spy, \
+            mock.patch.object(W, "execute", autospec=True, side_effect=W.execute) as execute, \
+            mock.patch.object(W, "reconcile", autospec=True, side_effect=W.reconcile) as reconcile, \
+            mock.patch.object(D, "apply", autospec=True, side_effect=D.apply) as apply:
         result, ctx = run_case(case_id, **overrides)
+    spy.forbidden = {"execute": execute, "reconcile": reconcile, "apply": apply}
     return result, ctx, spy
 
 
@@ -119,6 +127,8 @@ def read_destination(ctx):
 class OracleMixin:
     def assert_runner_and_common(self, result, ctx, spy, case_id, expected, native_result, reasons):
         self.assertEqual(spy.call_count, 1, "the real CP decide() must run exactly once")
+        for name, forbidden in spy.forbidden.items():
+            self.assertEqual(forbidden.call_count, 0, name + " (an effect path) must never be called")
         self.assertTrue(under(inspect.getsourcefile(CP), CP_ROOT))
         CP.RuntimeDecision.model_validate(result["native_response"])
         self.assertEqual(result["schema"], "cognous.orchestrator.manual-contract-result/0-candidate")
@@ -224,6 +234,50 @@ class FailClosedTests(unittest.TestCase):
         if (ctx.workdir / "destination.json").exists():
             self.assertEqual(read_destination(ctx).get("effects", {}), {})
         return ev
+
+    def test_a_raising_decide_is_never_accepted(self):
+        for case_id in (CASE_A, CASE_B):
+            with self.subTest(case=case_id):
+                with mock.patch.object(CP.BoundedAuthorizationWorkflow, "decide", autospec=True, side_effect=RuntimeError("synthetic decide failure")):
+                    result, ctx = run_case(case_id)
+                self.assertEqual((result["invocation_status"], result["observed_outcome"]), ("INVOKED", "ERROR"))
+                self.assertEqual(result["status"], "FAIL")  # an error is never PASS, whichever outcome was expected
+                self.assertEqual(result["consumer_error"]["type"], "RuntimeError")
+                self.assertIsNone(result["native_response"])
+                self.assertEqual(ctx.evidence["consumer_invocations"], 1)
+                self.assertIsNone(ctx.evidence["destination"])  # decide never completed, so no destination state is claimed
+
+    def test_destination_effect_count_is_read_from_the_real_file(self):
+        seeded = {"effects": {"seeded-synthetic-effect": {"note": "seeded by the test"}}, "grant_effect_counts": {}}
+        with tempfile.TemporaryDirectory() as tmp:
+            pathlib.Path(tmp, "destination.json").write_text(json.dumps(seeded), encoding="utf-8")
+            result, ctx = run_case(CASE_A, workdir=pathlib.Path(tmp))
+            self.assertEqual(result["status"], "PASS")
+            self.assertEqual(read_destination(ctx), seeded)  # decide() never wrote an effect
+            self.assertEqual(ctx.evidence["destination"]["effects"], seeded["effects"])  # the evidence mirrors the FILE, not a constant
+            self.assertEqual(ctx.evidence["destination"]["effect_count"], 1)
+
+    def test_remaining_gates_fail_closed(self):
+        with self.subTest(gate="native validate_manifest"):  # loads (closed schema ok) but the native validator reports it invalid
+            manifest = manifest_json()
+            manifest["actions"][0]["action_id"] = " " + manifest["actions"][0]["action_id"] + " "
+            with tempfile.TemporaryDirectory() as tmp:
+                path = write_json(tmp, "m.json", manifest)
+                self.assertFalse(AM.validate_manifest(AM.load_manifest(path)).valid)
+                self.assert_blocked_before_consumer("manifest_validate", "C1GateError", "manifest_file", manifest_file=path)
+        with self.subTest(gate="frozen manifest sha256"):
+            with mock.patch.dict(real_c1.FROZEN, {"manifest_file_sha256": "0" * 64}):
+                result, ctx = run_case(CASE_A)
+            self.assertEqual((result["status"], result["invocation_status"]), ("BLOCKED", "NOT_INVOKED"))
+            self.assertEqual(ctx.evidence["gate"]["failure"]["step"], "manifest_bytes")
+            self.assertEqual(ctx.evidence["consumer_invocations"], 0)
+        with self.subTest(gate="frozen fixture sha256"):
+            with mock.patch.dict(real_c1.FROZEN, {"proposal_sha256": "0" * 64}):
+                with self.assertRaisesRegex(real_c1.C1GateError, r"fixture proposal sha256 differs"):
+                    real_c1.build()
+        with self.subTest(gate="checkout top level"):  # a subdirectory of the pinned checkout is not the checkout
+            with self.assertRaisesRegex(real_c1.SourceIdentityError, r"top level of a git checkout"):
+                real_c1.build(manifest_root=AM_ROOT / "examples", cp_root=CP_ROOT)
 
     def test_unknown_manifest_member_fails_closed(self):
         manifest = manifest_json()

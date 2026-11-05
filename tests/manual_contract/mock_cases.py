@@ -13,6 +13,8 @@ CASE_ACCEPT = "mock_accept_expected_accept"
 CASE_REFUSE = "mock_refuse_expected_refuse"
 CASE_UNEXPECTED_REFUSAL = "mock_unexpected_refusal"
 CASE_NO_RESPONSE = "mock_no_observable_response"
+CASE_FANOUT_PASS = "mock_fanout_accept_refuse"
+CASE_FANOUT_FAIL = "mock_fanout_unexpected_refusal"
 
 FIXTURE = b'{"fixture":"synthetic-1"}\n'
 PREFIX = b'{"synthetic_producer_output":"v1"}\n'
@@ -61,5 +63,13 @@ REGISTRY = Registry(
         CASE_REFUSE: "REFUSED",
         CASE_UNEXPECTED_REFUSAL: "ACCEPTED",
         CASE_NO_RESPONSE: "ACCEPTED",
+    },
+    fanout_cases={
+        CASE_FANOUT_PASS: ("mock_producer", FIXTURE, ("mock_consumer_accepts", "mock_consumer_refuses")),
+        CASE_FANOUT_FAIL: ("mock_producer", FIXTURE, ("mock_consumer_accepts", "mock_consumer_refuses")),
+    },
+    fanout_expectations={  # one expectation per consumer, separate from the case definitions
+        CASE_FANOUT_PASS: {"mock_consumer_accepts": "ACCEPTED", "mock_consumer_refuses": "REFUSED"},
+        CASE_FANOUT_FAIL: {"mock_consumer_accepts": "ACCEPTED", "mock_consumer_refuses": "ACCEPTED"},
     },
 )

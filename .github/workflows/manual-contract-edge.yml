@@ -1,0 +1,80 @@
+name: Manual contract edge (synthetic, manual only)
+
+# Manual only (workflow_dispatch). Runs the synthetic producer-to-consumer runner in tests/manual_contract for exactly one
+# allowlisted case. Mock components only: no OCS component, no network, no effects, no credentials beyond the read-only default
+# token. Its result is a developer test of the runner, not independent qualification, not release evidence and not an adopted
+# contract. A FAIL or BLOCKED case fails the job; its JSON result and summary are still kept.
+on:
+  workflow_dispatch:
+    inputs:
+      case_id:
+        description: Allowlisted synthetic case to run
+        type: choice
+        required: true
+        default: mock_accept_expected_accept
+        options:
+          - mock_accept_expected_accept
+          - mock_refuse_expected_refuse
+          - mock_unexpected_refusal
+          - mock_no_observable_response
+
+permissions:
+  contents: read
+
+jobs:
+  contract-edge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      # The selected case reaches the runner only as an environment value expanded as one quoted argument, never as shell text.
+      # The runner exits nonzero for FAIL, BLOCKED and a refused case id, which fails this step and therefore the job.
+      - name: Run the selected case
+        env:
+          CASE_ID: ${{ inputs.case_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/contract-edge"
+          python3 -I -B tests/manual_contract/runner.py --case "$CASE_ID" --out "$RUNNER_TEMP/contract-edge/result.json"
+      - name: Job summary
+        if: always()
+        shell: bash
+        run: |
+          python3 -I -B - <<'PY'
+          import json, os
+          path = os.path.join(os.environ["RUNNER_TEMP"], "contract-edge", "result.json")
+          def cell(value):
+              return "`" + " ".join(str(value).split()).replace("`", "'").replace("|", "/")[:200] + "`"
+          lines = ["### Manual contract edge (synthetic, manual only)", ""]
+          try:
+              with open(path, encoding="utf-8") as fh:
+                  r = json.load(fh)
+              if not isinstance(r, dict):
+                  raise ValueError("result is not a JSON object")
+          except (OSError, ValueError):
+              lines += ["**No result file was produced** (the runner refused the case or failed before writing). See the step log.", ""]
+          else:
+              rows = (("Case ID", r.get("case_id")), ("Expected outcome", r.get("expected_outcome")),
+                      ("Observed outcome", r.get("observed_outcome")), ("Result", r.get("status")),
+                      ("Producer output hash", r.get("producer_output_sha256")),
+                      ("Consumer input hash", r.get("consumer_input_sha256")),
+                      ("Commit SHA", os.environ.get("GITHUB_SHA")))
+              lines += ["| Field | Value |", "|---|---|"] + ["| %s | %s |" % (k, cell(v)) for k, v in rows] + [""]
+              lines += ["Reason: " + cell(r.get("reason")), ""]
+          lines += ["Synthetic mocks only. A developer test of the runner, not qualification or release evidence."]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+              out.write("\n".join(lines) + "\n")
+          PY
+      - name: Keep the JSON result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: contract-edge-result-${{ inputs.case_id }}
+          path: ${{ runner.temp }}/contract-edge/result.json
+          if-no-files-found: warn

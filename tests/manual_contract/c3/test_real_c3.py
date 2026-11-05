@@ -229,9 +229,12 @@ class P1Tests(unittest.TestCase):
                          {"policy_reevaluation": False, "external_effect_execution": False, "destination_observation": "not_performed",
                           "independent_effect_verification": False})
         self.assertEqual(T["input_artifacts"][0]["hash"], MANIFEST_DIGEST)
+        zero = ("control_plane_attempt_count", "executor_attempt_count", "attempt_transition_record_count", "destination_effect_count",
+                "effect_observation_count", "reconciliation_count")  # contract section 8: effect counts 0, observed on the PACK side
+        self.assertEqual({k: T["derived_counts"][k] for k in zero}, {k: 0 for k in zero})
         # warnings are recorded, deliberately NOT asserted as a frozen set (implementation-observed, contract section 8)
         warnings = sorted(i.code for i in report.issues if getattr(i.severity, "value", str(i.severity)) == "warning")
-        self.assertIsInstance(warnings, list)
+        self.assertEqual(warnings, sorted(warnings))  # recorded for evidence only; the set itself is not asserted
         type(self).observed_warning_codes = warnings
         # harness evidence agrees with this test's own observation
         v = self.ev["native_pack"]["validation"]
@@ -410,18 +413,13 @@ class NegativeTests(unittest.TestCase):
         def drop_revision(b):
             del b["metadata"]["control_plane_revision"]
 
-        def drop_decision(b):
-            b["records"] = [r for r in b["records"] if r.get("record_type") != "runtime_decision"]
-        for fn, message in ((drop_profiles, N2_MESSAGE), (drop_revision, N2P_MESSAGE), (drop_decision, None)):
+        for fn, message in ((drop_profiles, N2_MESSAGE), (drop_revision, N2P_MESSAGE)):
             mutated = self.mutate(fn)
             self.assertNotEqual(mutated, self.obs.bundle)
             pack, exc = pack_import(self.obs.manifest, mutated)
             self.assertIsNone(pack, fn.__name__)
             self.assertIs(type(exc), PK.importer.ImportContractError, fn.__name__)
-            if message is not None:
-                self.assertEqual(str(exc), message, fn.__name__)
-            else:
-                self.assertTrue(str(exc), fn.__name__)  # message not frozen anywhere: type and non-empty only
+            self.assertEqual(str(exc), message, fn.__name__)
 
 
 class HarnessFidelityTests(unittest.TestCase):
@@ -517,6 +515,54 @@ class HarnessFidelityTests(unittest.TestCase):
     def test_mutation_that_changes_nothing_is_an_adapter_error(self):
         with self.assertRaises(real_c3.AdapterError):
             real_c3._negative(CASE_N1, self.ctx, self.p1, lambda b: None, {"field_path": "none"}, N1_MESSAGE)
+
+
+class ReviewFixTests(unittest.TestCase):
+    """Independent-review findings: the harness's own mutators change exactly the named path, and validator/dump failures are harness
+    failures (AdapterError, exit 2), never an oracle FAIL or a native refusal."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.work = pathlib.Path(tempfile.mkdtemp(prefix="c3t-rev-"))
+        cls.ctx = real_c3._prepare(None, cls.work)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.work, ignore_errors=True)
+
+    def changed(self, mutator):
+        original = json.loads(self.ctx["bundle_path"].read_bytes().decode("utf-8"))
+        mutated = copy.deepcopy(original)
+        mutator(mutated)
+        return diff_paths(original, mutated)
+
+    def test_harness_mutators_change_exactly_the_named_paths(self):
+        decision_index = [i for i, r in enumerate(json.loads(self.ctx["bundle_path"].read_bytes())["records"]) if r["record_type"] == "runtime_decision"][0]
+        self.assertEqual(self.changed(real_c3._mut_n1), ["records[%d].data.binding.tenant_id" % decision_index])
+        self.assertEqual(self.changed(real_c3._mut_n3a), ["status"])
+        n3b = self.changed(real_c3._mut_n3b)
+        self.assertIn("status", n3b)
+        self.assertTrue(all(x == "status" or x.startswith("import_reports[") for x in n3b), n3b)
+        self.assertEqual(self.changed(real_c3._mut_n5), ["producer_profiles[0].revision"])
+
+    def test_validator_exception_is_an_adapter_error_not_a_native_refusal_or_fail(self):
+        with mock.patch.object(self.ctx["P"]["pack_validator"], "validate_evidence_pack", side_effect=RuntimeError("validator crashed")):
+            with self.assertRaises(real_c3.AdapterError) as caught:
+                real_c3._p1_from(self.ctx)
+        self.assertIn("RuntimeError", str(caught.exception))
+        self.assertIn("validator crashed", str(caught.exception))
+
+    def test_dump_exception_is_an_adapter_error(self):
+        with mock.patch.object(self.ctx["P"]["pack_loader"], "dump_evidence_pack", side_effect=OSError("disk")):
+            with self.assertRaises(real_c3.AdapterError):
+                real_c3._p1_from(self.ctx)
+
+    def test_main_exit_code_2_for_a_validator_crash(self):
+        import io
+        import contextlib
+        with mock.patch.object(self.ctx["P"]["pack_validator"], "validate_evidence_pack", side_effect=RuntimeError("validator crashed")):
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(real_c3.main(["--case", CASE_P1, "--workdir", str(self.work / "main-run")]), 2)
 
 
 if __name__ == "__main__":

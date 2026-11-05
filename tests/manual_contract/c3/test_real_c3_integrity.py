@@ -74,7 +74,7 @@ LIMIT_PHRASES = {
     7: ("signed=false", "no signature is verified", "not issuer identity"),
     8: ("no custody chain", "not custody"),
     9: ("no freshness", "generated_at is uncompared"),
-    10: ("caller-asserted", "field name, not a trust finding", "verifier's, not the producer's"),
+    10: ("caller-asserted", "field name, not a trust finding", "pack constants", "nothing verifies where the supplied", "verifier's, not the producer's"),
     11: ("valid=true", "not reviewer approval", "compliance or audit"),
     12: ("semantically_valid", "valid_bundle_count=1", "not completeness"),
     13: ("verified by replay only", "not by the pack"),

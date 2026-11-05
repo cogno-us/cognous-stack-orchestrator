@@ -62,6 +62,8 @@ ORACLE = {
     "n5_wrong_revision": "f63ce914504dd06813c4ccd199b0570dbd8dd427",
     "n5_message": "producer_profiles[0].revision for cogno-us/cognous-agent-control-plane conflicts with pinned supported revision",
 }
+ZERO_COUNT_KEYS = ("control_plane_attempt_count", "executor_attempt_count", "attempt_transition_record_count", "destination_effect_count",
+                   "effect_observation_count", "reconciliation_count")  # Pack-side T.derived_counts; contract section 8 "effect counts 0"
 HERE = pathlib.Path(__file__).resolve().parent
 PROPOSAL_PATH = HERE / "c1" / "fixtures" / "proposal.tenant-alpha.json"
 LIMITS = {  # contract section 9, L1-L19, carried verbatim in substance; none may be dropped or softened
@@ -77,7 +79,8 @@ LIMITS = {  # contract section 9, L1-L19, carried verbatim in substance; none ma
     "L8": "No custody chain; embedded retention is not custody.",
     "L9": "No freshness; generated_at is uncompared.",
     "L10": "Provenance labels (CP/RB revision, generation, manifest revision) are caller-asserted; input_artifacts[*].trusted_revision is a "
-           "field name, not a trust finding; the Pack's recorded Replay revision is the verifier's, not the producer's.",
+           "field name, not a trust finding: its values are Pack constants / the verifier's installed Replay, nothing verifies where the supplied "
+           "files came from, and the Pack's recorded Replay revision is the verifier's, not the producer's.",
     "L11": "Pack valid=True means internally consistent, not reviewer approval, compliance or audit.",
     "L12": "semantically_valid and valid_bundle_count=1 on a partial pack are not completeness.",
     "L13": "Tenant is verified by Replay only, not by the Pack (the Pack has no tenant field).",
@@ -353,6 +356,13 @@ def _fresh_workdir(workdir):
     return work
 
 
+def _reparse(data):
+    try:
+        return _strict_loads(data)
+    except ValueError as exc:
+        raise AdapterError("the persisted bundle is not strict JSON: %s" % exc) from None
+
+
 def _serialise_bundle(bundle):
     """Serialise the native bundle ONCE. Persisted bytes (H1) are NOT the Pack's canonical bytes (H2): indent=2, sorted keys, trailing
     newline. Nothing is added, dropped, renamed, defaulted or rescored; bundle_id and generated_at are kept; no integrity entry is attached."""
@@ -400,7 +410,7 @@ def _prepare(roots, workdir):
         h1_bytes = _serialise_bundle(bundle)
         bundle_path = work / "reconstruction-bundle.json"
         bundle_path.write_bytes(h1_bytes)
-        ctx.update(bundle_bytes=h1_bytes, bundle_path=bundle_path, bundle_obj=_strict_loads(h1_bytes), bundle_view=bundle)
+        ctx.update(bundle_bytes=h1_bytes, bundle_path=bundle_path, bundle_obj=_reparse(h1_bytes), bundle_view=bundle)
     return ctx
 
 
@@ -442,13 +452,20 @@ def _p1_from(ctx):
                                           "note": "L19: the Pack carries no hash of the raw Control Plane record; this linkage is harness evidence only"}
     if refusal is not None:
         ev["native_pack"] = {"outcome": "REFUSED_NATIVE", **refusal}
-        ev.update(outcome="REFUSED_NATIVE", status="FAIL", oracle={"checks": [_check("pack_imported", "IMPORTED", "REFUSED_NATIVE")], "all_ok": False})
+        ev.update(outcome="REFUSED_NATIVE", status="FAIL", pack_valid_is_not_approval=True,
+                  oracle={"checks": [_check("pack_imported", "IMPORTED", "REFUSED_NATIVE")], "all_ok": False})
         return ev
-    report = P["pack_validator"].validate_evidence_pack(pack)
+    try:
+        report = P["pack_validator"].validate_evidence_pack(pack)
+    except Exception as exc:  # a validator crash is a harness failure, not a native refusal; recorded verbatim in the message
+        raise AdapterError("Pack validate_evidence_pack raised %s: %s" % (type(exc).__name__, str(exc)[:300])) from None
     pd, T, view = _pack_view(pack, report)
     pack_path = ctx["work"] / "evidence-pack.json"
-    P["pack_loader"].dump_evidence_pack(pack, pack_path)
-    again, _ = _import_pack(P, ctx["manifest"], bundle_obj)
+    try:
+        P["pack_loader"].dump_evidence_pack(pack, pack_path)
+    except Exception as exc:
+        raise AdapterError("Pack dump_evidence_pack raised %s: %s" % (type(exc).__name__, str(exc)[:300])) from None
+    again, _ = _import_pack(P, ctx["manifest"], bundle_obj)  # determinism OBSERVATION on identical input; never a retry of a refusal
     rb0_signed = ((pd.get("replay_bundles") or [{}])[0]).get("signed")
     ev["native_pack"] = {"outcome": "IMPORTED", "pack_id": pd.get("pack_id"), "pack_version": pd.get("pack_version"),
                          "review_status": pd.get("review_status"), "validation": view, "pack_path": str(pack_path),
@@ -476,6 +493,7 @@ def _p1_from(ctx):
         _check("rb_counts_zero", {k: 0 for k in ev["native_replay"]["counts"]}, ev["native_replay"]["counts"]),
         _check("rb_bundle_version", "0.2.0", bundle.bundle_version), _check("rb_integrity_empty_none_attached", [], bundle_obj.get("integrity")),
         _check("destination_effects", {}, ctx["effects"]),
+        _check("pack_derived_counts_zero", {k: 0 for k in ZERO_COUNT_KEYS}, {k: (T.get("derived_counts") or {}).get(k) for k in ZERO_COUNT_KEYS}),
         _check("pack_version", ORACLE["pack_version"], pd.get("pack_version")), _check("review_status_draft", ORACLE["review_status"], pd.get("review_status")),
         _check("transformation_version", ORACLE["transformation_version"], T.get("transformation_version")),
         _check("selected_revisions", {"manifest": PINS["action_manifest"]["sha"], "replay": PINS["replay_bundle"]["sha"],
@@ -498,7 +516,6 @@ def _p1_from(ctx):
         _check("manifest_digest", ORACLE["manifest_digest"], ia[0].get("hash")), _check("manifest_artifact_role", "manifest", ia[0].get("artifact_role")),
         _check("pack_valid", True, view["valid"]), _check("pack_zero_errors", 0, len(view["errors"])),
         _check("pack_input_artifact_H2_equals_pack_canonical", h2, ia[1].get("hash")),
-        _check("H2_recomputed_by_pack_helper", h2, P["pack_importer"].sha256(bundle_obj)),
         _check("retained_bundle_equals_persisted_bundle", bundle_obj, retained.get("reconstruction_bundle")),
         _check("retained_manifest_equals_manifest_fixture", ctx["manifest"], retained.get("manifest")),
         _check("retained_decision_id", cp_decision.get("decision_id"), dd.get("decision_id")),

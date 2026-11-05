@@ -861,6 +861,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Checkout Control Plane at the frozen SHA
+        id: checkout_cp
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cogno-us/cognous-control-plane
@@ -868,6 +869,7 @@ jobs:
           path: .c2-src/control-plane
           persist-credentials: false
       - name: Checkout Replay Bundle at the frozen SHA
+        id: checkout_rb
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cogno-us/cognous-replay-bundle
@@ -879,6 +881,7 @@ jobs:
           python-version: '3.13'
       # Hash-locked wheels from PyPI. The components are not installed; the adapter imports their source by path.
       - name: Install the hash-locked dependencies
+        id: install
         shell: bash
         run: |
           set -euo pipefail
@@ -957,7 +960,7 @@ jobs:
           PY
           if [ "$P1_RC" -ne 0 ] || [ "$N1_RC" -ne 0 ] || [ "$N2_RC" -ne 0 ]; then exit 1; fi
           exit 0
-      - name: Independent comparison with the frozen oracle (a CLI exit code alone is not enough)
+      - name: Frozen-literal comparison (orchestrator-owned, not independent; a CLI exit code alone is not enough)
         id: oracle
         if: always() && steps.verify.outcome == 'success'
         env:
@@ -970,6 +973,9 @@ jobs:
         if: always()
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/c2-evidence
+          STEP_CHECKOUT_CP: ${{ steps.checkout_cp.outcome }}
+          STEP_CHECKOUT_RB: ${{ steps.checkout_rb.outcome }}
+          STEP_INSTALL: ${{ steps.install.outcome }}
           STEP_VERIFY: ${{ steps.verify.outcome }}
           STEP_TESTS: ${{ steps.tests.outcome }}
           STEP_CASES: ${{ steps.cases.outcome }}

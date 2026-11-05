@@ -1,10 +1,11 @@
-"""Hosted C2 qualification-preparation checker for the manual workflow (stdlib only; run as `python -I -B`).
+"""Hosted C2 frozen-literal checker for the manual workflow (orchestrator-owned; NOT independent) (stdlib only; run as `python -I -B`).
 
 Development-only and fixture-scoped. NOT independent qualification, release evidence or an authenticated-authority claim.
 Subcommands (the workflow passes everything else through the environment, never through shell text):
   verify   exact-source and context check before any component code runs; writes sources.txt and context.json.
-  check    independent comparison of the produced artifacts with the frozen C2 oracle (it does not trust the adapter's own
-           PASS); writes oracle.txt and evidence-manifest.json. Exit 1 on any mismatch or missing artifact.
+  check    comparison of the produced artifacts with the frozen C2 literals (it does not trust the adapter's own PASS, but it is
+           orchestrator-owned and is NOT an independent verifier); writes oracle.txt and evidence-manifest.json. Exit 1 on any
+           mismatch or missing artifact.
   summary  job summary from the step outcomes and the files that exist; never raises.
 Every expected literal below is the frozen contract (Hub #273 6665625039 + journal amendment 6667028276), not adapter output.
 """
@@ -41,11 +42,41 @@ MANIFEST_SCHEMA = "cognous.orchestrator.c2-hosted-evidence-manifest/0-candidate"
 ARTIFACTS = ("sources.txt", "context.json", "tests.log", "tests.json", "cases.json", "oracle.txt", "evidence-manifest.json",
              "p1.result.json", "n1.result.json", "n2.result.json", "p1.native-records.json", "p1.native-destination.json",
              "n1.native-records.json", "n1.native-destination.json")
-LIMIT_VALUES = {"status": "DEVELOPMENT_ONLY_FIXTURE_SCOPED", "authority_basis": "SYNTHETIC_UNAUTHENTICATED_RESOLVER", "time_source": "test_override",
-                "decision_semantics_only": True, "effect_executed": False, "consistency_only": True, "hub_280_digest_basis": "OPEN",
-                "not_institutional_authority": True, "not_independent_qualification": True, "not_general_interoperability": True,
-                "replay_protection": "none", "event_decision_linkage": "NOT_ESTABLISHED", "event_decision_ids": None,
-                "journal_association": "proposal_level_association_only"}
+LIMITS_FULL = json.loads(r"""{
+ "authority_basis": "SYNTHETIC_UNAUTHENTICATED_RESOLVER",
+ "clock": "caller_supplied_fixed_clock_developer_only",
+ "consistency_only": true,
+ "correlation_id": "not persisted by CP and not independently checked by RB",
+ "decision_semantics_only": true,
+ "development_only_fixture_scoped": true,
+ "digest_basis": "RB raw dict vs CP model dump",
+ "effect_executed": false,
+ "event_decision_ids": null,
+ "event_decision_linkage": "NOT_ESTABLISHED",
+ "hold_bindings": "null",
+ "hub_280_digest_basis": "OPEN",
+ "journal_association": "proposal_level_association_only",
+ "lineage": "identity_and_proposal_level_not_decision_exact",
+ "no_authenticated_issuer": true,
+ "no_certification_clearance_or_production_readiness": "HOLD",
+ "no_key_or_attestation": true,
+ "non_authorizing": true,
+ "not_authority_reevaluation": true,
+ "not_complete_history": "reconstruction_partial; B-codes verbatim",
+ "not_general_interoperability": true,
+ "not_independent_qualification": true,
+ "not_institutional_authority": true,
+ "not_proof_of_external_effect": true,
+ "private_cp_api_dependency": "_canonical_bytes (breaks silently on CP change; pin plus file-sha256 check mandatory)",
+ "producer_revision_basis": "measured_source_pin_required; no_revision_or_profile_id_in_cp_record",
+ "replay_protection": "none",
+ "revision_label_caller_declared_in_RB": "measured by adapter from git HEAD/tree (R3)",
+ "signature_key_basis": "TEST_ONLY_PUBLIC_SYNTHETIC_ED25519; signatures_prove_nothing_institutional",
+ "status": "DEVELOPMENT_ONLY_FIXTURE_SCOPED",
+ "synthetic_key_scope": "public key bytes(range(32)) valid only in this test profile",
+ "tenant_generation": "proposal caller-supplied; hold binding null; effect_id does not hash tenant; strict label also accepts legacy; consistent forgery undetected except by external pin",
+ "time_source": "test_override"
+}""")  # the approved limits block, verbatim (frozen contract section 8 + 14 keys)
 HOSTED_SOURCES = ("tests/manual_contract/real_c2.py", "tests/manual_contract/c2_producer.py", "tests/manual_contract/real_c1.py",
                   "tests/manual_contract/runner.py", "tests/manual_contract/c2/test_real_c2.py", ".github/scripts/run_unittest_no_skips.py",
                   ".github/scripts/c2_hosted_check.py", ".github/locks/cryptography-pydantic-pytest-513753.txt",
@@ -214,7 +245,43 @@ def load(c, ev, name, strict=True):
     return obj, data
 
 
-def check_p1(c, ev, ctx):
+def check_limits(c, label, limits):
+    c.eq("%s limits block equals the frozen approved limits exactly (no key dropped, none added)" % label, LIMITS_FULL, limits)
+    text = json.dumps(limits).lower()
+    c.true("%s limits make no qualification, certification or completeness claim" % label,
+           not any(w in text for w in ('"qualified"', "certified\"", "production_ready", "reconstruction_complete")))
+
+
+def check_sources(c, label, r, roots):
+    """Measured identity for one result: pins, trees, clean flags, measured label, and every loaded module recomputed against git."""
+    s = r.get("sources") or {}
+    c.eq("%s measured revision label" % label, PINS["control_plane"][1], s.get("revision_label"))
+    for key in ("control_plane", "replay_bundle"):
+        _, want_sha, want_tree = PINS[key]
+        o = s.get(key) or {}
+        c.eq("%s measured %s head/tree" % (label, key), (want_sha, want_tree), (o.get("observed_head"), o.get("observed_tree")))
+        c.true("%s %s clean flags" % (label, key), o.get("tracked_files_clean") is True and o.get("ls_files_all_H") is True and o.get("status_ignored_clean") is True)
+        mods = o.get("imported_modules") or {}
+        root = roots[key].resolve()
+        bad = []
+        for name, m in mods.items():
+            rel = pathlib.Path(m.get("file", "/")).resolve()
+            try:
+                relpath = rel.relative_to(root).as_posix()
+                if git(root, "rev-parse", "HEAD:" + relpath) != m.get("git_blob_sha"):
+                    bad.append(name)
+            except (ValueError, Fail):
+                bad.append(name)
+        c.true("%s %s: %d loaded modules lie under the pinned root and equal their git blobs (recomputed here)" % (label, key, len(mods)), bool(mods) and not bad)
+        need = {"control_plane": ("agent_control_plane.bounded",), "replay_bundle": ("agent_replay_bundle.importers",)}[key]
+        c.true("%s %s: required modules were loaded and verified: %s" % (label, key, ", ".join(need)), all(n in mods for n in need))
+        if bad:
+            c.eq("%s %s modules failing the recomputed blob check" % (label, key), [], bad[:5])
+    c.true("%s CP test helpers were blob-verified" % label, label == "N2" or all(
+        m in ((s.get("control_plane") or {}).get("imported_modules") or {}) for m in ("tests", "tests.test_bounded_authorization", "tests.test_runtime_authority")))
+
+
+def check_p1(c, ev, ctx, roots):
     r, _ = load(c, ev, "p1.result.json")
     rec, rec_bytes = load(c, ev, "p1.native-records.json")
     dest, _ = load(c, ev, "p1.native-destination.json")
@@ -240,22 +307,14 @@ def check_p1(c, ev, ctx):
          (b.get("tenant_id"), b.get("generation"), b.get("proposal_commitment")))
     c.eq("P1 reason vocabulary / runtime-authority profile", (VOCAB, RA_PROFILE), (dec.get("reason_vocabulary_version"), (b.get("runtime_authority") or {}).get("profile")))
     c.eq("P1 proposal fixture sha256 (adapter evidence)", PROPOSAL_SHA, ((r.get("inputs") or {}).get("proposal") or {}).get("sha256"))
-    s = r.get("sources") or {}
-    for key in ("control_plane", "replay_bundle"):
-        _, want_sha, want_tree = PINS[key]
-        o = s.get(key) or {}
-        c.eq("P1 measured %s head/tree" % key, (want_sha, want_tree), (o.get("observed_head"), o.get("observed_tree")))
-        c.true("P1 %s clean flags and loaded modules" % key, o.get("tracked_files_clean") is True and o.get("ls_files_all_H") is True
-               and o.get("status_ignored_clean") is True and bool(o.get("imported_modules")))
-    c.eq("P1 revision label (measured, not downgraded)", PINS["control_plane"][1], s.get("revision_label"))
-    c.true("P1 CP test helpers blob-verified", all(m in (s.get("control_plane") or {}).get("imported_modules", {}) for m in ("tests", "tests.test_bounded_authorization", "tests.test_runtime_authority")))
+    check_sources(c, "P1", r, roots)
     prod = r.get("producer") or {}
     c.eq("P1 producer clock/calls", ("none", ["decide"]), (prod.get("clock_patch"), prod.get("calls")))
     c.eq("P1 producer key basis", "synthetic-validator", prod.get("producer_key_id"))
-    c.eq("P1 harness orchestrator head == GITHUB_SHA", os.environ.get("GITHUB_SHA"), (r.get("harness") or {}).get("orchestrator_head"))
+    c.true("P1 harness orchestrator head == GITHUB_SHA (non-empty)", bool(os.environ.get("GITHUB_SHA")) and os.environ.get("GITHUB_SHA") == (r.get("harness") or {}).get("orchestrator_head"))
     c.eq("P1 runtime versions == context", {k: (ctx.get("dependencies") or {}).get(k) for k in ("cryptography", "pydantic")},
          {k: (r.get("runtime") or {}).get(k) for k in ("cryptography", "pydantic")})
-    # independent reading of the raw persisted record (not the adapter's evidence)
+    # direct reading of the raw persisted record (not the adapter's evidence)
     rr = r.get("record") or {}
     c.eq("P1 record sha256 == sha256 of the retained file bytes", sha(rec_bytes), rr.get("sha256"))
     c.eq("P1 record size == retained file size", len(rec_bytes), rr.get("size_bytes"))
@@ -276,25 +335,24 @@ def check_p1(c, ev, ctx):
         == (d0.get("operation_horizon") or {}).get("proposal_commitment") for e in events))
     c.true("P1 every event carries the reason vocabulary version", bool(events) and all(isinstance(e, dict) and e.get("reason_vocabulary_version") == VOCAB for e in events))
     rcs = rec.get("resolution_checks") or []
-    c.true("P1 event check_id reported as observed, not equal to the resolution check id", bool(events) and bool(rcs)
-           and all(e.get("check_id") != rcs[0].get("check_id") for e in events))
+    c.true("P1 one resolution check present; event/resolution check ids are REPORTED as observed in the manifest, no equivalence inferred", len(rcs) == 1)
     j = r.get("journal") or {}
     c.eq("P1 journal limitation (amended oracle)", ("NOT_ESTABLISHED", None, True), (j.get("event_decision_linkage"), j.get("event_decision_ids"), j.get("proposal_level_association_only")))
     c.eq("P1 journal event count == raw record", len(events), j.get("event_count"))
     dev = (r.get("frozen_oracle_deviations") or [{}])[0]
     c.true("P1 predecessor discrepancy preserved and superseded", "REJECTED" in str(dev.get("frozen_text_status")) and "6667028276" in str(dev.get("superseded_by")))
-    for k, v in LIMIT_VALUES.items():
-        c.eq("P1 limits.%s" % k, v, (r.get("limits") or {}).get(k))
-    c.true("P1 limits name the unauthenticated, test-only and partial-history limits", all(
-        w in json.dumps(r.get("limits") or {}) for w in ("TEST_ONLY_PUBLIC_SYNTHETIC_ED25519", "no_authenticated_issuer", "not_complete_history", "NOT_ESTABLISHED")))
+    check_limits(c, "P1", r.get("limits"))
     dd = (dest or {}).get("effects") if isinstance(dest, dict) else None
     c.eq("P1 destination effects (retained file)", {}, dd)
     c.eq("P1 destination effect count (adapter)", 0, (r.get("destination") or {}).get("effect_count"))
     c.true("P1 adapter oracle block all_ok (necessary, never sufficient)", (r.get("oracle") or {}).get("all_ok") is True)
-    return {"record_sha256": sha(rec_bytes), "decision_id": d0.get("decision_id"), "record_size_bytes": len(rec_bytes)}
+    return {"record_sha256": sha(rec_bytes), "decision_id": d0.get("decision_id"), "record_size_bytes": len(rec_bytes),
+            "journal_observed": {"event_count": len(events), "event_check_ids": sorted({str(e.get("check_id")) for e in events if isinstance(e, dict)}),
+                                 "resolution_check_id": (rcs[0].get("check_id") if rcs and isinstance(rcs[0], dict) else None),
+                                 "event_decision_ids": sorted({str(e.get("decision_id")) for e in events if isinstance(e, dict)})}}
 
 
-def check_n1(c, ev):
+def check_n1(c, ev, roots):
     r, _ = load(c, ev, "n1.result.json")
     rec, rec_bytes = load(c, ev, "n1.native-records.json")
     dest, _ = load(c, ev, "n1.native-destination.json")
@@ -314,18 +372,28 @@ def check_n1(c, ev):
         c.true("N1 mutated input hash differs from the original and is declared a re-serialisation", m.get("mutated_input_sha256") != m.get("original_record_sha256")
                and m.get("sha256_of") == "canonical_reserialisation_of_test_mutation")
         c.eq("N1 retained record still has tenant-alpha (mutation was in memory only)", TENANT, (((rec.get("decisions") or [{}])[0].get("binding")) or {}).get("tenant_id"))
+        try:  # reproduction from the retained record: ONLY decisions[0].binding.tenant_id differs from the retained original
+            mutated = json.loads(json.dumps(rec))
+            mutated["decisions"][0]["binding"]["tenant_id"] = "tenant-beta"
+            repro = sha((json.dumps(mutated, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8"))
+        except (KeyError, IndexError, TypeError):
+            repro = None
+        c.eq("N1 mutated input hash reproduced from the retained record with only tenant_id changed", repro, m.get("mutated_input_sha256"))
     c.eq("N1 destination effects (retained file)", {}, (dest or {}).get("effects") if isinstance(dest, dict) else None)
-    c.eq("N1 revision label", PINS["control_plane"][1], ((r.get("sources") or {}).get("revision_label")))
+    check_sources(c, "N1", r, roots)
+    check_limits(c, "N1", r.get("limits"))
     return {"original_record_sha256": m.get("original_record_sha256"), "mutated_input_sha256": m.get("mutated_input_sha256")}
 
 
-def check_n2(c, ev, work):
+def check_n2(c, ev, work, roots):
     r, _ = load(c, ev, "n2.result.json")
     if not isinstance(r, dict):
         return {}
     c.eq("N2 case_id", CASES[2], r.get("case_id"))
     c.eq("N2 adapter status/outcome", ("PASS", "REFUSED_NATIVE"), (r.get("status"), r.get("outcome")))
-    c.eq("N2 revision label (genuine measured pin, no downgrade)", PINS["control_plane"][1], (r.get("sources") or {}).get("revision_label"))
+    check_sources(c, "N2", r, roots)
+    check_limits(c, "N2", r.get("limits"))
+    c.eq("N2 label policy (genuine measured label only, never retried)", "measured genuine label only; never retried under another label", r.get("label_policy"))
     out = {}
     for key, (path, frozen, run_id, artifact_id) in C1_RECORDS.items():
         item = (r.get("records") or {}).get(key) or {}
@@ -360,9 +428,16 @@ def check():
            and "\nOK\n" in ("\n" + log + "\n") and "skipped" not in log and "expected failures" not in log and "FAILED" not in log)
     cj, _ = load(c, ev, "cases.json")
     c.eq("case exit codes (all three cases ran)", {n: 0 for n in CASES}, ((cj or {}).get("exit_codes")))
-    p1 = check_p1(c, ev, ctx)
-    n1 = check_n1(c, ev)
-    n2 = check_n2(c, ev, work)
+    roots = {"control_plane": pathlib.Path(os.environ["COGNOUS_C2_CONTROL_PLANE_ROOT"]), "replay_bundle": pathlib.Path(os.environ["COGNOUS_C2_REPLAY_BUNDLE_ROOT"])}
+    c.eq("context re-asserted: ref/event/head", ("refs/heads/main", "workflow_dispatch", os.environ.get("GITHUB_SHA")),
+         (ctx.get("github_ref"), ctx.get("event_name"), ctx.get("orchestrator_head")))
+    c.true("context re-asserted: GITHUB_SHA non-empty and equals context", bool(os.environ.get("GITHUB_SHA")) and ctx.get("github_sha") == os.environ.get("GITHUB_SHA"))
+    c.eq("context re-asserted: host source hashes recorded for every hosted file", sorted(HOSTED_SOURCES), sorted((ctx.get("host_sources") or {}).keys()))
+    c.eq("context re-asserted: fixture hashes", sorted([PROPOSAL_SHA, C1_RECORDS["negative"][1], C1_RECORDS["positive"][1]]),
+         sorted((v or {}).get("sha256") for v in (ctx.get("fixtures") or {}).values()))
+    p1 = check_p1(c, ev, ctx, roots)
+    n1 = check_n1(c, ev, roots)
+    n2 = check_n2(c, ev, work, roots)
     c.true("P1 and N1 used distinct runs (different decision/record)", bool(p1) and bool(n1) and p1.get("record_sha256") != n1.get("original_record_sha256"))
     lines = c.text()
     verdict = "PASS" if c.failed == 0 else "FAIL"
@@ -400,11 +475,14 @@ def summary():
     try:
         ev = evidence_dir()
         names = {"success": "PASS", "failure": "FAIL", "skipped": "NOT EXECUTED", "cancelled": "BLOCKED"}
-        steps = [(label, names.get(os.environ.get(var, ""), "NOT EXECUTED")) for label, var in
-                 (("Exact-source verification", "STEP_VERIFY"), ("Focused C2 suite", "STEP_TESTS"), ("P1/N1/N2 cases", "STEP_CASES"), ("Independent oracle comparison", "STEP_ORACLE"))]
-        overall = "PASS" if all(s == "PASS" for _, s in steps) else ("FAIL" if any(s == "FAIL" for _, s in steps) else "NOT PASSED")
+        prereq = [os.environ.get(v, "") for v in ("STEP_CHECKOUT_CP", "STEP_CHECKOUT_RB", "STEP_INSTALL")]
+        blocked = any(x in ("failure", "cancelled") for x in prereq)  # prerequisites (checkout, install) failed: nothing could be evaluated
+        steps = [("Prerequisites (component checkouts, hash-locked install)", "BLOCKED" if blocked else names.get("success" if all(x == "success" for x in prereq) else "", "NOT EXECUTED"))] + [
+            (label, names.get(os.environ.get(var, ""), "NOT EXECUTED")) for label, var in
+            (("Exact-source verification", "STEP_VERIFY"), ("Focused C2 suite", "STEP_TESTS"), ("P1/N1/N2 cases", "STEP_CASES"), ("Frozen-literal comparison (orchestrator-owned, not independent)", "STEP_ORACLE"))]
+        overall = "BLOCKED" if blocked else "PASS" if all(s == "PASS" for _, s in steps) else ("FAIL" if any(s == "FAIL" for _, s in steps) else "NOT PASSED")
         clean = lambda v: " ".join(str(v).split()).replace("`", "'").replace("|", "/").replace("<", "&lt;").replace(">", "&gt;")[:200]  # noqa: E731
-        out = ["### C2 hosted run (developer evidence, manual only)", "", "**Result: %s** (hosted developer evidence, **not** independent qualification, authenticity, effect proof or complete reconstruction)" % overall, "",
+        out = ["### C2 hosted run (developer evidence, manual only)", "", "**Developer check result: %s** (hosted developer evidence, **not** independent qualification, authenticity, effect proof or complete reconstruction)" % overall, "",
                "| Stage | Status |", "|---|---|"] + ["| %s | %s |" % (a, b) for a, b in steps] + [""]
         try:
             ctx = json.loads((ev / "context.json").read_text(encoding="utf-8"))
@@ -418,7 +496,7 @@ def summary():
             out += ["Oracle: `%s`" % clean(first[0] if first else "empty")] + ["- `%s`" % clean(x) for x in first if x.startswith("FAIL")][:20] + [""]
         except OSError:
             out += ["Oracle: not produced (NOT EXECUTED or failed earlier).", ""]
-        out += ["Journal: events are source-preserved and associated through the proposal commitment; direct event-to-decision linkage is NOT_ESTABLISHED at the pinned Control Plane. "
+        out += ["Journal: events are associated through the proposal commitment (preservation is covered by the focused suite, not re-derived by this check); direct event-to-decision linkage is NOT_ESTABLISHED at the pinned Control Plane. "
                 "P1 is `reconstruction_partial` (B004), never complete. N2 is adverse incompatibility evidence for the original C1 records, not a C1-to-Replay integration. Hub #280 OPEN.", "",
                 "Not executed: " + "; ".join(NOT_EXECUTED) + "."]
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
@@ -434,7 +512,7 @@ def main(argv):
         return 2
     try:
         return {"verify": verify, "check": check, "summary": summary}[argv[1]]()
-    except (Fail, KeyError, OSError, ValueError) as exc:
+    except (Fail, KeyError, OSError, ValueError, AttributeError, TypeError, IndexError, RecursionError) as exc:
         print("c2_hosted_check %s failed closed: %s: %s" % (argv[1], type(exc).__name__, str(exc)[:300]), file=sys.stderr)
         return 1
 

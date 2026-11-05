@@ -1,15 +1,21 @@
-name: Manual contract edge (synthetic, manual only)
+name: Manual contract edge (manual only)
 
-# Manual only (workflow_dispatch). Runs the synthetic producer-to-consumer runner in tests/manual_contract for exactly one
-# allowlisted case: one producer to one mock consumer, or one producer to two independent mock consumers (fan-out). Mock
-# components only: no OCS component, no network, no effects, no credentials beyond the read-only default token. Its result is a
-# developer test of the runner, not independent qualification, not release evidence and not an adopted contract. A FAIL or
-# BLOCKED case (for fan-out, the aggregate) fails the job; its JSON result and summary are still kept.
+# Manual only (workflow_dispatch). Runs one allowlisted case of tests/manual_contract. Neither kind of case is independent
+# qualification, release evidence or an adopted contract. Hub #280 (digest basis) is OPEN and only the fully populated frozen
+# Manifest 1.1 is supported.
+# - Synthetic cases (mock_*): one producer to one mock consumer, or one producer to two independent mock consumers (fan-out).
+#   Mock components only: no OCS component, no network, no effects, no credentials beyond the read-only default token. A FAIL
+#   or BLOCKED case (for fan-out, the aggregate) fails the job; its JSON result and summary are still kept.
+# - Real C1 cases (c1_*): run the real pinned Action Manifest and Control Plane source, checked out at frozen SHAs and imported
+#   by path (decision-only, never an effect path; the components are not installed). This job makes network fetches of GitHub
+#   sources and of hash-locked PyPI wheels, and uses no secrets beyond the read-only default token. An authorized decision is
+#   a decision, not an executed authorization or effect. Authority is a synthetic unauthenticated resolver, not institutional
+#   authority. The job fails unless the exact-source check, the focused suite, the case and the frozen-oracle check all succeed.
 on:
   workflow_dispatch:
     inputs:
       case_id:
-        description: Allowlisted synthetic case to run
+        description: Allowlisted case to run. mock_* are synthetic mock-only cases (no network); c1_* run the real pinned Action Manifest and Control Plane source, imported by path, decision-only, after network fetches of GitHub sources and PyPI wheels. Neither is qualification. Hub 280 is OPEN; only the fully populated frozen Manifest 1.1 is supported. Manual only.
         type: choice
         required: true
         default: mock_accept_expected_accept
@@ -20,12 +26,15 @@ on:
           - mock_no_observable_response
           - mock_fanout_accept_refuse
           - mock_fanout_unexpected_refusal
+          - c1_manifest_to_cp_authorized
+          - c1_manifest_to_cp_no_authority
 
 permissions:
   contents: read
 
 jobs:
   contract-edge:
+    if: ${{ !startsWith(inputs.case_id, 'c1_') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -112,4 +121,178 @@ jobs:
         with:
           name: contract-edge-result-${{ inputs.case_id }}
           path: ${{ runner.temp }}/contract-edge/result.json
+          if-no-files-found: warn
+
+  c1-real-edge:
+    if: ${{ startsWith(inputs.case_id, 'c1_') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      C1_AM_SHA: fa170815ef96a54c233d0dd9da821b60debabf8b
+      C1_AM_TREE: 3b0e3772e944aa668c8f4b879588c7cc3e2c32be
+      C1_CP_SHA: 484fdbd297235dd24148ddb0703f2055a31eabff
+      C1_CP_TREE: c182939882103015f12c5360fccf377c54e2c4f9
+      COGNOUS_C1_ACTION_MANIFEST_ROOT: ${{ github.workspace }}/.c1-src/action-manifest
+      COGNOUS_C1_CONTROL_PLANE_ROOT: ${{ github.workspace }}/.c1-src/control-plane
+      CASE_ID: ${{ inputs.case_id }}
+    steps:
+      # The orchestrator checkout comes first: a later checkout with clean enabled would delete the nested component checkouts.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Checkout Action Manifest at the frozen SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-action-manifest
+          ref: ${{ env.C1_AM_SHA }}
+          path: .c1-src/action-manifest
+          persist-credentials: false
+      - name: Checkout Control Plane at the frozen SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-control-plane
+          ref: ${{ env.C1_CP_SHA }}
+          path: .c1-src/control-plane
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      # Hash-locked wheels from PyPI. The components are not installed; the adapter imports their source by path.
+      - name: Install the hash-locked dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r .github/locks/cryptography-pydantic-pytest-513753.txt
+      - name: Verify the exact sources (no component code is executed)
+        id: verify
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c1-evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          fail() { echo "SOURCE VERIFICATION FAILED: $1" >&2; exit 1; }
+          : > "$EVIDENCE_DIR/sources.txt"
+          check_root() {
+            local label="$1" root="$2" want_sha="$3" want_tree="$4" got
+            got="$(git -C "$root" rev-parse HEAD)"
+            [ "$got" = "$want_sha" ] || fail "$label HEAD is $got, expected $want_sha"
+            got="$(git -C "$root" rev-parse 'HEAD^{tree}')"
+            [ "$got" = "$want_tree" ] || fail "$label tree is $got, expected $want_tree"
+            got="$(git -C "$root" rev-parse --show-toplevel)"
+            [ "$got" = "$root" ] || fail "$label toplevel is $got, expected $root"
+            local listing others
+            listing="$(git -C "$root" ls-files -v)"
+            [ -n "$listing" ] || fail "$label has no tracked files"
+            others="$(printf '%s\n' "$listing" | grep -v '^H ' || true)"
+            [ -z "$others" ] || fail "$label has tracked files with a tag other than H"
+            others="$(git -C "$root" status --porcelain --ignored=matching --untracked-files=all)"
+            [ -z "$others" ] || fail "$label working tree is not clean (including ignored and untracked files)"
+            {
+              echo "$label"
+              echo "  root: $root"
+              echo "  sha: $want_sha"
+              echo "  tree: $want_tree"
+              echo "  checks passed: head==pin, tree==pin, toplevel==root, ls-files all H, status clean (ignored and untracked included)"
+            } >> "$EVIDENCE_DIR/sources.txt"
+          }
+          check_root action-manifest "$COGNOUS_C1_ACTION_MANIFEST_ROOT" "$C1_AM_SHA" "$C1_AM_TREE"
+          check_root control-plane "$COGNOUS_C1_CONTROL_PLANE_ROOT" "$C1_CP_SHA" "$C1_CP_TREE"
+          ORCH_HEAD="$(git rev-parse HEAD)"
+          PIP_VERSION_TEXT="$(python -m pip --version)"
+          export ORCH_HEAD PIP_VERSION_TEXT
+          python3 -I -B - <<'PY'
+          import json, os, sys
+          env = os.environ
+          ctx = {
+              "repository": env.get("GITHUB_REPOSITORY"),
+              "github_sha": env.get("GITHUB_SHA"),
+              "github_ref": env.get("GITHUB_REF"),
+              "run_id": env.get("GITHUB_RUN_ID"),
+              "run_attempt": env.get("GITHUB_RUN_ATTEMPT"),
+              "case_id": env.get("CASE_ID"),
+              "orchestrator_head": env.get("ORCH_HEAD"),
+              "python_version": sys.version,
+              "pip_version": env.get("PIP_VERSION_TEXT"),
+          }
+          with open(os.path.join(env["EVIDENCE_DIR"], "context.json"), "w", encoding="utf-8") as fh:
+              json.dump(ctx, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
+      - name: Focused C1 suite (full oracle; any failure or skip fails the job)
+        id: tests
+        if: steps.verify.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c1-evidence
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          TESTS_COMMAND='python -I -B .github/scripts/run_unittest_no_skips.py tests/manual_contract/c1 --require-env COGNOUS_C1_ACTION_MANIFEST_ROOT --require-env COGNOUS_C1_CONTROL_PLANE_ROOT'
+          python -I -B .github/scripts/run_unittest_no_skips.py tests/manual_contract/c1 --require-env COGNOUS_C1_ACTION_MANIFEST_ROOT --require-env COGNOUS_C1_CONTROL_PLANE_ROOT 2>&1 | tee "$EVIDENCE_DIR/tests.log"
+          TESTS_RC="${PIPESTATUS[0]}"
+          export TESTS_COMMAND TESTS_RC
+          python3 -I -B - <<'PY'
+          import json, os
+          rc = int(os.environ["TESTS_RC"])
+          doc = {"command": os.environ["TESTS_COMMAND"], "exit_code": rc, "outcome": "PASSED" if rc == 0 else "FAILED"}
+          with open(os.path.join(os.environ["EVIDENCE_DIR"], "tests.json"), "w", encoding="utf-8") as fh:
+              json.dump(doc, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
+          exit "$TESTS_RC"
+      - name: Run the selected C1 case through the adapter
+        id: case
+        if: always() && steps.verify.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c1-evidence
+        shell: bash
+        run: |
+          set -uo pipefail
+          python -I -B tests/manual_contract/real_c1.py --case "$CASE_ID" --out "$EVIDENCE_DIR/result.json" --evidence-out "$EVIDENCE_DIR/evidence.json"
+          CASE_RC=$?
+          export CASE_RC
+          # Keep the adapter's own destination and record files: the independently observed effect state, whatever the outcome.
+          python3 -I -B - <<'PY'
+          import json, os, shutil
+          directory = os.environ["EVIDENCE_DIR"]
+          try:
+              with open(os.path.join(directory, "evidence.json"), encoding="utf-8") as fh:
+                  workdir = json.load(fh).get("workdir")
+          except (OSError, ValueError, AttributeError):
+              workdir = None
+          for name in ("destination.json", "records.json"):
+              source = os.path.join(workdir, name) if isinstance(workdir, str) else None
+              if source and os.path.isfile(source):
+                  shutil.copyfile(source, os.path.join(directory, "native-" + name))
+          PY
+          exit "$CASE_RC"
+      - name: Check the produced artifacts against the frozen oracle
+        id: oracle
+        if: always() && steps.case.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c1-evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -I -B - <<'PY'
+          # @@ORACLE_SCRIPT@@
+          raise SystemExit('WORK IN PROGRESS: the frozen-oracle check is not merged yet; this step must fail closed')
+          PY
+      - name: Job summary
+        if: always()
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c1-evidence
+        shell: bash
+        run: |
+          python3 -I -B - <<'PY'
+          # @@SUMMARY_SCRIPT@@
+          raise SystemExit('WORK IN PROGRESS: the summary script is not merged yet')
+          PY
+      - name: Keep the C1 evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: c1-evidence-${{ inputs.case_id }}
+          path: ${{ runner.temp }}/c1-evidence/
           if-no-files-found: warn

@@ -1,15 +1,21 @@
-name: Manual contract edge (synthetic, manual only)
+name: Manual contract edge (manual only)
 
-# Manual only (workflow_dispatch). Runs the synthetic producer-to-consumer runner in tests/manual_contract for exactly one
-# allowlisted case: one producer to one mock consumer, or one producer to two independent mock consumers (fan-out). Mock
-# components only: no OCS component, no network, no effects, no credentials beyond the read-only default token. Its result is a
-# developer test of the runner, not independent qualification, not release evidence and not an adopted contract. A FAIL or
-# BLOCKED case (for fan-out, the aggregate) fails the job; its JSON result and summary are still kept.
+# Manual only (workflow_dispatch). Runs one allowlisted case of tests/manual_contract. Neither kind of case is independent
+# qualification, release evidence or an adopted contract. Hub #280 (digest basis) is OPEN and only the fully populated frozen
+# Manifest 1.1 is supported.
+# - Synthetic cases (mock_*): one producer to one mock consumer, or one producer to two independent mock consumers (fan-out).
+#   Mock components only: no OCS component, no network, no effects, no credentials beyond the read-only default token. A FAIL
+#   or BLOCKED case (for fan-out, the aggregate) fails the job; its JSON result and summary are still kept.
+# - Real C1 cases (c1_*): run the real pinned Action Manifest and Control Plane source, checked out at frozen SHAs and imported
+#   by path (decision-only, never an effect path; the components are not installed). This job makes network fetches of GitHub
+#   sources and of hash-locked PyPI wheels, and uses no secrets beyond the read-only default token. An authorized decision is
+#   a decision, not an executed authorization or effect. Authority is a synthetic unauthenticated resolver, not institutional
+#   authority. The job fails unless the exact-source check, the focused suite, the case and the frozen-oracle check all succeed.
 on:
   workflow_dispatch:
     inputs:
       case_id:
-        description: Allowlisted synthetic case to run
+        description: Allowlisted case to run. mock_* are synthetic mock-only cases (no network); c1_* run the real pinned Action Manifest and Control Plane source, imported by path, decision-only, after network fetches of GitHub sources and PyPI wheels. Neither is qualification. Hub 280 is OPEN; only the fully populated frozen Manifest 1.1 is supported. Manual only.
         type: choice
         required: true
         default: mock_accept_expected_accept
@@ -20,12 +26,15 @@ on:
           - mock_no_observable_response
           - mock_fanout_accept_refuse
           - mock_fanout_unexpected_refusal
+          - c1_manifest_to_cp_authorized
+          - c1_manifest_to_cp_no_authority
 
 permissions:
   contents: read
 
 jobs:
   contract-edge:
+    if: ${{ !startsWith(inputs.case_id, 'c1_') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -112,4 +121,717 @@ jobs:
         with:
           name: contract-edge-result-${{ inputs.case_id }}
           path: ${{ runner.temp }}/contract-edge/result.json
+          if-no-files-found: warn
+
+  c1-real-edge:
+    if: ${{ startsWith(inputs.case_id, 'c1_') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      C1_AM_SHA: fa170815ef96a54c233d0dd9da821b60debabf8b
+      C1_AM_TREE: 3b0e3772e944aa668c8f4b879588c7cc3e2c32be
+      C1_CP_SHA: 484fdbd297235dd24148ddb0703f2055a31eabff
+      C1_CP_TREE: c182939882103015f12c5360fccf377c54e2c4f9
+      COGNOUS_C1_ACTION_MANIFEST_ROOT: ${{ github.workspace }}/.c1-src/action-manifest
+      COGNOUS_C1_CONTROL_PLANE_ROOT: ${{ github.workspace }}/.c1-src/control-plane
+      CASE_ID: ${{ inputs.case_id }}
+    steps:
+      # The orchestrator checkout comes first: a later checkout with clean enabled would delete the nested component checkouts.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Checkout Action Manifest at the frozen SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-action-manifest
+          ref: ${{ env.C1_AM_SHA }}
+          path: .c1-src/action-manifest
+          persist-credentials: false
+      - name: Checkout Control Plane at the frozen SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-control-plane
+          ref: ${{ env.C1_CP_SHA }}
+          path: .c1-src/control-plane
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      # Hash-locked wheels from PyPI. The components are not installed; the adapter imports their source by path.
+      - name: Install the hash-locked dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes --only-binary=:all: -r .github/locks/cryptography-pydantic-pytest-513753.txt
+      - name: Verify the exact sources (no component code is executed)
+        id: verify
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c1-evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          ORCH_HEAD="$(git rev-parse HEAD)"
+          PIP_VERSION_TEXT="$(python -m pip --version)"
+          export ORCH_HEAD PIP_VERSION_TEXT
+          python3 -I -B - <<'PY'
+          import json, os, sys
+          env = os.environ
+          ctx = {
+              "repository": env.get("GITHUB_REPOSITORY"),
+              "github_sha": env.get("GITHUB_SHA"),
+              "github_ref": env.get("GITHUB_REF"),
+              "github_run_id": env.get("GITHUB_RUN_ID"),
+              "github_run_attempt": env.get("GITHUB_RUN_ATTEMPT"),
+              "case_id": env.get("CASE_ID"),
+              "orchestrator_head": env.get("ORCH_HEAD"),
+              "python_version": sys.version,
+              "pip_version": env.get("PIP_VERSION_TEXT"),
+          }
+          with open(os.path.join(env["EVIDENCE_DIR"], "context.json"), "w", encoding="utf-8") as fh:
+              json.dump(ctx, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
+          : > "$EVIDENCE_DIR/sources.txt"
+          fail() { echo "SOURCE VERIFICATION FAILED: $1" | tee -a "$EVIDENCE_DIR/sources.txt" >&2; exit 1; }
+          check_root() {
+            local label="$1" root="$2" want_sha="$3" want_tree="$4" got
+            got="$(git -C "$root" rev-parse HEAD)"
+            [ "$got" = "$want_sha" ] || fail "$label HEAD is $got, expected $want_sha"
+            got="$(git -C "$root" rev-parse 'HEAD^{tree}')"
+            [ "$got" = "$want_tree" ] || fail "$label tree is $got, expected $want_tree"
+            got="$(git -C "$root" rev-parse --show-toplevel)"
+            [ "$got" = "$root" ] || fail "$label toplevel is $got, expected $root"
+            local listing others
+            listing="$(git -C "$root" ls-files -v)"
+            [ -n "$listing" ] || fail "$label has no tracked files"
+            others="$(printf '%s\n' "$listing" | grep -v '^H ' || true)"
+            [ -z "$others" ] || fail "$label has tracked files with a tag other than H"
+            others="$(git -C "$root" status --porcelain --ignored=matching --untracked-files=all)"
+            [ -z "$others" ] || fail "$label working tree is not clean (including ignored and untracked files)"
+            {
+              echo "$label"
+              echo "  root: $root"
+              echo "  sha: $want_sha"
+              echo "  tree: $want_tree"
+              echo "  checks passed: head==pin, tree==pin, toplevel==root, ls-files all H, status clean (ignored and untracked included)"
+            } >> "$EVIDENCE_DIR/sources.txt"
+          }
+          check_root action-manifest "$COGNOUS_C1_ACTION_MANIFEST_ROOT" "$C1_AM_SHA" "$C1_AM_TREE"
+          check_root control-plane "$COGNOUS_C1_CONTROL_PLANE_ROOT" "$C1_CP_SHA" "$C1_CP_TREE"
+      - name: Focused C1 suite (full oracle; any failure or skip fails the job)
+        id: tests
+        if: steps.verify.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c1-evidence
+        shell: bash
+        run: |
+          set -u -o pipefail
+          set +e  # an explicit `shell: bash` runs as `bash -eo pipefail`: record the real exit code and evidence BEFORE failing
+          mkdir -p "$EVIDENCE_DIR"
+          TESTS_CMD=(python -I -B .github/scripts/run_unittest_no_skips.py tests/manual_contract/c1 --require-env COGNOUS_C1_ACTION_MANIFEST_ROOT --require-env COGNOUS_C1_CONTROL_PLANE_ROOT)
+          "${TESTS_CMD[@]}" 2>&1 | tee "$EVIDENCE_DIR/tests.log"
+          TESTS_RC="${PIPESTATUS[0]}"
+          TESTS_EXPECTED=15
+          if [ "$TESTS_RC" -eq 0 ] && ! grep -q "^Ran ${TESTS_EXPECTED} tests in " "$EVIDENCE_DIR/tests.log"; then
+            echo "UNEXPECTED TEST COUNT: the frozen C1 suite has exactly ${TESTS_EXPECTED} tests" | tee -a "$EVIDENCE_DIR/tests.log" >&2
+            TESTS_RC=1
+          fi
+          TESTS_COMMAND="${TESTS_CMD[*]}"
+          export TESTS_COMMAND TESTS_RC TESTS_EXPECTED
+          python3 -I -B - <<'PY'
+          import json, os
+          rc = int(os.environ["TESTS_RC"])
+          doc = {"command": os.environ["TESTS_COMMAND"], "exit_code": rc, "expected_tests": int(os.environ["TESTS_EXPECTED"]),
+                 "outcome": "PASSED" if rc == 0 else "FAILED"}
+          with open(os.path.join(os.environ["EVIDENCE_DIR"], "tests.json"), "w", encoding="utf-8") as fh:
+              json.dump(doc, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
+          exit "$TESTS_RC"
+      - name: Run the selected C1 case through the adapter
+        id: case
+        if: always() && steps.verify.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c1-evidence
+        shell: bash
+        run: |
+          set -u -o pipefail
+          set +e  # see the tests step: keep the evidence copy and the real exit code under the runner's -e
+          python -I -B tests/manual_contract/real_c1.py --case "$CASE_ID" --out "$EVIDENCE_DIR/result.json" --evidence-out "$EVIDENCE_DIR/evidence.json"
+          CASE_RC=$?
+          export CASE_RC
+          # Keep the adapter's own destination and record files: the independently observed effect state, whatever the outcome.
+          python3 -I -B - <<'PY'
+          import json, os, shutil
+          directory = os.environ["EVIDENCE_DIR"]
+          try:
+              with open(os.path.join(directory, "evidence.json"), encoding="utf-8") as fh:
+                  workdir = json.load(fh).get("workdir")
+          except (OSError, ValueError, AttributeError):
+              workdir = None
+          for name in ("destination.json", "records.json"):
+              source = os.path.join(workdir, name) if isinstance(workdir, str) else None
+              if source and os.path.isfile(source):
+                  shutil.copyfile(source, os.path.join(directory, "native-" + name))
+          PY
+          exit "$CASE_RC"
+      - name: Check the produced artifacts against the frozen oracle
+        id: oracle
+        if: always() && steps.case.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c1-evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -I -B - <<'PY'
+          import hashlib, json, os, sys
+
+          # Frozen-oracle check for the C1 real-edge artifacts (fail closed; stdlib only; reads env vars and files only).
+          SCHEMA_R = "cognous.orchestrator.manual-contract-result/0-candidate"
+          SCHEMA_E = "cognous.orchestrator.c1-evidence/0-candidate"
+          FIXTURE = "789ad39596b9e1ef84a726a671883e1cb6b83343da3a31db0a1120906d68c074"
+          MANIFEST_D = "sha256:4d1ad6c96bc242c63998231b4df3ad7c86dc2e5e59cdae63afe7bff86e60f6ac"
+          PROPOSAL_D = "sha256:becaea3f10b5edf56ea181e0cd62793ebe8262238f948fb72dc5c0389c7f8c53"
+          NOW = "2026-10-05T19:00:00+00:00"
+          ALLOWED_NATIVE = {"binding", "decided_at", "decision_id", "effect_id", "operation_horizon", "reasons", "resolution_inputs",
+                            "result", "time_source", "evaluated_at", "recorded_at", "reason_vocabulary_version", "reopen_conditions",
+                            "rule_identity", "selection_evidence"}
+          CASES = {
+              "c1_manifest_to_cp_authorized": {
+                  "label": "A", "outcome": "ACCEPTED", "result": "authorized", "reasons": [],
+                  "effect_id": "sha256:4e5844d6d53ab6f8694e9c76cb6238ec4110137dd35de73cb0b22963961ecde8",
+                  "authority_fixture": {"mode": None},
+              },
+              "c1_manifest_to_cp_no_authority": {
+                  "label": "B", "outcome": "REFUSED", "result": "hold", "reasons": ["authority_context_missing"],
+                  "effect_id": "sha256:d0e4afe09cdf3a52aa3b530b822411b1dff35031973660fbbf9b707415f18465",
+                  "authority_fixture": {"withheld": True},
+              },
+          }
+          AUTH_SHA_A = "87a231dda0756bf7e66a72f13e4fd655830640baa955e1b79b9654e1fd69ba32"
+
+          checks = []  # (name, ok, detail)
+
+
+          class _Missing:
+              def __repr__(self):
+                  return "<missing>"
+
+
+          _MISSING = _Missing()
+
+
+          def canon(v):  # the sentinel serialises to a value no real artifact contains
+              return json.dumps(v, sort_keys=True, ensure_ascii=True, default=lambda o: "<missing>" if o is _MISSING else repr(o))
+
+
+          def rec(name, ok, detail=""):
+              checks.append((str(name), bool(ok), str(detail)))
+
+
+          def eq(name, got, want):
+              # type-strict comparison (True != 1, 1 != 1.0, "x" != ["x"])
+              try:
+                  ok = canon(got) == canon(want)
+              except Exception:
+                  ok = False
+              rec(name, ok, "" if ok else "got %s, want %s" % (short(got), short(want)))
+
+
+          def short(v):
+              try:
+                  s = canon(v)
+              except Exception:
+                  s = repr(v)
+              return s if len(s) <= 120 else s[:117] + "..."
+
+
+          def nodup(pairs):
+              d = {}
+              for k, v in pairs:
+                  if k in d:
+                      raise ValueError("duplicate key %r" % k)
+                  d[k] = v
+              return d
+
+
+          def bad_const(c):
+              raise ValueError("non-finite number %s" % c)
+
+
+          def load(path, label):
+              """Return (bytes, parsed-object) or (None, None) after recording a failed check."""
+              try:
+                  with open(path, "rb") as fh:
+                      raw = fh.read()
+              except Exception as e:
+                  rec("%s readable" % label, False, "%s: %s" % (type(e).__name__, e))
+                  return None, None
+              try:
+                  obj = json.loads(raw.decode("utf-8"), object_pairs_hook=nodup, parse_constant=bad_const)
+              except Exception as e:
+                  rec("%s valid JSON" % label, False, "%s: %s" % (type(e).__name__, e))
+                  return raw, None
+              if not isinstance(obj, dict):
+                  rec("%s is a JSON object" % label, False, "got %s" % type(obj).__name__)
+                  return raw, None
+              rec("%s readable, valid JSON object" % label, True)
+              return raw, obj
+
+
+          def sub(d, *path):
+              """Walk dict keys; missing/wrong container => a sentinel that never equals an expected literal."""
+              cur = d
+              for p in path:
+                  if isinstance(cur, dict) and p in cur:
+                      cur = cur[p]
+                  else:
+                      return _MISSING
+              return cur
+
+
+          def find_inputs(native, itype):
+              ris = sub(native, "resolution_inputs")
+              if not isinstance(ris, list):
+                  return []
+              return [x for x in ris if isinstance(x, dict) and x.get("input_type") == itype]
+
+
+          def run():
+              case_id = os.environ.get("CASE_ID", "")
+              ev_dir = os.environ.get("EVIDENCE_DIR", "")
+              gh_sha = os.environ.get("GITHUB_SHA", "")
+              pins = {k: os.environ.get(k, "") for k in ("C1_AM_SHA", "C1_AM_TREE", "C1_CP_SHA", "C1_CP_TREE")}
+
+              spec = CASES.get(case_id)
+              rec("case id is one of the two frozen C1 cases", spec is not None, "CASE_ID=%s" % short(case_id))
+              rec("EVIDENCE_DIR is set and a directory", bool(ev_dir) and os.path.isdir(ev_dir), "EVIDENCE_DIR=%s" % short(ev_dir))
+              rec("GITHUB_SHA is a 40-hex string", len(gh_sha) == 40 and all(c in "0123456789abcdef" for c in gh_sha), short(gh_sha))
+              for k, v in pins.items():
+                  rec("pin %s is a 40-hex string" % k, len(v) == 40 and all(c in "0123456789abcdef" for c in v), short(v))
+              if spec is None or not ev_dir or not os.path.isdir(ev_dir):
+                  return ev_dir
+              A = spec["label"] == "A"
+
+              rraw, r = load(os.path.join(ev_dir, "result.json"), "result.json")
+              _, e = load(os.path.join(ev_dir, "evidence.json"), "evidence.json")
+              if r is None or e is None:
+                  # nothing can be compared; keep every comparison visible as a failure rather than silently skipping
+                  rec("all frozen comparisons (result.json and evidence.json both required)", False, "not performed: a required file is unusable")
+                  return ev_dir
+
+              # --- runner result (result.json) ---
+              eq("result.schema", sub(r, "schema"), SCHEMA_R)
+              eq("result.case_id == CASE_ID", sub(r, "case_id"), case_id)
+              eq("result.status == PASS (necessary, never sufficient)", sub(r, "status"), "PASS")
+              eq("result.invocation_status == INVOKED", sub(r, "invocation_status"), "INVOKED")
+              eq("result.expected_outcome (runner admission label)", sub(r, "expected_outcome"), spec["outcome"])
+              eq("result.observed_outcome (runner admission label)", sub(r, "observed_outcome"), spec["outcome"])
+              eq("result.fixture_sha256", sub(r, "fixture_sha256"), FIXTURE)
+              eq("result.producer_output_sha256", sub(r, "producer_output_sha256"), FIXTURE)
+              eq("result.consumer_input_sha256", sub(r, "consumer_input_sha256"), FIXTURE)
+              eq("result.consumer_reported_input_sha256 is null", sub(r, "consumer_reported_input_sha256"), None)
+              eq("result.consumer_error is null (no invocation error)", sub(r, "consumer_error"), None)
+              eq("result.effect_status is the runner constant NOT_ATTEMPTED (not an observation)", sub(r, "effect_status"), "NOT_ATTEMPTED")
+              eq("result.effect_mode", sub(r, "effect_mode"), "synthetic_non_effecting")
+
+              # --- native response: exactly the CP RuntimeDecision dump ---
+              n = sub(r, "native_response")
+              rec("result.native_response is an object", isinstance(n, dict), short(n))
+              if not isinstance(n, dict):
+                  n = {}
+              extra = sorted(set(n) - ALLOWED_NATIVE)
+              rec("native_response has no key beyond the CP RuntimeDecision dump", not extra, "extra keys: %s" % extra if extra else "")
+              for k in ("binding", "decided_at", "decision_id", "effect_id", "operation_horizon", "reasons", "resolution_inputs", "result", "time_source"):
+                  rec("native_response has required key %s" % k, k in n)
+              did = n.get("decision_id")
+              rec("native_response.decision_id is a non-empty string (value not compared)", isinstance(did, str) and did.strip() != "", "type %s" % type(did).__name__)
+              eq("native_response.result", sub(n, "result"), spec["result"])
+              eq("native_response.reasons", sub(n, "reasons"), spec["reasons"])
+              eq("native_response.time_source", sub(n, "time_source"), "test_override")
+              eq("native_response.decided_at", sub(n, "decided_at"), NOW)
+              eq("native_response.effect_id", sub(n, "effect_id"), spec["effect_id"])
+              eq("native_response.operation_horizon.proposal_commitment", sub(n, "operation_horizon", "proposal_commitment"), PROPOSAL_D)
+              if A:
+                  eq("binding.generation", sub(n, "binding", "generation"), "bounded-authorization-effect/0.3-strict-tenant")
+                  eq("binding.tenant_id", sub(n, "binding", "tenant_id"), "tenant-alpha")
+                  eq("binding.grant_id", sub(n, "binding", "grant_id"), "urn:cognous:grant:routine-1")
+                  eq("binding.manifest_digest", sub(n, "binding", "manifest_digest"), MANIFEST_D)
+                  eq("binding.proposal_commitment", sub(n, "binding", "proposal_commitment"), PROPOSAL_D)
+              else:
+                  eq("native_response.binding is null", sub(n, "binding"), None)
+              mi = find_inputs(n, "manifest")
+              rec("resolution_inputs has exactly one manifest entry", len(mi) == 1, "found %d" % len(mi))
+              m0 = mi[0] if mi else {}
+              eq("manifest input.record_commitment == manifest digest", sub(m0, "record_commitment"), MANIFEST_D)
+              eq("manifest input.missing is false", sub(m0, "missing"), False)
+              if not A:  # case B only: the authority context was withheld, which the native resolution inputs must record
+                  ai = find_inputs(n, "authority_context")
+                  rec("resolution_inputs has exactly one authority_context entry", len(ai) == 1, "found %d" % len(ai))
+                  eq("authority_context input.missing is true", sub(ai[0] if ai else {}, "missing"), True)
+              try:
+                  nsha = hashlib.sha256(json.dumps(n, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest()
+                  eq("result.native_response_sha256 == sha256(compact sorted native_response)", sub(r, "native_response_sha256"), nsha)
+              except Exception as ex:
+                  rec("result.native_response_sha256 recomputable", False, type(ex).__name__)
+
+              # --- adapter evidence (evidence.json) ---
+              eq("evidence.schema", sub(e, "schema"), SCHEMA_E)
+              eq("evidence.case_id == CASE_ID", sub(e, "case_id"), case_id)
+              eq("evidence.mode", sub(e, "mode"), "frozen")
+              eq("evidence.frozen_fixture", sub(e, "frozen_fixture"), True)
+              eq("evidence.overridden_inputs", sub(e, "overridden_inputs"), [])
+              eq("evidence.gate.passed", sub(e, "gate", "passed"), True)
+              eq("evidence.gate.failure", sub(e, "gate", "failure"), None)
+              eq("evidence.consumer_invocations", sub(e, "consumer_invocations"), 1)
+              eq("evidence.destination.effects read as {}", sub(e, "destination", "effects"), {})
+              eq("evidence.destination.effect_count (independent, from destination.json) == 0", sub(e, "destination", "effect_count"), 0)
+              eq("evidence.clock", sub(e, "clock"), {"now": NOW, "allow_test_time": True, "developer_only_override": True})
+              lim = {"status": "DEVELOPMENT_ONLY_FIXTURE_SCOPED", "authority_basis": "SYNTHETIC_UNAUTHENTICATED_RESOLVER",
+                     "decision_semantics_only": True, "not_institutional_authority": True, "not_independent_qualification": True,
+                     "not_general_interoperability": True, "hub_280_digest_basis": "OPEN", "effect_executed": False}
+              for k, v in lim.items():
+                  eq("evidence.limits.%s" % k, sub(e, "limits", k), v)
+              eq("evidence.limits.effect_executed is False (decision is not an executed effect)", sub(e, "limits", "effect_executed"), False)
+              eq("evidence.digests.am_manifest_digest", sub(e, "digests", "am_manifest_digest"), MANIFEST_D)
+              eq("evidence.digests.cp_manifest_commitment", sub(e, "digests", "cp_manifest_commitment"), MANIFEST_D)
+              eq("evidence.digests.am_proposal_digest", sub(e, "digests", "am_proposal_digest"), PROPOSAL_D)
+              eq("evidence.digests.proposal_mismatches", sub(e, "digests", "proposal_mismatches"), [])
+              for key, sp, tp, lab in (("manifest", "C1_AM_SHA", "C1_AM_TREE", "AM"), ("control_plane", "C1_CP_SHA", "C1_CP_TREE", "CP")):
+                  eq("evidence.sources.%s.observed_head == %s pin" % (key, lab), sub(e, "sources", key, "observed_head"), pins[sp])
+                  eq("evidence.sources.%s.observed_tree == %s tree pin" % (key, lab), sub(e, "sources", key, "observed_tree"), pins[tp])
+                  eq("evidence.sources.%s.pinned_sha == %s pin" % (key, lab), sub(e, "sources", key, "pinned_sha"), pins[sp])
+                  eq("evidence.sources.%s.pinned_tree == %s tree pin" % (key, lab), sub(e, "sources", key, "pinned_tree"), pins[tp])
+                  for flag in ("tracked_files_clean", "ls_files_all_H", "status_ignored_clean"):
+                      eq("evidence.sources.%s.%s" % (key, flag), sub(e, "sources", key, flag), True)
+                  im = sub(e, "sources", key, "imported_modules")
+                  rec("evidence.sources.%s.imported_modules non-empty" % key, isinstance(im, dict) and len(im) > 0, short(im))
+              # --- native destination and records copies (evidence.workdir is informational only, never trusted) ---
+              _, nd = load(os.path.join(ev_dir, "native-destination.json"), "native-destination.json")
+              if nd is not None:
+                  eq("native-destination.effects == {} (independently observed)", sub(nd, "effects"), {})
+                  eq("native-destination.grant_effect_counts == {}", sub(nd, "grant_effect_counts"), {})
+                  eq("native-destination.effects == evidence.destination.effects", sub(nd, "effects"), sub(e, "destination", "effects"))
+              else:
+                  rec("native-destination comparisons", False, "not performed: file unusable")
+              _, nrec = load(os.path.join(ev_dir, "native-records.json"), "native-records.json")
+              if nrec is not None:
+                  decs = sub(nrec, "decisions")
+                  decs = decs if isinstance(decs, list) else []
+                  want = n.get("decision_id")
+                  hit = [x for x in decs if isinstance(x, dict) and isinstance(want, str) and want != "" and x.get("decision_id") == want]
+                  rec("native-records.decisions has an entry whose decision_id == native_response.decision_id", len(hit) >= 1, "decisions: %d, matches: %d" % (len(decs), len(hit)))
+                  rid = sub(nrec, "run_id")
+                  rec("native-records.run_id is a non-empty string", isinstance(rid, str) and rid.strip() != "", short(rid))
+              else:
+                  rec("native-records comparisons", False, "not performed: file unusable")
+              eq("evidence.fixtures.proposal.sha256", sub(e, "fixtures", "proposal", "sha256"), "1033c73e7dbe677cc71520711d3aaacb182952e5c12c8eaa489f24be0014cfe2")
+              eq("evidence.fixtures.resolver_state.sha256", sub(e, "fixtures", "resolver_state", "sha256"), "075fb26f316311be9f3d4b3932e60191012f6370eb709b5b893f3a0c2d4913bd")
+              eq("evidence.fixtures.manifest_file.sha256", sub(e, "fixtures", "manifest_file", "sha256"), FIXTURE)
+              if A:
+                  eq("evidence.fixtures.authority_context.sha256", sub(e, "fixtures", "authority_context", "sha256"), AUTH_SHA_A)
+              else:
+                  eq("evidence.fixtures.authority_context", sub(e, "fixtures", "authority_context"), {"withheld": True})
+              if rraw is None:
+                  rec("evidence.runner_result_sha256 == sha256(result.json bytes)", False, "result.json bytes unavailable")
+              else:
+                  eq("evidence.runner_result_sha256 == sha256(result.json bytes)", sub(e, "runner_result_sha256"), hashlib.sha256(rraw).hexdigest())
+              eq("evidence.harness.orchestrator_head == GITHUB_SHA", sub(e, "harness", "orchestrator_head"), gh_sha)
+              return ev_dir
+
+
+          def main():
+              ev_dir = ""
+              try:
+                  ev_dir = run()
+              except BaseException as ex:  # fail closed: an unexpected error is a failed check, never a skipped one
+                  rec("oracle check completed without an internal error", False, "%s: %s" % (type(ex).__name__, ex))
+              failed = [c for c in checks if not c[1]]
+              lines = ["C1 frozen-oracle check: case=%s" % short(os.environ.get("CASE_ID", ""))]
+              for name, ok, detail in checks:
+                  lines.append("%s  %s%s" % ("OK  " if ok else "FAIL", name, ("  -- " + detail) if (detail and not ok) else ""))
+              lines.append("RESULT: %s (%d checks, %d failed)" % ("FAIL" if failed or not checks else "PASS", len(checks), len(failed)))
+              text = "\n".join(lines) + "\n"
+              out = os.path.join(ev_dir or os.environ.get("EVIDENCE_DIR", ""), "oracle.txt")
+              try:
+                  with open(out, "w", encoding="utf-8") as fh:
+                      fh.write(text)
+              except Exception as ex:
+                  text += "could not write oracle.txt: %s\n" % type(ex).__name__
+                  failed = failed or [("write", False, "")]
+              sys.stdout.write(text)
+              return 1 if (failed or not checks) else 0
+
+
+          if __name__ == "__main__":
+              sys.exit(main())
+          PY
+      - name: Job summary
+        if: always()
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c1-evidence
+          STEP_VERIFY: ${{ steps.verify.outcome }}
+          STEP_TESTS: ${{ steps.tests.outcome }}
+          STEP_CASE: ${{ steps.case.outcome }}
+          STEP_ORACLE: ${{ steps.oracle.outcome }}
+        shell: bash
+        run: |
+          python3 -I -B - <<'PY'
+          import json, os, re, sys
+
+          # C1 real-edge job summary. Never raises: every read and every section is guarded; hostile text is neutralised.
+          MAXREAD = 4 * 1024 * 1024
+          CTRL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
+
+
+          def clean(value, limit=200):
+              s = CTRL.sub(" ", str(value))
+              s = " ".join(s.split()).replace("`", "'").replace("|", "/").replace("::", ": :")
+              s = s.replace("<", "&lt;").replace(">", "&gt;")
+              return s[:limit]
+
+
+          def cell(value, limit=200):
+              # same contract as cell() in manual-contract-edge.yml (backticks, pipes, whitespace/newlines, 200 chars) plus control
+              # characters, workflow-command "::" prefixes and HTML; always a code span, so markdown inside is inert.
+              return "`" + clean(value, limit) + "`"
+
+
+          def readbytes(name):
+              d = os.environ.get("EVIDENCE_DIR", "")
+              with open(os.path.join(d, name), "rb") as fh:
+                  return fh.read(MAXREAD)
+
+
+          def readjson(name):
+              """(obj, status) with status in ok|missing|unreadable."""
+              try:
+                  raw = readbytes(name)
+              except FileNotFoundError:
+                  return None, "missing"
+              except Exception:
+                  return None, "unreadable"
+              try:
+                  obj = json.loads(raw.decode("utf-8"))
+              except Exception:
+                  return None, "unreadable"
+              return (obj, "ok") if isinstance(obj, dict) else (None, "unreadable")
+
+
+          def readtext(name):
+              try:
+                  return readbytes(name).decode("utf-8", "replace"), "ok"
+              except FileNotFoundError:
+                  return None, "missing"
+              except Exception:
+                  return None, "unreadable"
+
+
+          def dig(d, *path, default=None):
+              cur = d
+              for p in path:
+                  if isinstance(cur, dict) and p in cur:
+                      cur = cur[p]
+                  else:
+                      return default
+              return cur
+
+
+          def val(v):
+              return cell("(absent)") if v is None else cell(v)
+
+
+          def section(lines, title, fn):
+              try:
+                  fn(lines)
+              except BaseException as e:  # a rendering problem is reported as a line, never raised
+                  lines.append("_%s: could not be rendered (%s)._" % (clean(title), clean(type(e).__name__)))
+                  lines.append("")
+
+
+          def fenced(lines, texts):
+              lines.append("```text")
+              for t in texts:
+                  lines.append(clean(t, 200).replace("```", "'''"))
+              lines.append("```")
+              lines.append("")
+
+
+          def build():
+              env = os.environ.get
+              case_id = env("CASE_ID", "")
+              steps = [("Verify the exact sources", env("STEP_VERIFY", "")), ("Focused C1 suite", env("STEP_TESTS", "")),
+                       ("Run the case through the adapter", env("STEP_CASE", "")), ("Frozen-oracle check", env("STEP_ORACLE", ""))]
+              res, res_s = readjson("result.json")
+              ev, ev_s = readjson("evidence.json")
+              ctx, ctx_s = readjson("context.json")
+              tj, tj_s = readjson("tests.json")
+              orc, orc_s = readtext("oracle.txt")
+              problems = []
+              for name, o in steps:
+                  if o != "success":
+                      problems.append("%s: %s" % (name, o if o else "no outcome recorded"))
+              orc_pass = False
+              if orc is not None:
+                  last = [l for l in orc.splitlines() if l.startswith("RESULT:")]
+                  orc_pass = bool(last) and last[-1].startswith("RESULT: PASS ") and not any(l.startswith("FAIL") for l in orc.splitlines())
+                  if not orc_pass:
+                      problems.append("oracle.txt does not report RESULT: PASS")
+              else:
+                  problems.append("oracle.txt is %s" % orc_s)
+              if res_s != "ok":
+                  problems.append("result.json is %s" % res_s)
+              if ev_s != "ok":
+                  problems.append("evidence.json is %s" % ev_s)
+
+              lines = []
+              if problems:
+                  lines += ["### C1 real edge: NOT PASSED", "",
+                            "**The job did not succeed. Do not read any value below as a passing result.** Problems: " +
+                            "; ".join(cell(p, 120) for p in problems), ""]
+              else:
+                  lines += ["### C1 real edge: all four gates succeeded (development-only, not qualification)", "",
+                            "Sources verified, focused suite green, case run and frozen oracle matched. This is a fixture-scoped developer check; see the boundary section below.", ""]
+              lines += ["Case: " + cell(case_id), ""]
+
+              def s_steps(L):
+                  L += ["| Step | Outcome |", "|---|---|"] + ["| %s | %s |" % (n, cell(o if o else "(not recorded)")) for n, o in steps] + [""]
+              section(lines, "step outcomes", s_steps)
+
+              def s_tests(L):
+                  outcome = dig(tj, "outcome") if tj_s == "ok" else None
+                  code = dig(tj, "exit_code") if tj_s == "ok" else None
+                  txt, st = readtext("tests.log")
+                  count = None
+                  if txt:
+                      m = re.findall(r"^Ran (\d+) tests? in ", txt, re.M)
+                      count = m[-1] if m else None
+                  L.append("Focused suite: outcome %s (tests.json %s), exit code %s, tests run %s (parsed from tests.log, %s)." % (
+                      cell(outcome if outcome is not None else "(unknown)"), cell(tj_s), cell(code if code is not None else "(unknown)"),
+                      cell(count if count is not None else "(unknown)"), cell(st)))
+                  L.append("")
+                  if txt:
+                      L.append("Last lines of tests.log:")
+                      L.append("")
+                      fenced(L, txt.splitlines()[-12:])
+              section(lines, "focused suite", s_tests)
+
+              def s_sources(L):
+                  L.append("Sources observed by the adapter (evidence.json " + cell(ev_s) + "):")
+                  L.append("")
+                  L += ["| Component | Head SHA | Tree | Clean |", "|---|---|---|---|"]
+                  for key, lab in (("manifest", "Action Manifest"), ("control_plane", "Control Plane")):
+                      src = dig(ev, "sources", key, default={})
+                      clean_ok = all(dig(src, f) is True for f in ("tracked_files_clean", "ls_files_all_H", "status_ignored_clean"))
+                      L.append("| %s | %s | %s | %s |" % (lab, val(dig(src, "observed_head")), val(dig(src, "observed_tree")), cell("yes" if clean_ok else "NOT CONFIRMED")))
+                  L.append("")
+                  txt, st = readtext("sources.txt")
+                  if txt:
+                      L.append("sources.txt (verify step):")
+                      L.append("")
+                      fenced(L, txt.splitlines()[:24])
+                  else:
+                      L += ["sources.txt: " + cell(st), ""]
+              section(lines, "sources", s_sources)
+
+              def s_result(L):
+                  nr = dig(res, "native_response", default={})
+                  binding = dig(nr, "binding")
+                  if isinstance(binding, dict):
+                      bstate = "present (generation %s, tenant %s, grant %s)" % (
+                          clean(dig(binding, "generation")), clean(dig(binding, "tenant_id")), clean(dig(binding, "grant_id")))
+                  elif binding is None and isinstance(nr, dict) and "binding" in nr:
+                      bstate = "null (no binding issued)"
+                  else:
+                      bstate = "(absent)"
+                  reasons = dig(nr, "reasons")
+                  rows = (
+                      ("Manifest file sha256 (frozen fixture)", dig(ev, "fixtures", "manifest_file", "sha256")),
+                      ("Manifest digest (Action Manifest)", dig(ev, "digests", "am_manifest_digest")),
+                      ("Manifest commitment (Control Plane)", dig(ev, "digests", "cp_manifest_commitment")),
+                      ("Proposal digest (Action Manifest)", dig(ev, "digests", "am_proposal_digest")),
+                      ("Proposal digest mismatches", dig(ev, "digests", "proposal_mismatches")),
+                      ("Native result (Control Plane decision)", dig(nr, "result")),
+                      ("Native reasons", reasons),
+                      ("Runner status", dig(res, "status")),
+                      ("Runner admission label, expected", dig(res, "expected_outcome")),
+                      ("Runner admission label, observed", dig(res, "observed_outcome")),
+                      ("Invocation status", dig(res, "invocation_status")),
+                      ("Binding state", bstate),
+                      ("Time source", dig(nr, "time_source")),
+                      ("Decision time", dig(nr, "decided_at")),
+                      ("Destination effect count (read from destination.json by the adapter)", dig(ev, "destination", "effect_count")),
+                      ("Runner constant effect_status (not an observation)", dig(res, "effect_status")),
+                      ("limits.effect_executed", dig(ev, "limits", "effect_executed")),
+                      ("limits.authority_basis", dig(ev, "limits", "authority_basis")),
+                      ("limits.hub_280_digest_basis", dig(ev, "limits", "hub_280_digest_basis")),
+                      ("Mode", dig(ev, "mode")),
+                      ("Orchestrator SHA (evidence harness)", dig(ev, "harness", "orchestrator_head")),
+                      ("Orchestrator SHA (workflow context)", dig(ctx, "github_sha", default=env("GITHUB_SHA"))),
+                      ("Run id", dig(ctx, "github_run_id", default=env("GITHUB_RUN_ID"))),
+                      ("Dispatched ref (dispatch only from main at the reviewed SHA)", dig(ctx, "github_ref", default=env("GITHUB_REF"))),
+                  )
+                  L += ["| Field | Value |", "|---|---|"] + ["| %s | %s |" % (clean(k), val(v)) for k, v in rows] + [""]
+                  L.append("result.json: %s; evidence.json: %s; context.json: %s." % (cell(res_s), cell(ev_s), cell(ctx_s)))
+                  L.append("")
+              section(lines, "result and evidence", s_result)
+
+              def s_oracle(L):
+                  if orc is None:
+                      L += ["Oracle: oracle.txt is " + cell(orc_s) + " (the oracle check did not produce output).", ""]
+                      return
+                  ol = orc.splitlines()
+                  fails = [l for l in ol if l.startswith("FAIL")]
+                  last = [l for l in ol if l.startswith("RESULT:")]
+                  L.append("Oracle: " + cell(last[-1] if last else "(no RESULT line)") + "; failed checks: " + cell(len(fails)))
+                  L.append("")
+                  if fails:
+                      fenced(L, fails[:15])
+              section(lines, "oracle", s_oracle)
+
+              lines += [
+                  "#### What this does and does not show", "",
+                  "- **Runner labels vs native decisions.** ACCEPTED and REFUSED are the runner's admission labels for the consumer's reply. The native decision is the Control Plane's own `authorized` or `hold`. They are different vocabularies; a matching pair is an expectation met, nothing more.",
+                  "- **`authorized` is a decision.** It is not an executed authorization and not an effect. The destination is synthetic and `limits.effect_executed` must be false.",
+                  "- **Refusal vs invocation error.** A refusal (native `hold`, runner REFUSED) is a normal, declared outcome. An invocation error (observed ERROR, a failed step, a non-zero exit) is a failure to run and is never a refusal.",
+                  "- **BLOCKED vs FAIL.** BLOCKED means the producer gate failed and the consumer was NOT_INVOKED. FAIL means the consumer ran and the expectation was not met.",
+                  "- **Authority.** The authority is a synthetic, unauthenticated resolver fixture. It is not institutional authority.",
+                  "- **Effect count.** The runner's effect_status NOT_ATTEMPTED is a constant. The destination effect count is the separate, independently observed figure read from destination.json.",
+                  "- **Scope.** Hub #280 (digest basis) is OPEN; only the fully populated frozen Manifest 1.1 is supported. Development-only and fixture-scoped: not independent qualification, not release evidence, not general interoperability, not production.",
+                  "",
+              ]
+              return lines
+
+
+          def main():
+              try:
+                  lines = build()
+              except BaseException as e:
+                  lines = ["### C1 real edge: NOT PASSED", "", "The summary renderer failed (%s); nothing is reported as passing. See the step log and the artifact." % clean(type(e).__name__), ""]
+              text = "\n".join(lines) + "\n"
+              try:
+                  with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+                      out.write(text)
+              except BaseException:
+                  try:
+                      sys.stdout.write(text)
+                  except BaseException:
+                      pass
+              return 0
+
+
+          if __name__ == "__main__":
+              try:
+                  main()
+              except BaseException:
+                  pass
+              sys.exit(0)
+          PY
+      - name: Keep the C1 evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: c1-evidence-${{ inputs.case_id }}
+          path: ${{ runner.temp }}/c1-evidence/
           if-no-files-found: warn

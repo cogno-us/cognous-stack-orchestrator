@@ -83,7 +83,7 @@ LIMITS = {  # contract section 9, L1-L19, carried verbatim in substance; none ma
     "L13": "Tenant is verified by Replay only, not by the Pack (the Pack has no tenant field).",
     "L14": "Replay, redelivery and substitution are not defended.",
     "L15": "Hub #280 digest-basis divergence is OPEN.",
-    "L16": "The Pack's Replay pin is a PROVISIONAL DEVELOPMENT PIN, UNQUALIFIED, and not the Pack-selected pair.",
+    "L16": "The Pack's Replay pin (its CP-2 row) is a PROVISIONAL DEVELOPMENT PIN, UNQUALIFIED, and not the Pack-selected pair.",
     "L17": "Developer-scope only: not independently qualified, not production, no certification or clearance (HOLD).",
     "L18": "Engineering Constitution adoption is UNVERIFIED.",
     "L19": "The Pack carries no hash of the raw Control Plane record: retained_sources holds only the manifest and the reconstruction bundle; "
@@ -449,6 +449,7 @@ def _p1_from(ctx):
     pack_path = ctx["work"] / "evidence-pack.json"
     P["pack_loader"].dump_evidence_pack(pack, pack_path)
     again, _ = _import_pack(P, ctx["manifest"], bundle_obj)
+    rb0_signed = ((pd.get("replay_bundles") or [{}])[0]).get("signed")
     ev["native_pack"] = {"outcome": "IMPORTED", "pack_id": pd.get("pack_id"), "pack_version": pd.get("pack_version"),
                          "review_status": pd.get("review_status"), "validation": view, "pack_path": str(pack_path),
                          "pack_file_sha256": _sha(pack_path.read_bytes()), "pack_file_sha256_of": "file_bytes_as_written_by_native_dump",
@@ -460,7 +461,7 @@ def _p1_from(ctx):
                          "replay_semantics": T.get("replay_semantics"), "reconstruction_completeness": T.get("reconstruction_completeness"),
                          "replay_bundles": pd.get("replay_bundles"), "input_artifacts": T.get("input_artifacts"),
                          "unresolved_issues": T.get("unresolved_issues"), "conversion_losses": T.get("conversion_losses"),
-                         "retained_source_scope": T.get("retained_source_scope"), "pack_signed": pd.get("signed")}
+                         "retained_source_scope": T.get("retained_source_scope"), "pack_signed": rb0_signed}
     retained = (T.get("retained_sources") or {})
     decs = [r for r in (retained.get("reconstruction_bundle") or {}).get("records", []) if r.get("record_type") == "runtime_decision"]
     dd = (decs[0].get("data") if len(decs) == 1 else None) or {}
@@ -604,10 +605,13 @@ def run_all(roots=None, workdir=None):
                                                       "to": "reconstruction_complete, reports complete, findings cleared",
                                                       "variant": "status_and_reports_forged_complete"}, ORACLE["n3_message"])
         n3a["variant_b"] = n3b
-        n3a["status"] = "PASS" if n3a["status"] == "PASS" and n3b["status"] == "PASS" else "FAIL"
+        both = n3a["status"] == "PASS" and n3b["status"] == "PASS"
+        n3a["status"] = "PASS" if both else "FAIL"
+        n3a["outcome"] = "REFUSED_NATIVE" if both else "FAIL"
         out[CASE_N3] = n3a
         out[CASE_N5] = _negative(CASE_N5, ctx, p1, _mut_n5, {"field_path": "producer_profiles[0].revision", "from": PINS["control_plane"]["sha"],
                                                               "to": ORACLE["n5_wrong_revision"]}, ORACLE["n5_message"])
+        _recheck(ctx["measured"])  # the whole run, early returns included, must leave every pinned tree and module untouched
     return out
 
 

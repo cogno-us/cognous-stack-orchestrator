@@ -478,6 +478,10 @@ def check_security(text, base):
             P.append("checkout repository %r != %s" % (w.get("repository"), repo))
         if ref not in ("${{ env.%s }}" % pin, PINS[pin]):
             P.append("checkout ref %r for %s is not the env pin / literal SHA" % (ref, repo))
+        depth = w.get("fetch-depth")
+        want = "2" if repo == "cogno-us/cognous-replay-bundle" else None
+        if depth != want:
+            P.append("component checkout %s fetch-depth must be %s, got %r" % (repo, want or "unset (depth 1)", depth))
         if w.get("path") != path:
             P.append("checkout path %r != %s" % (w.get("path"), path))
         paths.append(w.get("path"))
@@ -720,6 +724,15 @@ class UnchangedTests(Base):
         self.assertEqual(check_existing_unchanged(self.text, self.base), [])
 
 
+class CheckoutDepthTests(Base):
+    def test_checkout_depths(self):
+        job = doc_of(self.text)["jobs"][C3_JOB]
+        co = [s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/checkout@")]
+        depths = [(s["with"].get("path", "."), s["with"].get("fetch-depth")) for s in co]
+        self.assertEqual(depths, [(".", "0"), (".c3-src/control-plane", None), (".c3-src/replay-bundle", "2"),
+                                  (".c3-src/evidence-pack", None), (".c3-src/action-manifest", None)])
+
+
 class SecurityTests(Base):
     def test_security(self):
         self.assertEqual(check_security(self.text, self.base), [])
@@ -781,7 +794,7 @@ class MutationTests(Base):
         self.assertCaught(self.text.replace("on:\n  workflow_dispatch:", "on:\n  pull_request_target:\n  workflow_dispatch:", 1), "only workflow_dispatch")
 
     def test_drop_persist_credentials(self):
-        m = _in_job(C3_JOB, _rx(r"(path: \.c3-src/replay-bundle\n)\s+persist-credentials: false\n", r"\1"))
+        m = _in_job(C3_JOB, _rx(r"(path: \.c3-src/replay-bundle\n(?:\s+[a-z-]+: [^\n]*\n)*?)\s+persist-credentials: false\n", r"\1"))
         self.assertCaught(m(self.text), "persist-credentials")
 
     def test_unpin_action(self):
@@ -859,6 +872,14 @@ class MutationTests(Base):
     def test_checkout_ref_not_pinned(self):
         m = _in_job(C3_JOB, _rep("ref: ${{ env.C3_PACK_SHA }}", "ref: main"))
         self.assertCaught(m(self.text), "ref")
+
+    def test_replay_checkout_depth_removed(self):
+        m = _in_job(C3_JOB, _rx(r"\n\s+fetch-depth: 2[^\n]*(?=\n\s+persist-credentials: false)", ""))
+        self.assertCaught(m(self.text), "fetch-depth must be 2")
+
+    def test_other_component_gets_depth(self):
+        m = _in_job(C3_JOB, _rep("          path: .c3-src/action-manifest\n", "          path: .c3-src/action-manifest\n          fetch-depth: 2\n"))
+        self.assertCaught(m(self.text), "fetch-depth must be unset")
 
     def test_orchestrator_shallow(self):
         m = _in_job(C3_JOB, _rep("          fetch-depth: 0\n", ""))

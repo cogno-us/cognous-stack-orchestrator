@@ -162,7 +162,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --require-hashes -r .github/locks/cryptography-pydantic-pytest-513753.txt
+          python -m pip install --require-hashes --only-binary=:all: -r .github/locks/cryptography-pydantic-pytest-513753.txt
       - name: Verify the exact sources (no component code is executed)
         id: verify
         env:
@@ -171,8 +171,29 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$EVIDENCE_DIR"
-          fail() { echo "SOURCE VERIFICATION FAILED: $1" >&2; exit 1; }
+          ORCH_HEAD="$(git rev-parse HEAD)"
+          PIP_VERSION_TEXT="$(python -m pip --version)"
+          export ORCH_HEAD PIP_VERSION_TEXT
+          python3 -I -B - <<'PY'
+          import json, os, sys
+          env = os.environ
+          ctx = {
+              "repository": env.get("GITHUB_REPOSITORY"),
+              "github_sha": env.get("GITHUB_SHA"),
+              "github_ref": env.get("GITHUB_REF"),
+              "github_run_id": env.get("GITHUB_RUN_ID"),
+              "github_run_attempt": env.get("GITHUB_RUN_ATTEMPT"),
+              "case_id": env.get("CASE_ID"),
+              "orchestrator_head": env.get("ORCH_HEAD"),
+              "python_version": sys.version,
+              "pip_version": env.get("PIP_VERSION_TEXT"),
+          }
+          with open(os.path.join(env["EVIDENCE_DIR"], "context.json"), "w", encoding="utf-8") as fh:
+              json.dump(ctx, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
           : > "$EVIDENCE_DIR/sources.txt"
+          fail() { echo "SOURCE VERIFICATION FAILED: $1" | tee -a "$EVIDENCE_DIR/sources.txt" >&2; exit 1; }
           check_root() {
             local label="$1" root="$2" want_sha="$3" want_tree="$4" got
             got="$(git -C "$root" rev-parse HEAD)"
@@ -198,27 +219,6 @@ jobs:
           }
           check_root action-manifest "$COGNOUS_C1_ACTION_MANIFEST_ROOT" "$C1_AM_SHA" "$C1_AM_TREE"
           check_root control-plane "$COGNOUS_C1_CONTROL_PLANE_ROOT" "$C1_CP_SHA" "$C1_CP_TREE"
-          ORCH_HEAD="$(git rev-parse HEAD)"
-          PIP_VERSION_TEXT="$(python -m pip --version)"
-          export ORCH_HEAD PIP_VERSION_TEXT
-          python3 -I -B - <<'PY'
-          import json, os, sys
-          env = os.environ
-          ctx = {
-              "repository": env.get("GITHUB_REPOSITORY"),
-              "github_sha": env.get("GITHUB_SHA"),
-              "github_ref": env.get("GITHUB_REF"),
-              "github_run_id": env.get("GITHUB_RUN_ID"),
-              "github_run_attempt": env.get("GITHUB_RUN_ATTEMPT"),
-              "case_id": env.get("CASE_ID"),
-              "orchestrator_head": env.get("ORCH_HEAD"),
-              "python_version": sys.version,
-              "pip_version": env.get("PIP_VERSION_TEXT"),
-          }
-          with open(os.path.join(env["EVIDENCE_DIR"], "context.json"), "w", encoding="utf-8") as fh:
-              json.dump(ctx, fh, indent=2, sort_keys=True)
-              fh.write("\n")
-          PY
       - name: Focused C1 suite (full oracle; any failure or skip fails the job)
         id: tests
         if: steps.verify.outcome == 'success'
@@ -226,16 +226,24 @@ jobs:
           EVIDENCE_DIR: ${{ runner.temp }}/c1-evidence
         shell: bash
         run: |
-          set -uo pipefail
+          set -u -o pipefail
+          set +e  # an explicit `shell: bash` runs as `bash -eo pipefail`: record the real exit code and evidence BEFORE failing
           mkdir -p "$EVIDENCE_DIR"
-          TESTS_COMMAND='python -I -B .github/scripts/run_unittest_no_skips.py tests/manual_contract/c1 --require-env COGNOUS_C1_ACTION_MANIFEST_ROOT --require-env COGNOUS_C1_CONTROL_PLANE_ROOT'
-          python -I -B .github/scripts/run_unittest_no_skips.py tests/manual_contract/c1 --require-env COGNOUS_C1_ACTION_MANIFEST_ROOT --require-env COGNOUS_C1_CONTROL_PLANE_ROOT 2>&1 | tee "$EVIDENCE_DIR/tests.log"
+          TESTS_CMD=(python -I -B .github/scripts/run_unittest_no_skips.py tests/manual_contract/c1 --require-env COGNOUS_C1_ACTION_MANIFEST_ROOT --require-env COGNOUS_C1_CONTROL_PLANE_ROOT)
+          "${TESTS_CMD[@]}" 2>&1 | tee "$EVIDENCE_DIR/tests.log"
           TESTS_RC="${PIPESTATUS[0]}"
-          export TESTS_COMMAND TESTS_RC
+          TESTS_EXPECTED=15
+          if [ "$TESTS_RC" -eq 0 ] && ! grep -q "^Ran ${TESTS_EXPECTED} tests in " "$EVIDENCE_DIR/tests.log"; then
+            echo "UNEXPECTED TEST COUNT: the frozen C1 suite has exactly ${TESTS_EXPECTED} tests" | tee -a "$EVIDENCE_DIR/tests.log" >&2
+            TESTS_RC=1
+          fi
+          TESTS_COMMAND="${TESTS_CMD[*]}"
+          export TESTS_COMMAND TESTS_RC TESTS_EXPECTED
           python3 -I -B - <<'PY'
           import json, os
           rc = int(os.environ["TESTS_RC"])
-          doc = {"command": os.environ["TESTS_COMMAND"], "exit_code": rc, "outcome": "PASSED" if rc == 0 else "FAILED"}
+          doc = {"command": os.environ["TESTS_COMMAND"], "exit_code": rc, "expected_tests": int(os.environ["TESTS_EXPECTED"]),
+                 "outcome": "PASSED" if rc == 0 else "FAILED"}
           with open(os.path.join(os.environ["EVIDENCE_DIR"], "tests.json"), "w", encoding="utf-8") as fh:
               json.dump(doc, fh, indent=2, sort_keys=True)
               fh.write("\n")
@@ -248,7 +256,8 @@ jobs:
           EVIDENCE_DIR: ${{ runner.temp }}/c1-evidence
         shell: bash
         run: |
-          set -uo pipefail
+          set -u -o pipefail
+          set +e  # see the tests step: keep the evidence copy and the real exit code under the runner's -e
           python -I -B tests/manual_contract/real_c1.py --case "$CASE_ID" --out "$EVIDENCE_DIR/result.json" --evidence-out "$EVIDENCE_DIR/evidence.json"
           CASE_RC=$?
           export CASE_RC
@@ -456,10 +465,8 @@ jobs:
               rec("resolution_inputs has exactly one manifest entry", len(mi) == 1, "found %d" % len(mi))
               m0 = mi[0] if mi else {}
               eq("manifest input.record_commitment == manifest digest", sub(m0, "record_commitment"), MANIFEST_D)
-              if A:
-                  eq("manifest input.missing is false", sub(m0, "missing"), False)
-              else:
-                  eq("manifest input.missing is false", sub(m0, "missing"), False)
+              eq("manifest input.missing is false", sub(m0, "missing"), False)
+              if not A:  # case B only: the authority context was withheld, which the native resolution inputs must record
                   ai = find_inputs(n, "authority_context")
                   rec("resolution_inputs has exactly one authority_context entry", len(ai) == 1, "found %d" % len(ai))
                   eq("authority_context input.missing is true", sub(ai[0] if ai else {}, "missing"), True)
@@ -564,6 +571,10 @@ jobs:
         if: always()
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/c1-evidence
+          STEP_VERIFY: ${{ steps.verify.outcome }}
+          STEP_TESTS: ${{ steps.tests.outcome }}
+          STEP_CASE: ${{ steps.case.outcome }}
+          STEP_ORACLE: ${{ steps.oracle.outcome }}
         shell: bash
         run: |
           python3 -I -B - <<'PY'
@@ -757,8 +768,9 @@ jobs:
                       ("limits.hub_280_digest_basis", dig(ev, "limits", "hub_280_digest_basis")),
                       ("Mode", dig(ev, "mode")),
                       ("Orchestrator SHA (evidence harness)", dig(ev, "harness", "orchestrator_head")),
-                      ("Orchestrator SHA (workflow context)", dig(ctx, "github_sha", default=dig(ctx, "GITHUB_SHA", default=env("GITHUB_SHA")))),
-                      ("Run id", dig(ctx, "github_run_id", default=dig(ctx, "GITHUB_RUN_ID", default=env("GITHUB_RUN_ID")))),
+                      ("Orchestrator SHA (workflow context)", dig(ctx, "github_sha", default=env("GITHUB_SHA"))),
+                      ("Run id", dig(ctx, "github_run_id", default=env("GITHUB_RUN_ID"))),
+                      ("Dispatched ref (dispatch only from main at the reviewed SHA)", dig(ctx, "github_ref", default=env("GITHUB_REF"))),
                   )
                   L += ["| Field | Value |", "|---|---|"] + ["| %s | %s |" % (clean(k), val(v)) for k, v in rows] + [""]
                   L.append("result.json: %s; evidence.json: %s; context.json: %s." % (cell(res_s), cell(ev_s), cell(ctx_s)))

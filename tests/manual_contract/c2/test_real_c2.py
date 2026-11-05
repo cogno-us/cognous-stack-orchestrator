@@ -815,9 +815,20 @@ class ProvenanceAndDeviationTests(unittest.TestCase):
         self.assertTrue(dev[0]["disposition"].startswith("AMENDED"))
 
     def test_no_expected_failure_or_skip_in_the_c2_suite(self):
-        src = pathlib.Path(__file__).read_text(encoding="utf-8")
-        for token in ("@unittest.expectedFailure", "@unittest.skip", "skipTest(", "unittest.skipIf", "unittest.skipUnless"):
-            self.assertNotIn(token, src.replace('"' + token + '"', ""), token)
+        """AST scan of every c2 test module (any spelling: decorator, call, import, SkipTest) plus a runtime scan of the loaded tests."""
+        import ast
+        banned = {"expectedFailure", "skip", "skipIf", "skipUnless", "skipTest", "SkipTest"}
+        for path in sorted(HERE.glob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                name = node.attr if isinstance(node, ast.Attribute) else getattr(node, "id", None) if isinstance(node, ast.Name) else None
+                self.assertNotIn(name, banned, "%s uses %s" % (path.name, name))
+                if isinstance(node, ast.ImportFrom):
+                    self.assertFalse({a.name for a in node.names} & banned, "%s imports a skip/expectedFailure helper" % path.name)
+        for cls in (c for c in globals().values() if isinstance(c, type) and issubclass(c, unittest.TestCase)):
+            for attr in dir(cls):
+                fn = getattr(cls, attr)
+                self.assertFalse(getattr(fn, "__unittest_expecting_failure__", False), "%s.%s" % (cls.__name__, attr))
+                self.assertFalse(getattr(fn, "__unittest_skip__", False), "%s.%s" % (cls.__name__, attr))
 
 
 class ModuleGuardTests(unittest.TestCase):
@@ -861,6 +872,19 @@ class ModuleGuardTests(unittest.TestCase):
             (root / "fixture.json").write_text('{"x": 1}\n')
             with self.assertRaisesRegex(real_c2.SourceIdentityError, "differs from the pinned git blob"):
                 real_c2._check_modules(root, {}, name, required=(name,), extra_files=("fixture.json",))
+
+    def test_module_loaded_from_outside_the_pinned_root_refused(self):
+        import uuid
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as elsewhere:
+            root, name = self.make_repo(tmp)
+            other = "c2outside" + uuid.uuid4().hex[:8]  # a same-package module that is NOT under the pinned root
+            (pathlib.Path(elsewhere) / other).mkdir()
+            (pathlib.Path(elsewhere) / other / "__init__.py").write_text("VALUE = 3\n")
+            sys.path.insert(0, elsewhere)
+            self.addCleanup(lambda: (sys.path.remove(elsewhere), [sys.modules.pop(m) for m in [m for m in sys.modules if m.startswith(other)]]))
+            __import__(other)
+            with self.assertRaisesRegex(real_c2.SourceIdentityError, "not under"):
+                real_c2._check_modules(root, {}, other, required=())
 
     def test_missing_required_module_refused(self):
         with tempfile.TemporaryDirectory() as tmp:

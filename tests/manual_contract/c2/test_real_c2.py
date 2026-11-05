@@ -83,8 +83,6 @@ MIN_FRESH_REQUIRED_WORDS = (  # section 8/14 label words that must each appear s
     "replay_protection", "tenant_generation", "digest_basis", "revision_label", "signature_key_basis",
     "producer_revision_basis", "lineage", "no_authenticated_issuer", "correlation_id", "private_cp_api_dependency",
 )
-FORBIDDEN_CLAIMS = ("qualified", "certified", "production ready", "production-ready", "cleared", "rb accepts c1", "complete replay",
-                    "replayed", "verified")  # contract 6 / 11: never asserted in evidence text values (limits may say "not ...")
 
 CP_ROOT = RB_ROOT = None
 B = IMP = None  # agent_control_plane.bounded, agent_replay_bundle.importers (this file's own imports of the pinned components)
@@ -351,7 +349,7 @@ class P1Tests(unittest.TestCase):
         self.assertEqual(len(with_profile), 1, "decide() runs exactly once on the runtime-profile workflow that yields the record")
         # SPEC allows a discarded baseline decide() (learns required_inputs); nothing else may call decide()
         self.assertLessEqual(len(self.spy.decide_wfs), 2)
-        self.assertEqual(self.ev["producer"]["calls"], ["decide"]) if "calls" in self.ev["producer"] else None
+        self.assertEqual(self.ev["producer"]["calls"], ["decide"])
 
     def test_rb_receives_pinned_proposal_and_measured_label(self):
         calls = self.spy.rb_calls
@@ -749,14 +747,124 @@ class ApiShapeTests(unittest.TestCase):
 
     def test_adapter_constants_match_frozen_literals(self):
         self.assertEqual(real_c2.EVIDENCE_SCHEMA, EVIDENCE_SCHEMA)
-        self.assertEqual((real_c2.ENV_CP_ROOT, real_c2.ENV_RB_ROOT), (ENV_CP, ENV_RB)) if hasattr(real_c2, "ENV_CP_ROOT") else None
+        self.assertEqual((real_c2.ENV_CP_ROOT, real_c2.ENV_RB_ROOT), (ENV_CP, ENV_RB))
         for key, (repo, sha, tree) in PINS.items():
             adapter_key = {"cp": "control_plane", "rb": "replay_bundle"}[key]
-            pin = real_c2.PINS.get(key) or real_c2.PINS.get(adapter_key)
+            pin = real_c2.PINS[adapter_key]
             self.assertEqual((pin["repository"], pin["sha"], pin["tree"]), (repo, sha, tree))
         self.assertEqual(real_c2.FROZEN["proposal_sha256"], PROPOSAL_FILE_SHA)
-        self.assertEqual(real_c2.FROZEN["c1_records_positive_sha256"] if "c1_records_positive_sha256" in real_c2.FROZEN else C1_RECORDS_SHA["positive"],
-                         C1_RECORDS_SHA["positive"])
+        self.assertEqual(real_c2.FROZEN["c1_records_positive_sha256"], C1_RECORDS_SHA["positive"])
+        self.assertEqual(real_c2.FROZEN["c1_records_negative_sha256"], C1_RECORDS_SHA["negative"])
+
+
+class ProvenanceAndDeviationTests(unittest.TestCase):
+    """Review SHOULD-FIX 2/3: the contract section 14 provenance record, and the machine-readable frozen-oracle deviation."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ev = p1().result
+
+    def test_producer_configuration_identity_and_provenance(self):
+        prod = self.ev["producer"]
+        self.assertEqual(prod["config_id"], "C2-CP-RUNTIME-PROFILE-STRICT-TENANT-DECIDE-ONLY")
+        self.assertEqual(prod["catalogue_version"], "synthetic-catalogue/1")
+        self.assertEqual(prod["action_class_id"], "synthetic-irreversible")
+        self.assertEqual(prod["producer_key_id"], "synthetic-validator")
+        self.assertRegex(prod["producer_public_key_hex"], r"^[0-9a-f]{64}$")  # the TEST-ONLY public key (bytes(range(32)) seed)
+        self.assertEqual(prod["authority_profile"], "runtime-authority/0.1")
+        self.assertIs(prod["allow_synthetic_resolver"], True)
+        self.assertEqual(prod["tenant_binding_generation"], GENERATION)
+        for key in ("derived_authority_context_commitment", "required_inputs_digest"):
+            self.assertRegex(prod[key], r"^sha256:[0-9a-f]{64}$")
+        self.assertIn("NO RuntimeAuthorityProfile", prod["c1_configuration_contrast"])
+        self.assertIn("agent_replay_bundle.ingress.check_depth", prod["other_symbols_used"])
+
+    def test_frozen_oracle_deviation_is_machine_readable(self):
+        dev = self.ev["frozen_oracle_deviations"]
+        self.assertEqual(len(dev), 1)
+        self.assertIn("freeze", dev[0]["contract_section"])
+        self.assertEqual(dev[0]["observed"]["event_decision_ids"], ["None"])
+        self.assertEqual(dev[0]["observed"]["event_count"], 13)
+        self.assertIs(dev[0]["observed"]["events_check_id_equals_resolution_check_id"], False)
+        self.assertEqual(dev[0]["disposition"], "contract amendment requested from the Architect")
+        names = {c["name"]: c for c in self.ev["oracle"]["checks"]}
+        self.assertTrue(names["check_events_decision_id_observed_null"]["ok"])
+        self.assertTrue(names["check_events_proposal_commitment"]["ok"])
+
+
+class ModuleGuardTests(unittest.TestCase):
+    """Review SHOULD-FIX 1: the git-blob guards of _check_modules fail closed on their own (not only via the dirty-tree gate)."""
+
+    def make_repo(self, tmp, symlink=False):
+        import uuid
+        name = "c2guard" + uuid.uuid4().hex[:8]
+        root = pathlib.Path(tmp).resolve()
+        (root / name).mkdir()
+        (root / name / "__init__.py").write_text("VALUE = 1\n")
+        (root / "fixture.json").write_text("{}\n")
+        if symlink:
+            (root / "link.json").symlink_to("fixture.json")
+        env = {"PATH": os.environ["PATH"], "HOME": "/nonexistent", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
+        for args in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "x"]):
+            subprocess.run(["git", "-C", str(root), *args], check=True, env=env, capture_output=True)
+        sys.path.insert(0, str(root))
+        self.addCleanup(lambda: (sys.path.remove(str(root)), [sys.modules.pop(m) for m in [m for m in sys.modules if m.startswith(name)]]))
+        __import__(name)
+        return root, name
+
+    def test_clean_module_and_extra_file_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, name = self.make_repo(tmp)
+            ev = {}
+            real_c2._check_modules(root, ev, name, required=(name,), extra_files=("fixture.json",))
+            self.assertIn(name, ev["imported_modules"])
+            self.assertIn("fixture.json", ev["imported_modules"])
+
+    def test_tampered_loaded_module_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, name = self.make_repo(tmp)
+            (root / name / "__init__.py").write_text("VALUE = 2\n")
+            with self.assertRaisesRegex(real_c2.SourceIdentityError, "differs from the pinned git blob"):
+                real_c2._check_modules(root, {}, name, required=(name,))
+
+    def test_tampered_extra_file_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, name = self.make_repo(tmp)
+            (root / "fixture.json").write_text('{"x": 1}\n')
+            with self.assertRaisesRegex(real_c2.SourceIdentityError, "differs from the pinned git blob"):
+                real_c2._check_modules(root, {}, name, required=(name,), extra_files=("fixture.json",))
+
+    def test_missing_required_module_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, name = self.make_repo(tmp)
+            with self.assertRaisesRegex(real_c2.SourceIdentityError, "required modules not loaded"):
+                real_c2._check_modules(root, {}, name, required=(name + ".never_imported",))
+
+    def test_symlink_in_pinned_tree_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, name = self.make_repo(tmp, symlink=True)
+            with self.assertRaisesRegex(real_c2.SourceIdentityError, "symlink or gitlink"):
+                real_c2._check_modules(root, {}, name, required=(name,))
+
+
+class StaticEffectPathGuardTests(unittest.TestCase):
+    """Review NIT 4: the new modules never name an effect path (the runtime spies only catch dynamic calls)."""
+
+    def test_no_effect_call_names_in_adapter_or_producer(self):
+        import ast
+        forbidden_calls = {"execute", "reconcile", "apply", "system", "Popen", "urlopen", "connect"}
+        forbidden_imports = {"socket", "urllib", "http", "requests", "moltbot", "ssl"}
+        for fn in ("real_c2.py", "c2_producer.py"):
+            tree = ast.parse((MANUAL_CONTRACT / fn).read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call):
+                    f = node.func
+                    name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
+                    self.assertNotIn(name, forbidden_calls, fn + " calls " + str(name))
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    mods = [a.name for a in node.names] if isinstance(node, ast.Import) else [node.module or ""]
+                    for m in mods:
+                        self.assertNotIn(m.split(".")[0].lower(), forbidden_imports, fn + " imports " + m)
 
 
 class MainCliTests(unittest.TestCase):

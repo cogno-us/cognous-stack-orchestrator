@@ -291,7 +291,7 @@ def _import(importers, record_obj, proposal_obj, label):
     except importers.ImportContractError as exc:
         return None, _native(exc)
     except Exception as exc:  # unknown failure class: neither a native refusal nor evidence
-        raise AdapterError("unexpected Replay exception %s" % type(exc).__name__) from None
+        raise AdapterError("unexpected Replay exception %s: %s" % (type(exc).__name__, str(exc)[:200])) from None
 
 
 def _fresh_workdir(workdir):
@@ -345,7 +345,7 @@ def _p1(cp_root, rb_root, workdir):
     has_ce = isinstance(check_events, list) and bool(check_events)
     persisted = copy.deepcopy(record["decisions"][0])
     bundle, refusal = _import(importers, record, proposal, measured["revision_label"])
-    unchanged = pathlib.Path(produced.record_path).read_bytes() == rec_bytes
+    unchanged = pathlib.Path(produced.record_path).read_bytes() == rec_bytes  # verification re-read only; hash/parse used the first buffer
     if not unchanged:
         raise AdapterError("persisted record file changed during import (adapter must never rewrite it)")
     _recheck(measured)
@@ -385,7 +385,7 @@ def _p1(cp_root, rb_root, workdir):
         _check("reason_vocabulary_version", ORACLE["reason_vocabulary_version"], d.get("reason_vocabulary_version")),
         _check("runtime_authority_profile", ORACLE["runtime_authority_profile"], (bind.get("runtime_authority") or {}).get("profile")),
         _check("check_events_present", True, has_ce),
-        _check("check_events_decision_id_null_or_equal", True, bool(events) and all(e.get("decision_id") in (None, d.get("decision_id")) for e in events)),
+        _check("check_events_decision_id_observed_null", True, bool(events) and all("decision_id" in e and e["decision_id"] is None for e in events)),
         _check("check_events_proposal_commitment", True, bool(events) and all(e.get("proposal_commitment") == ORACLE["proposal_commitment"] for e in events)),
         _check("check_events_vocabulary", True, bool(events) and all(e.get("reason_vocabulary_version") for e in events)),
         _check("resolution_inputs", ORACLE["resolution_inputs"], len(d.get("resolution_inputs") or [])),
@@ -410,6 +410,15 @@ def _p1(cp_root, rb_root, workdir):
         "forbidden_claims": ["same decision", "C1 record accepted by RB"]}
     ok = all(c["ok"] for c in checks)
     ev["oracle"] = {"checks": checks, "all_ok": ok}
+    ev["frozen_oracle_deviations"] = [{
+        "contract_section": "freeze §14 'P1 journal assertions' (Hub #273 comment 6665220369)",
+        "frozen_text": "every check_events entry's decision_id equals decisions[0].decision_id",
+        "observed": {"event_decision_ids": sorted({str(e.get("decision_id")) for e in events}), "event_count": len(events),
+                     "event_check_ids_distinct": len({e.get("check_id") for e in events}),
+                     "events_check_id_equals_resolution_check_id": any(e.get("check_id") == (record.get("resolution_checks") or [{}])[0].get("check_id") for e in events)},
+        "handling": "frozen text NOT silently replaced: the observed value is asserted instead (all null); a frozen-literal test is kept as an expected failure",
+        "identity_binding_asserted_instead": "every check_event proposal_commitment equals the decision's proposal commitment",
+        "disposition": "contract amendment requested from the Architect"}]
     ev.update(outcome="IMPORTED", status="PASS" if ok else "FAIL")
     return ev, record, proposal, measured, rec_sha
 

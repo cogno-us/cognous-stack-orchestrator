@@ -5,9 +5,11 @@ ships in the pinned Control Plane test tree. This module never calls execute(), 
 Precondition (the adapter's job): the CP tree was measured against its pin and <cp_root>/src and <cp_root> are on sys.path.
 """
 import hashlib
+import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from typing import NamedTuple
 
@@ -34,7 +36,14 @@ class ProducerError(Exception):
 
 
 def _git(root, *args):
-    return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True).stdout.strip()
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": "/nonexistent", "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_CONFIG_GLOBAL": "/dev/null", "LC_ALL": "C", "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_REPLACE_OBJECTS": "1"}
+    try:
+        done = subprocess.run(["git", "-c", "core.fsmonitor=false", "-C", str(root), *args], cwd=tempfile.gettempdir(), env=env,
+                              capture_output=True, text=True, timeout=60, check=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ProducerError("git failed: %s" % type(exc).__name__) from None
+    return done.stdout.strip()
 
 
 def _blob(cp_root, path):
@@ -45,9 +54,10 @@ def _blob(cp_root, path):
     except ValueError:
         raise ProducerError(f"{path} is outside the CP root")
     blob = _git(cp_root, "rev-parse", f"HEAD:{rel}")
-    if _git(cp_root, "hash-object", "--", str(path)) != blob:
+    data = path.read_bytes()  # git blob id computed here: no clean filters, no git on the file
+    if hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest() != blob:
         raise ProducerError(f"{rel} differs from its pinned blob")
-    return {"file": rel, "git_blob_sha": blob, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    return {"file": rel, "git_blob_sha": blob, "sha256": hashlib.sha256(data).hexdigest()}
 
 
 def produce(cp_root: pathlib.Path, workdir: pathlib.Path, proposal_obj: dict) -> Produced:
@@ -102,6 +112,14 @@ def produce(cp_root: pathlib.Path, workdir: pathlib.Path, proposal_obj: dict) ->
     provenance = {
         "config_id": CONFIG_ID, "clock_mode": "decide_now_argument_only", "clock_patch": "none",
         "calls": ["decide"], "decide_calls_on_final_workflow": 1,
+        "catalogue_version": cfg.catalogue_version, "action_class_id": action.class_id, "producer_key_id": "synthetic-validator",
+        "producer_public_key_hex": R.PUBLIC, "authority_profile": context["runtime_authority"]["profile"],
+        "allow_synthetic_resolver": True, "tenant_binding_generation": B.TENANT_GENERATION_STRICT,
+        "derived_authority_context_commitment": commitment(context), "required_inputs_digest": commitment(required),
+        "c1_configuration_contrast": "C1 ran the strict-tenant workflow with NO RuntimeAuthorityProfile (no runtime_authority context, "
+                                     "no check_events journal); C2 adds the profile and signed synthetic evidence, decide() only",
+        "other_symbols_used": ["agent_replay_bundle.ingress.check_depth", "agent_control_plane.strict_json.strict_loads",
+                               "agent_replay_bundle.importers.CONTROL_PLANE_STRICT_TENANT_REVISION"],
         "private_api_dependencies": [{"module": m, "file": rel, "git_blob_sha": modules[m]["git_blob_sha"],
                                       "file_sha256": modules[m]["sha256"], "symbol": s, "why": w} for m, rel, s, w in PRIVATE],
         "tests_modules_checked": modules,

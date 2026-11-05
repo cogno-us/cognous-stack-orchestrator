@@ -1053,6 +1053,7 @@ jobs:
           repository: cogno-us/cognous-replay-bundle
           ref: ${{ env.C3_RB_SHA }}
           path: .c3-src/replay-bundle
+          fetch-depth: 2  # the merged integrity suite checks out the pinned commit's PARENT (a depth-1 checkout has none)
           persist-credentials: false
       - name: Checkout Governance Evidence Pack at the frozen SHA
         id: checkout_pack

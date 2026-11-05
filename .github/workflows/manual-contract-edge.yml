@@ -65,10 +65,14 @@ jobs:
           else:
               if r.get("schema") == "cognous.orchestrator.manual-contract-fanout-result/0-candidate":
                   cons = r.get("consumers")
+                  def row_ok(c):  # a consumer row is consistent only if its result follows from its own observed and expected admission
+                      s, o, e = c.get("status"), c.get("observed_outcome"), c.get("expected_outcome")
+                      return (s == "PASS" and o == e and o != "UNKNOWN") or (s == "FAIL" and o != e and o != "UNKNOWN") or (s == "BLOCKED" and o == "UNKNOWN")
                   ok = isinstance(cons, list) and len(cons) == 2 and all(isinstance(c, dict) for c in cons)
+                  ok = ok and str(cons[0].get("consumer_id")) != str(cons[1].get("consumer_id"))
                   sts = [c.get("status") for c in cons] if ok else []
                   derived = None
-                  if ok and all(s in ("PASS", "FAIL", "BLOCKED") for s in sts):
+                  if ok and all(row_ok(c) for c in cons):
                       derived = "FAIL" if "FAIL" in sts else "BLOCKED" if "BLOCKED" in sts else "PASS"
                   shown = r.get("status") if derived is not None and r.get("status") == derived else "INCONSISTENT (not PASS)"
                   rows = (("Case ID", r.get("case_id")), ("Producer ID", r.get("producer_id")),
@@ -78,15 +82,17 @@ jobs:
                   if ok:
                       lines += ["| Consumer | ID | Expected admission | Observed admission | Result | Input hash |", "|---|---|---|---|---|---|"]
                       for label, c in zip(("B", "C"), cons):
-                          keys = ("consumer_id", "expected_outcome", "observed_outcome", "status", "consumer_input_sha256")
-                          lines.append("| %s | %s |" % (label, " | ".join(cell(c.get(k)) for k in keys)))
+                          vals = [c.get(k) for k in ("consumer_id", "expected_outcome", "observed_outcome", "status", "consumer_input_sha256")]
+                          if not row_ok(c):
+                              vals[3] = "INCONSISTENT (not PASS)"
+                          lines.append("| %s | %s |" % (label, " | ".join(cell(v) for v in vals)))
                       lines.append("")
                   else:
                       lines += ["**Consumer results are missing or malformed; nothing is reported as PASS.**", ""]
                   lines += ["Reason: " + cell(r.get("reason")), ""]
                   if r.get("producer_error"):
                       lines += ["Producer error: " + cell(r.get("producer_error")), ""]
-              else:
+              elif r.get("schema") == "cognous.orchestrator.manual-contract-result/0-candidate" and "consumers" not in r:
                   rows = (("Case ID", r.get("case_id")), ("Expected outcome", r.get("expected_outcome")),
                           ("Observed outcome", r.get("observed_outcome")), ("Result", r.get("status")),
                           ("Producer output hash", r.get("producer_output_sha256")),
@@ -94,6 +100,8 @@ jobs:
                           ("Commit SHA", os.environ.get("GITHUB_SHA")))
                   lines += ["| Field | Value |", "|---|---|"] + ["| %s | %s |" % (k, cell(v)) for k, v in rows] + [""]
                   lines += ["Reason: " + cell(r.get("reason")), ""]
+              else:
+                  lines += ["**Unrecognised result schema; nothing is reported as PASS.** See the step log and the artifact.", ""]
           lines += ["Synthetic mocks only. A developer test of the runner, not qualification or release evidence."]
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
               out.write("\n".join(lines) + "\n")

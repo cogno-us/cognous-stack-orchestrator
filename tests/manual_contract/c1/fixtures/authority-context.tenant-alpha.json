@@ -1,0 +1,132 @@
+{
+  "accountable_human_role": {
+    "human_principal": "urn:cognous:principal:human-1",
+    "mandate_ref": "urn:cognous:mandate:human-1",
+    "role_id": "urn:cognous:role:accountable-human"
+  },
+  "acting_identity": "urn:cognous:identity:refund-agent-1",
+  "change": {
+    "adoption_record_ref": null,
+    "kind": "none",
+    "proposal_ref": null
+  },
+  "conflicts": {
+    "appeal_ref": "urn:cognous:procedure:appeal",
+    "continuity_ref": "urn:cognous:procedure:continuity",
+    "escalation_ref": "urn:cognous:procedure:escalation",
+    "incompatible_role_pairs": [],
+    "precedence_refs": [
+      "urn:cognous:policy:refund-policy"
+    ],
+    "remedy_ref": "urn:cognous:procedure:remedy"
+  },
+  "context_id": "urn:cognous:authority-context:pilot-1",
+  "grant": {
+    "acting_identity": "urn:cognous:identity:refund-agent-1",
+    "approval_refs": [
+      "urn:cognous:approval:t1-1"
+    ],
+    "delegation": {
+      "may_delegate": false,
+      "parent_grant_id": null,
+      "remaining_depth": 0
+    },
+    "expires_at": "2026-10-05T20:00:00+00:00",
+    "grant_id": "urn:cognous:grant:routine-1",
+    "grantee": "urn:cognous:principal:refund-service",
+    "issuance_record_ref": "urn:cognous:issuance:1",
+    "issued_at": "2026-10-05T18:00:00+00:00",
+    "issuer": "urn:cognous:principal:synthetic-governor",
+    "issuer_role": "urn:cognous:role:refund-governor",
+    "not_before": "2026-10-05T18:30:00+00:00",
+    "permissions": [
+      {
+        "action": "refund_issue_routine",
+        "data_scopes": [
+          "refund.issue.routine"
+        ],
+        "max_amount": 100.0,
+        "max_effects": 1,
+        "targets": [
+          "urn:cognous:synthetic-account:customer-001"
+        ],
+        "unit": "USD"
+      }
+    ],
+    "policy_versions": [
+      {
+        "ref": "urn:cognous:policy:refund-policy",
+        "version": "1.0"
+      }
+    ],
+    "requirement_id": "urn:cognous:authority-requirement:refund-routine-v1",
+    "revision": "1",
+    "status_ref": "urn:cognous:status:grant-1",
+    "tenant_id": "tenant-alpha"
+  },
+  "institution": {
+    "authority_basis_ref": "urn:cognous:authority-basis:synthetic",
+    "authority_domain": "customer-refunds",
+    "authority_mode": "principle_inspired",
+    "institution_id": "urn:cognous:institution:synthetic-customer-service"
+  },
+  "interface_status": "proposed_pending_governor_review",
+  "principal": "urn:cognous:principal:refund-service",
+  "requirement": {
+    "approvals": [
+      {
+        "independent_of_actor": true,
+        "role_id": "urn:cognous:role:customer-service-supervisor"
+      }
+    ],
+    "consequence": {
+      "profile_ref": "urn:cognous:consequence:T1",
+      "rationale": "Synthetic test tier.",
+      "tier": "T1"
+    },
+    "evidence": [
+      {
+        "kind": "authorization",
+        "max_age_seconds": 300,
+        "obligation_id": "urn:cognous:evidence:refund-entitlement",
+        "required": true,
+        "source_ref": "urn:cognous:source:entitlement",
+        "unknown_behavior": "hold_effect"
+      },
+      {
+        "kind": "context",
+        "max_age_seconds": 300,
+        "obligation_id": "urn:cognous:evidence:optional-context",
+        "required": false,
+        "source_ref": "urn:cognous:source:optional",
+        "unknown_behavior": "preserve_if_other_basis_suffices"
+      }
+    ],
+    "governing_sources": [
+      {
+        "provision": "refund",
+        "ref": "urn:cognous:policy:refund-policy",
+        "standing": "local_policy",
+        "version": "1.0"
+      }
+    ],
+    "permissions": [
+      {
+        "action": "refund_issue_routine",
+        "data_scopes": [
+          "refund.issue.routine"
+        ],
+        "max_amount": 100.0,
+        "max_effects": 1,
+        "targets": [
+          "urn:cognous:synthetic-account:customer-001"
+        ],
+        "unit": "USD"
+      }
+    ],
+    "requirement_id": "urn:cognous:authority-requirement:refund-routine-v1"
+  },
+  "schema_version": "0.1.0",
+  "supporting_evidence_refs": [],
+  "tenant_id": "tenant-alpha"
+}

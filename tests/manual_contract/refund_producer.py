@@ -7,6 +7,7 @@ AM-validated manifest object (asserted equal to the CP-repo copy), and `scenario
 `grant_revoked` (the SAME flow with ONLY the synthetic grant status object's `status` set to "revoked" before the final decide()).
 Precondition (the adapter's job): the CP tree was measured against its pin and <cp_root>/src and <cp_root> are on sys.path.
 """
+import contextlib
 import copy
 import hashlib
 import os
@@ -128,28 +129,47 @@ def produce(cp_root: pathlib.Path, workdir: pathlib.Path, proposal_obj: dict, ma
     run = workdir / "run"
     run.mkdir()
     f = flow(run, runtime_authority_profile=cfg)
-    decision = f.decide(p, now=NOW)  # the only call that produces the decision
+    # Observed (not declared) native call trace: class-level wrappers record every call to decide/execute/reconcile
+    # made on the final workflow instance, including any call a held scenario might wrongly make.
+    trace = []
+
+    def traced(name):
+        orig = getattr(BoundedAuthorizationWorkflow, name)
+
+        def wrapper(self, *a, **k):
+            if self is f:
+                trace.append(name)
+            return orig(self, *a, **k)
+        return wrapper
+
     local_effect = {"attempt": None, "observation": None, "reconciliation": None}
-    if scenario == "authorized":
-        # Test-only fixed virtual clock: the frozen October 2026 source/authority
-        # fixtures cannot be compared against the November 2026 wall clock.
-        # This deliberately patches ONLY the native CP module's clock for this
-        # local synthetic attempt; it is not a claim about real-world freshness.
-        with mock.patch.object(B, "_now", return_value=NOW):
-            attempt, observation = f.execute(p, decision, adapter_id=p.adapter_id, now=NOW)
-            reconciliation = f.reconcile(decision.effect_id, now=NOW)
-        local_effect = {
-            "attempt": attempt.model_dump(mode="json"),
-            "observation": None if observation is None else observation.model_dump(mode="json"),
-            "reconciliation": reconciliation.model_dump(mode="json"),
-        }
-    else:
-        if f.records.load().attempts:
+    with contextlib.ExitStack() as stack:
+        for name in ("decide", "execute", "reconcile"):
+            stack.enter_context(mock.patch.object(BoundedAuthorizationWorkflow, name, traced(name)))
+        decision = f.decide(p, now=NOW)  # the only call that produces the decision
+        if scenario == "authorized":
+            # Test-only fixed virtual clock: LocalRefundDestination.observe() and the record stamps read
+            # agent_control_plane.bounded._now, while the frozen October 2026 fixtures are judged at now=NOW.
+            # Only that CP module clock is patched, only around local synthetic execute/reconcile; it is not a
+            # claim about real-world freshness.
+            with mock.patch.object(B, "_now", return_value=NOW):
+                attempt, observation = f.execute(p, decision, adapter_id=p.adapter_id, now=NOW)
+                reconciliation = f.reconcile(decision.effect_id, now=NOW)
+            local_effect = {
+                "attempt": attempt.model_dump(mode="json"),
+                "observation": None if observation is None else observation.model_dump(mode="json"),
+                "reconciliation": reconciliation.model_dump(mode="json"),
+            }
+        elif f.records.load().attempts:
             raise ProducerError("held synthetic refund produced an unauthorized attempt")
+    expected_trace = ["decide", "execute", "reconcile"] if scenario == "authorized" else ["decide"]
+    if trace != expected_trace:
+        raise ProducerError("observed native call trace %r differs from %r" % (trace, expected_trace))
     provenance = {
         "config_id": CONFIG_ID, "scenario": scenario, "scenario_mutation": SCENARIO_MUTATION[scenario],
-        "manifest_source": "supplied_validated_AM_bytes", "manifest_equals_cp_repo_copy": True, "clock_mode": "decide_now_argument_only", "clock_patch": "none",
-        "calls": (["decide", "execute", "reconcile"] if scenario == "authorized" else ["decide"]), "decide_calls_on_final_workflow": 1,
+        "manifest_source": "supplied_validated_AM_bytes", "manifest_equals_cp_repo_copy": True, "clock_mode": ("decide_now_argument_plus_bounded_now_patch_around_execute_reconcile" if scenario == "authorized" else "decide_now_argument_only"),
+        "clock_patch": ("bounded._now=NOW around execute/reconcile only" if scenario == "authorized" else "none"),
+        "calls": list(trace), "decide_calls_on_final_workflow": 1,
         "virtual_clock_patch": "agent_control_plane.bounded._now set to frozen NOW only around local synthetic execute/reconcile",
         "catalogue_version": cfg.catalogue_version, "action_class_id": action.class_id, "producer_key_id": "synthetic-validator",
         "producer_public_key_hex": R.PUBLIC, "authority_profile": context["runtime_authority"]["profile"],

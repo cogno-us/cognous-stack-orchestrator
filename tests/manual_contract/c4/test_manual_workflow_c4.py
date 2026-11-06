@@ -257,9 +257,8 @@ def check_security(text, base):
             P.append("checkout repository %r != %s" % (w.get("repository"), repo))
         if w.get("ref") not in ("${{ env.%s }}" % pin, PINS[pin]):
             P.append("checkout ref %r for %s is not the env pin / literal SHA" % (w.get("ref"), repo))
-        want = "2" if repo == "cogno-us/cognous-replay-bundle" else None
-        if w.get("fetch-depth") != want:
-            P.append("component checkout %s fetch-depth must be %s, got %r" % (repo, want or "unset (depth 1)", w.get("fetch-depth")))
+        if w.get("fetch-depth") != "2":  # the integrity suite checks out <pin>~1 in every root
+            P.append("component checkout %s fetch-depth must be 2, got %r" % (repo, w.get("fetch-depth")))
         if w.get("path") != path:
             P.append("checkout path %r != %s" % (w.get("path"), path))
         paths.append(w.get("path"))
@@ -482,8 +481,8 @@ class CheckoutDepthTests(Base):
     def test_checkout_depths(self):
         job = doc_of(self.text)["jobs"][C4_JOB]
         depths = [(s["with"].get("path", "."), s["with"].get("fetch-depth")) for s in _checkouts(job["steps"])]
-        self.assertEqual(depths, [(".", "0"), (".c4-src/control-plane", None), (".c4-src/replay-bundle", "2"),
-                                  (".c4-src/evidence-pack", None), (".c4-src/action-manifest", None)])
+        self.assertEqual(depths, [(".", "0"), (".c4-src/control-plane", "2"), (".c4-src/replay-bundle", "2"),
+                                  (".c4-src/evidence-pack", "2"), (".c4-src/action-manifest", "2")])
 
 
 class SecurityTests(Base):
@@ -664,11 +663,14 @@ class MutationTests(Base):
     def test_root_env_wrong(self):
         self.c4(_rep("COGNOUS_C4_REPLAY_BUNDLE_ROOT: ${{ github.workspace }}/.c4-src/replay-bundle", "COGNOUS_C4_REPLAY_BUNDLE_ROOT: ${{ github.workspace }}/.c4-src/elsewhere"), "root env")
 
-    def test_replay_checkout_depth_removed(self):
-        self.c4(_rx(r"\n\s+fetch-depth: 2[^\n]*(?=\n\s+persist-credentials: false)", ""), "fetch-depth must be 2")
+    def test_each_component_checkout_depth_removed(self):
+        for comp in ("control-plane", "replay-bundle", "evidence-pack", "action-manifest"):
+            pat = r"(path: \.c4-src/%s\n)\s+fetch-depth: 2[^\n]*(?=\n\s+persist-credentials: false)" % comp
+            self.c4(_rx(pat, r"\1"), "fetch-depth must be 2")
 
-    def test_other_component_gets_depth(self):
-        self.c4(_rep("          path: .c4-src/action-manifest\n", "          path: .c4-src/action-manifest\n          fetch-depth: 2\n"), "fetch-depth must be unset")
+    def test_each_component_checkout_depth_wrong(self):
+        for comp in ("control-plane", "replay-bundle", "evidence-pack", "action-manifest"):
+            self.c4(_rx(r"(path: \.c4-src/%s\n\s+fetch-depth: )2" % comp, r"\g<1>1"), "fetch-depth must be 2")
 
     def test_orchestrator_shallow(self):
         self.c4(_rep("          fetch-depth: 0\n", ""), "fetch-depth")

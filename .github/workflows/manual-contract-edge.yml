@@ -1259,6 +1259,7 @@ jobs:
           repository: cogno-us/cognous-control-plane
           ref: ${{ env.C4_CP_SHA }}
           path: .c4-src/control-plane
+          fetch-depth: 2  # the C4 integrity suite checks out the pinned commit's PARENT (a depth-1 checkout has none)
           persist-credentials: false
       - name: Checkout Replay Bundle at the frozen SHA
         id: checkout_rb
@@ -1276,6 +1277,7 @@ jobs:
           repository: cogno-us/cognous-governance-evidence-pack
           ref: ${{ env.C4_PACK_SHA }}
           path: .c4-src/evidence-pack
+          fetch-depth: 2  # the C4 integrity suite checks out the pinned commit's PARENT (a depth-1 checkout has none)
           persist-credentials: false
       - name: Checkout Action Manifest at the frozen SHA
         id: checkout_am
@@ -1284,6 +1286,7 @@ jobs:
           repository: cogno-us/cognous-action-manifest
           ref: ${{ env.C4_AM_SHA }}
           path: .c4-src/action-manifest
+          fetch-depth: 2  # the C4 integrity suite checks out the pinned commit's PARENT (a depth-1 checkout has none)
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:

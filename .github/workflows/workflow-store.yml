@@ -4,6 +4,7 @@ on:
     paths:
       - ".github/workflows/workflow-store.yml"
       - "orchestration/workflow_store/**"
+      - "orchestration/workflow_machine/**"
       - "tests/integration/workflow_store/**"
   workflow_dispatch:
 permissions:

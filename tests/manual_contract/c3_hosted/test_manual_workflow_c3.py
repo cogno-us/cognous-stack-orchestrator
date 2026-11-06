@@ -25,6 +25,10 @@ BASE_REV = "716f3247a93fe5b9fcda5aa430412de0aeecfef1"
 BASE_PATH = ".github/workflows/manual-contract-edge.yml"
 
 C3_ID = "c3_p1_n1_n3_n5_hosted_group"
+# C4 amendment: the later C4 option/job are recognised; every C3 check below is unchanged in strength.
+C4_ID = "c4_manifest_to_pack_one_action_hosted_group"
+C4_JOB = "c4-real-edge"
+C3_BASE_REV = "aff43bdd4e9540537e6d53f326848f7a37e57b8d"  # the merged-C3 commit: the c3-real-edge job must stay byte-identical to it
 C3_JOB = "c3-real-edge"
 DEFAULT_CASE = "mock_accept_expected_accept"
 
@@ -284,10 +288,11 @@ def selected_jobs(doc, case_id):
 # Checks (each returns a list of problem strings)
 # --------------------------------------------------------------------------------------------------------------------
 CE_EXCL = "inputs.case_id != '%s'" % C3_ID
+CE_EXCL_C4 = "inputs.case_id != '%s'" % C4_ID
 
 
-def git_base():
-    r = subprocess.run(["git", "-C", str(ROOT), "show", "%s:%s" % (BASE_REV, BASE_PATH)], capture_output=True, text=True)
+def git_base(rev=BASE_REV):
+    r = subprocess.run(["git", "-C", str(ROOT), "show", "%s:%s" % (rev, BASE_PATH)], capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError("cannot read base workflow: " + r.stderr)
     return r.stdout
@@ -312,10 +317,10 @@ def check_triggers(text, base):
     if ci.get("required") != bci.get("required"):
         P.append("case_id required changed")
     opts, bopts = ci.get("options"), bci.get("options")
-    if opts != list(bopts) + [C3_ID]:
-        P.append("options must equal base options + [%s] appended last, got %r" % (C3_ID, opts))
-    if len(opts or []) != len(bopts) + 1:
-        P.append("option count must be base+1")
+    if opts != list(bopts) + [C3_ID, C4_ID]:
+        P.append("options must equal base options + [%s, %s] appended last, got %r" % (C3_ID, C4_ID, opts))
+    if len(opts or []) != len(bopts) + 2:
+        P.append("option count must be base+2 (C3 id and C4 id)")
     return P
 
 
@@ -337,6 +342,8 @@ def check_selection(text, base):
             continue
         if o == C3_ID:
             exp = [C3_JOB]
+        elif o == C4_ID:
+            exp = [C4_JOB]
         elif o.startswith("c1_"):
             exp = ["c1-real-edge"]
         elif o.startswith("c2_"):
@@ -355,6 +362,9 @@ def check_selection(text, base):
         sel = selected_jobs(doc, neg)
         if sel != ["contract-edge"]:
             P.append("unknown c3_ id %r must select contract-edge only (never zero jobs), got %r" % (neg, sel))
+    for neg in (C4_ID + "_x", C4_ID[:-1], "c4_", "c4_zzz"):  # unknown c4_ ids also fail closed through the refusing mock runner
+        if selected_jobs(doc, neg) != ["contract-edge"]:
+            P.append("unknown c4_ id %r must select contract-edge only, got %r" % (neg, selected_jobs(doc, neg)))
     for neg in ("C3_" + C3_ID[3:], " " + C3_ID, C3_ID + " "):  # not c3_-prefixed: never select the C3 job
         if C3_JOB in selected_jobs(doc, neg) or len(selected_jobs(doc, neg)) > 1:
             P.append("near-miss id %r selects %r" % (neg, selected_jobs(doc, neg)))
@@ -375,9 +385,12 @@ def check_selection(text, base):
 def check_existing_unchanged(text, base):
     P = []
     jt, bt = job_texts(text), job_texts(base)
-    if list(jt) != list(bt) + [C3_JOB]:
-        P.append("job order must be base jobs then %s, got %r" % (C3_JOB, list(jt)))
+    if list(jt) != list(bt) + [C3_JOB, C4_JOB]:
+        P.append("job order must be base jobs then %s then %s, got %r" % (C3_JOB, C4_JOB, list(jt)))
         return P
+    c3_base_job = job_texts(git_base(C3_BASE_REV)).get(C3_JOB)
+    if c3_base_job is None or jt[C3_JOB] != c3_base_job:
+        P.append("job %s is not byte-identical to its text at %s" % (C3_JOB, C3_BASE_REV))
     for n in ("c1-real-edge", "c2-real-edge"):
         if jt[n] != bt[n]:
             P.append("job %s is not byte-identical to base" % n)
@@ -402,13 +415,14 @@ def check_existing_unchanged(text, base):
             continue  # header comment additions
         if len(old) == 1 and len(new) == 1 and old[0].lstrip().startswith("description:") and new[0].lstrip().startswith("description:"):
             continue
-        if not old and new == ["          - " + C3_ID]:
+        if not old and new in (["          - " + C3_ID], ["          - " + C4_ID], ["          - " + C3_ID, "          - " + C4_ID]):
             continue
         if len(old) == 1 and len(new) == 1 and old[0].startswith("    if:") and new[0].startswith("    if:"):
             continue
         # the appended c3 job (and its leading blank/comment lines)
-        if not old and j1 >= jobs_start and (j2 - j1) > 20 and any(l == "  %s:" % C3_JOB for l in new):
-            continue
+        heads = [l for l in new if re.fullmatch(r"  [A-Za-z0-9_-]+:", l)]
+        if not old and j1 >= jobs_start and (j2 - j1) > 20 and heads and set(heads) <= {"  %s:" % C3_JOB, "  %s:" % C4_JOB}:
+            continue  # the appended c3 and/or c4 job(s) (and their leading blank/comment lines)
         P.append("unexpected diff vs base at base lines %d-%d: %r -> %r" % (i1 + 1, i2, old[:2], [l[:80] for l in new[:2]]))
     for key in ("permissions:\n  contents: read\n", "name: Manual contract edge (manual only)\n"):
         if key not in text:
@@ -617,8 +631,8 @@ def check_suites(text, base):
 def check_counts(text, base):
     P = []
     doc, bdoc = doc_of(text), doc_of(base)
-    if len(options_of(doc)) != len(options_of(bdoc)) + 1:
-        P.append("option count != base + 1")
+    if len(options_of(doc)) != len(options_of(bdoc)) + 2:
+        P.append("option count != base + 2")
     jt = job_texts(text)
     for n, t in jt.items():
         if n == C3_JOB:
@@ -628,9 +642,9 @@ def check_counts(text, base):
                 if not (n == "contract-edge" and l.startswith("    if:") and CE_EXCL in l):
                     P.append("job %s mentions c3: %r" % (n, l.strip()[:80]))
     ce = doc["jobs"]["contract-edge"].get("if", "")
-    expected_ce = "${{ !startsWith(inputs.case_id, 'c1_') && !startsWith(inputs.case_id, 'c2_') && inputs.case_id != '%s' }}" % C3_ID
+    expected_ce = "${{ !startsWith(inputs.case_id, 'c1_') && !startsWith(inputs.case_id, 'c2_') && inputs.case_id != '%s' && inputs.case_id != '%s' }}" % (C3_ID, C4_ID)
     if ce.strip() != expected_ce:
-        P.append("contract-edge if must exclude exactly the C3 id (fail-closed), got %r" % ce)
+        P.append("contract-edge if must exclude exactly the C3 id and the C4 id (fail-closed), got %r" % ce)
     if "startsWith(inputs.case_id, 'c3_')" in ce:
         P.append("contract-edge if must not exclude the c3_ prefix (unknown c3_ ids must reach the refusing mock runner)")
     if text.count("  %s:\n" % C3_JOB) != 1:
@@ -722,6 +736,17 @@ class SelectionTests(Base):
 class UnchangedTests(Base):
     def test_existing_unchanged(self):
         self.assertEqual(check_existing_unchanged(self.text, self.base), [])
+
+
+class C3JobFrozenTests(Base):
+    def test_c3_job_byte_identical_to_merged_c3_commit(self):
+        merged = job_texts(git_base(C3_BASE_REV))[C3_JOB]
+        self.assertEqual(job_texts(self.text)[C3_JOB], merged)
+        self.assertGreater(len(merged), 1000)
+
+    def test_c3_job_differs_from_text_at_older_base(self):
+        # sanity: the older C3 base has no c3 job, so the byte-identity anchor really is the merged-C3 commit
+        self.assertNotIn(C3_JOB, job_texts(self.base))
 
 
 class CheckoutDepthTests(Base):
@@ -929,6 +954,36 @@ class MutationTests(Base):
     def test_curl_in_run(self):
         m = _in_job(C3_JOB, _rep("          python -I -B .github/scripts/c3_hosted_check.py check", "          curl -sSf https://example.invalid/x\n          python -I -B .github/scripts/c3_hosted_check.py check"))
         self.assertCaught(m(self.text), "network fetch")
+
+    def test_c3_job_one_byte_changed(self):
+        m = _in_job(C3_JOB, _rep("timeout-minutes: 20", "timeout-minutes: 19"))
+        self.assertCaught(m(self.text), "byte-identical to its text at")
+
+    def test_c3_job_comment_added(self):
+        m = _in_job(C3_JOB, _rep("    runs-on: ubuntu-latest\n    timeout-minutes: 20", "    runs-on: ubuntu-latest\n    # note\n    timeout-minutes: 20"))
+        self.assertCaught(m(self.text), "byte-identical to its text at")
+
+    def test_c4_option_missing(self):
+        self.assertCaught(self.text.replace("          - " + C4_ID + "\n", "", 1), "options")
+
+    def test_c4_option_before_c3_option(self):
+        o3, o4 = "          - " + C3_ID + "\n", "          - " + C4_ID + "\n"
+        self.assertCaught(self.text.replace(o3 + o4, o4 + o3, 1), "options")
+
+    def test_contract_edge_no_longer_excludes_c4(self):
+        self.assertCaught(self.text.replace(" && " + CE_EXCL_C4, "", 1), "selects")
+
+    def test_contract_edge_excludes_c4_prefix(self):
+        self.assertCaught(self.text.replace(CE_EXCL_C4, "!startsWith(inputs.case_id, 'c4_')", 1), "unknown c4_ id")
+
+    def test_c4_job_order_swapped(self):
+        jt = job_texts(self.text)
+        swapped = self.text.replace(jt[C3_JOB], "@@C3@@", 1).replace(jt[C4_JOB], jt[C3_JOB], 1).replace("@@C3@@", jt[C4_JOB], 1)
+        self.assertCaught(swapped, "job order")
+
+    def test_c4_job_mentions_c3(self):
+        m = _in_job(C4_JOB, _rep("    runs-on: ubuntu-latest", "    runs-on: ubuntu-latest\n    # c3_x"))
+        self.assertCaught(m(self.text), "c3")
 
     def test_c3_mention_in_other_job(self):
         m = _in_job("c2-real-edge", _rep("    runs-on: ubuntu-latest", "    runs-on: ubuntu-latest\n    # c3_x"))

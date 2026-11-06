@@ -22,11 +22,19 @@ name: Manual contract edge (manual only)
 #   pin is a PROVISIONAL, UNQUALIFIED development row. Hosted developer evidence only: NOT independent qualification, approval,
 #   authenticity, custody, freshness, complete reconstruction or effect proof. Allowed only from main; the main/event/case guard
 #   runs as the first executed step (never as a job-level condition) so a wrong ref FAILS the job instead of skipping it.
+# - Real C4 group (c4_manifest_to_pack_one_action_hosted_group): one bounded, provider-free run of the composed C4 harness: ONE synthetic
+#   non-effecting action through the Action Manifest native gate -> Control Plane decide() only -> Replay Bundle import -> Governance
+#   Evidence Pack import and validation, against the pinned Action Manifest, Control Plane, Replay Bundle and Evidence Pack source.
+#   Cases: P1 (authorized chain), N1-HOLD (a synthetic revoked grant stays a Control Plane hold through the downstream evidence imports),
+#   N2-FLIP (a hold re-labelled authorized is refused by the Pack). Decision-only: no execute/reconcile/apply, no executor, no provider
+#   or secret, a TEST-ONLY public Ed25519 key. Hosted developer evidence only: NOT independent qualification, approval, authenticity,
+#   custody, freshness, complete reconstruction or effect proof; a downstream import of a held record is evidence import, never
+#   authorization. Allowed only from main; the main/event/case guard is the first executed step, never a job-level condition.
 on:
   workflow_dispatch:
     inputs:
       case_id:
-        description: Allowlisted case to run. mock_* are synthetic mock-only cases (no network); c1_* run the real pinned Action Manifest and Control Plane source, imported by path, decision-only, after network fetches of GitHub sources and PyPI wheels. c2_p1_n1_n2_hosted_group runs the pinned Control Plane to Replay Bundle P1/N1/N2 cases (decision-only, main only). c3_p1_n1_n3_n5_hosted_group runs the merged C3 Replay Bundle to Governance Evidence Pack harness P1/N1-TEN/N3/N5-REV (decision-only, main only). None is qualification. Hub 280 is OPEN; only the fully populated frozen Manifest 1.1 is supported. Manual only.
+        description: Allowlisted case to run. mock_* are synthetic mock-only cases (no network); c1_* run the real pinned Action Manifest and Control Plane source, imported by path, decision-only, after network fetches of GitHub sources and PyPI wheels. c2_p1_n1_n2_hosted_group runs the pinned Control Plane to Replay Bundle P1/N1/N2 cases (decision-only, main only). c3_p1_n1_n3_n5_hosted_group runs the merged C3 Replay Bundle to Governance Evidence Pack harness P1/N1-TEN/N3/N5-REV (decision-only, main only). c4_manifest_to_pack_one_action_hosted_group runs the composed C4 Action Manifest to Control Plane to Replay Bundle to Governance Evidence Pack harness P1/N1-HOLD/N2-FLIP (decision-only, main only). None is qualification. Hub 280 is OPEN; only the fully populated frozen Manifest 1.1 is supported. Manual only.
         type: choice
         required: true
         default: mock_accept_expected_accept
@@ -41,13 +49,14 @@ on:
           - c1_manifest_to_cp_no_authority
           - c2_p1_n1_n2_hosted_group
           - c3_p1_n1_n3_n5_hosted_group
+          - c4_manifest_to_pack_one_action_hosted_group
 
 permissions:
   contents: read
 
 jobs:
   contract-edge:
-    if: ${{ !startsWith(inputs.case_id, 'c1_') && !startsWith(inputs.case_id, 'c2_') && inputs.case_id != 'c3_p1_n1_n3_n5_hosted_group' }}
+    if: ${{ !startsWith(inputs.case_id, 'c1_') && !startsWith(inputs.case_id, 'c2_') && inputs.case_id != 'c3_p1_n1_n3_n5_hosted_group' && inputs.case_id != 'c4_manifest_to_pack_one_action_hosted_group' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -1200,4 +1209,216 @@ jobs:
         with:
           name: c3-evidence-${{ inputs.case_id }}
           path: ${{ runner.temp }}/c3-evidence/
+          if-no-files-found: warn
+
+  c4-real-edge:
+    if: ${{ inputs.case_id == 'c4_manifest_to_pack_one_action_hosted_group' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      C4_CP_SHA: 484fdbd297235dd24148ddb0703f2055a31eabff
+      C4_CP_TREE: c182939882103015f12c5360fccf377c54e2c4f9
+      C4_RB_SHA: 93a76e281fcae6a65d2cd1d35376f87442dafb95
+      C4_RB_TREE: aca6e6b8bdd33d51db3b34bc0c75eff93b9ff88f
+      C4_PACK_SHA: 065150852cc2a8abeb748777bb69d72ccd0e03d8
+      C4_PACK_TREE: fe428a89da2e74346648cdfe014462ddc8624c77
+      C4_AM_SHA: fa170815ef96a54c233d0dd9da821b60debabf8b
+      C4_AM_TREE: 3b0e3772e944aa668c8f4b879588c7cc3e2c32be
+      COGNOUS_C4_CONTROL_PLANE_ROOT: ${{ github.workspace }}/.c4-src/control-plane
+      COGNOUS_C4_REPLAY_BUNDLE_ROOT: ${{ github.workspace }}/.c4-src/replay-bundle
+      COGNOUS_C4_EVIDENCE_PACK_ROOT: ${{ github.workspace }}/.c4-src/evidence-pack
+      COGNOUS_C4_ACTION_MANIFEST_ROOT: ${{ github.workspace }}/.c4-src/action-manifest
+      C4_EXPECTED_FUNCTIONAL: '33'
+      C4_EXPECTED_INTEGRITY: '93'
+      CASE_ID: ${{ inputs.case_id }}
+    steps:
+      # Fail-closed guard, executed as a real step (a job-level condition could silently skip the only validation job). It reads
+      # only the runner-provided environment, executes no repository code, and fails the job unless the run is a manual dispatch of
+      # the C4 case from refs/heads/main. `verify` in c4_hosted_check.py repeats the same test against the checked-out SHA.
+      - name: Refuse unless this is a manual dispatch of the C4 case from main
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ] || [ "${GITHUB_REF}" != "refs/heads/main" ] || [ "${CASE_ID}" != "c4_manifest_to_pack_one_action_hosted_group" ]; then
+            echo "REFUSED: C4 hosted validation runs only as a workflow_dispatch of c4_manifest_to_pack_one_action_hosted_group from refs/heads/main" >&2
+            exit 1
+          fi
+      # The orchestrator checkout comes first and keeps full history: the merged integrity tests read the recorded base commit. A later
+      # checkout with clean enabled would delete the nested component checkouts.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout Control Plane at the frozen SHA
+        id: checkout_cp
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-control-plane
+          ref: ${{ env.C4_CP_SHA }}
+          path: .c4-src/control-plane
+          fetch-depth: 2  # the C4 integrity suite checks out the pinned commit's PARENT (a depth-1 checkout has none)
+          persist-credentials: false
+      - name: Checkout Replay Bundle at the frozen SHA
+        id: checkout_rb
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-replay-bundle
+          ref: ${{ env.C4_RB_SHA }}
+          path: .c4-src/replay-bundle
+          fetch-depth: 2  # the integrity suite checks out the pinned commit's PARENT (a depth-1 checkout has none)
+          persist-credentials: false
+      - name: Checkout Governance Evidence Pack at the frozen SHA
+        id: checkout_pack
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-governance-evidence-pack
+          ref: ${{ env.C4_PACK_SHA }}
+          path: .c4-src/evidence-pack
+          fetch-depth: 2  # the C4 integrity suite checks out the pinned commit's PARENT (a depth-1 checkout has none)
+          persist-credentials: false
+      - name: Checkout Action Manifest at the frozen SHA
+        id: checkout_am
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: cogno-us/cognous-action-manifest
+          ref: ${{ env.C4_AM_SHA }}
+          path: .c4-src/action-manifest
+          fetch-depth: 2  # the C4 integrity suite checks out the pinned commit's PARENT (a depth-1 checkout has none)
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      # Hash-locked wheels from PyPI (the same lock as C2: the Evidence Pack needs only pydantic, the Control Plane cryptography).
+      # The components are not installed; the harness imports their source by path.
+      - name: Install the hash-locked dependencies
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes --only-binary=:all: -r .github/locks/cryptography-pydantic-pytest-513753.txt
+      - name: Verify the exact sources and context (no component code is executed)
+        id: verify
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c4-evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          PIP_VERSION_TEXT="$(python -m pip --version)"
+          export PIP_VERSION_TEXT
+          python -I -B tests/manual_contract/c4/c4_hosted_check.py verify
+      - name: Focused C4 suites (functional + integrity; any failure, skip or expected failure fails the job)
+        id: tests
+        if: steps.verify.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c4-evidence
+        shell: bash
+        run: |
+          set -u -o pipefail
+          set +e  # an explicit `shell: bash` runs as `bash -eo pipefail`: record the real exit codes and evidence BEFORE failing
+          mkdir -p "$EVIDENCE_DIR"
+          : > "$EVIDENCE_DIR/tests.log"
+          REQ=(--require-env COGNOUS_C4_CONTROL_PLANE_ROOT --require-env COGNOUS_C4_REPLAY_BUNDLE_ROOT --require-env COGNOUS_C4_EVIDENCE_PACK_ROOT --require-env COGNOUS_C4_ACTION_MANIFEST_ROOT)
+          echo "=== suite: test_real_c4.py ===" | tee -a "$EVIDENCE_DIR/tests.log"
+          python -I -B .github/scripts/run_unittest_no_skips.py tests/manual_contract/c4 --pattern test_real_c4.py "${REQ[@]}" 2>&1 | tee -a "$EVIDENCE_DIR/tests.log"
+          RC_FUNCTIONAL="${PIPESTATUS[0]}"
+          echo "=== suite: test_real_c4_integrity.py ===" | tee -a "$EVIDENCE_DIR/tests.log"
+          python -I -B .github/scripts/run_unittest_no_skips.py tests/manual_contract/c4 --pattern test_real_c4_integrity.py "${REQ[@]}" 2>&1 | tee -a "$EVIDENCE_DIR/tests.log"
+          RC_INTEGRITY="${PIPESTATUS[0]}"
+          export RC_FUNCTIONAL RC_INTEGRITY
+          TESTS_RC=0
+          python3 -I -B - <<'PY' || TESTS_RC=1
+          import json, os, re
+          log = open(os.path.join(os.environ["EVIDENCE_DIR"], "tests.log"), encoding="utf-8").read()
+          suites = []
+          ok = True
+          for pattern, rc_name, expected in (("test_real_c4.py", "RC_FUNCTIONAL", int(os.environ["C4_EXPECTED_FUNCTIONAL"])), ("test_real_c4_integrity.py", "RC_INTEGRITY", int(os.environ["C4_EXPECTED_INTEGRITY"]))):
+              marker = "=== suite: %s ===" % pattern
+              start = log.find(marker)
+              nxt = [log.find("=== suite:", start + 1)] if start >= 0 else [-1]
+              body = log[start + len(marker):nxt[0] if nxt[0] > 0 else len(log)] if start >= 0 else ""
+              m = re.findall(r"^Ran (\d+) tests? in ", body, re.M)
+              observed = int(m[0]) if len(m) == 1 else None
+              rc = int(os.environ[rc_name])
+              good = rc == 0 and observed == expected
+              ok = ok and good
+              suites.append({"pattern": pattern, "exit_code": rc, "expected_tests": expected, "observed_tests": observed,
+                             "outcome": "PASSED" if good else "FAILED"})
+          doc = {"command": "python -I -B .github/scripts/run_unittest_no_skips.py tests/manual_contract/c4 --pattern <file> --require-env <4 roots>",
+                 "suites": suites, "total_expected": int(os.environ["C4_EXPECTED_FUNCTIONAL"]) + int(os.environ["C4_EXPECTED_INTEGRITY"]), "outcome": "PASSED" if ok else "FAILED"}
+          with open(os.path.join(os.environ["EVIDENCE_DIR"], "tests.json"), "w", encoding="utf-8") as fh:
+              json.dump(doc, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          raise SystemExit(0 if ok else 1)
+          PY
+          if [ "$RC_FUNCTIONAL" -ne 0 ] || [ "$RC_INTEGRITY" -ne 0 ] || [ "$TESTS_RC" -ne 0 ]; then exit 1; fi
+          exit 0
+      - name: Run P1, N1-HOLD and N2-FLIP through the harness (one invocation; all cases always run)
+        id: cases
+        if: always() && steps.verify.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c4-evidence
+          WORK_ROOT: ${{ runner.temp }}/c4-work
+        shell: bash
+        run: |
+          set -u -o pipefail
+          set +e  # keep the evidence copies and the real exit code under the runner's -e
+          mkdir -p "$EVIDENCE_DIR"
+          python -I -B tests/manual_contract/real_c4.py --case all --workdir "$WORK_ROOT/c4" --out "$EVIDENCE_DIR/c4.result.json"
+          CASES_RC=$?
+          export CASES_RC
+          # Keep the harness's own persisted files (the independently observed state), whatever the outcome.
+          for s in p1 n1; do
+            for n in cp-record destination reconstruction-bundle evidence-pack; do
+              [ -f "$WORK_ROOT/c4/$s/$n.json" ] && cp "$WORK_ROOT/c4/$s/$n.json" "$EVIDENCE_DIR/c4.$s.$n.json"
+            done
+          done
+          [ -f "$WORK_ROOT/c4/inputs/am-manifest.json" ] && cp "$WORK_ROOT/c4/inputs/am-manifest.json" "$EVIDENCE_DIR/c4.inputs.am-manifest.json"
+          [ -f "$WORK_ROOT/c4/inputs/proposal.json" ] && cp "$WORK_ROOT/c4/inputs/proposal.json" "$EVIDENCE_DIR/c4.inputs.proposal.json"
+          [ -f "$WORK_ROOT/c4/n2/mutated-bundle.json" ] && cp "$WORK_ROOT/c4/n2/mutated-bundle.json" "$EVIDENCE_DIR/c4.n2.mutated-bundle.json"
+          python3 -I -B - <<'PY'
+          import json, os
+          with open(os.path.join(os.environ["EVIDENCE_DIR"], "cases.json"), "w", encoding="utf-8") as fh:
+              json.dump({"exit_code": int(os.environ["CASES_RC"]), "invocations": 1,
+                         "command": "python -I -B tests/manual_contract/real_c4.py --case all --workdir <fresh> --out <file>"}, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
+          if [ "$CASES_RC" -ne 0 ]; then exit 1; fi
+          exit 0
+      - name: Frozen-literal comparison (orchestrator-owned, not independent; a CLI exit code alone is not enough)
+        id: oracle
+        if: always() && steps.verify.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c4-evidence
+          WORK_ROOT: ${{ runner.temp }}/c4-work
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -I -B tests/manual_contract/c4/c4_hosted_check.py check
+      - name: Job summary
+        if: always()
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/c4-evidence
+          STEP_GUARD: ${{ steps.guard.outcome }}
+          STEP_CHECKOUT_CP: ${{ steps.checkout_cp.outcome }}
+          STEP_CHECKOUT_RB: ${{ steps.checkout_rb.outcome }}
+          STEP_CHECKOUT_PACK: ${{ steps.checkout_pack.outcome }}
+          STEP_CHECKOUT_AM: ${{ steps.checkout_am.outcome }}
+          STEP_INSTALL: ${{ steps.install.outcome }}
+          STEP_VERIFY: ${{ steps.verify.outcome }}
+          STEP_TESTS: ${{ steps.tests.outcome }}
+          STEP_CASES: ${{ steps.cases.outcome }}
+          STEP_ORACLE: ${{ steps.oracle.outcome }}
+        shell: bash
+        run: |
+          python -I -B tests/manual_contract/c4/c4_hosted_check.py summary || true
+      - name: Keep the C4 evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: c4-evidence-${{ inputs.case_id }}
+          path: ${{ runner.temp }}/c4-evidence/
           if-no-files-found: warn

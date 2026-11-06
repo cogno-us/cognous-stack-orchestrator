@@ -60,7 +60,7 @@ def test_build_validate_digest_and_id():
     obs = make()
     assert o.validate(obs) == obs["digest"] == o.observation_digest(obs)
     assert obs["observation_id"] == "obs_" + obs["digest"][7:]
-    assert obs["disposition"] == "hold"
+    assert obs["execution_standing"] == "hold"
     assert o.canonical_bytes(obs) == o.canonical_bytes(json.loads(json.dumps(obs)))
     assert o.canonical_bytes(make()) == o.canonical_bytes(make())  # no hidden clock or randomness
 
@@ -166,10 +166,75 @@ def test_digest_and_id_mismatch():
     refused("id_mismatch", o.validate, obs)
 
 
-def test_fixed_disposition_cannot_change():
+def test_fixed_execution_standing_cannot_change():
     obs = make()
-    obs["disposition"] = "release"
+    obs["execution_standing"] = "release"
     refused("fixed_field_changed", o.validate, reseal(obs))
+
+
+def test_execution_standing_closed_set_is_exactly_hold():
+    assert o.EXECUTION_STANDINGS == frozenset({"hold"})
+    assert o.FIXED_EXECUTION_STANDING == "hold"
+    assert "execution_standing" in o.FIELDS and "disposition" not in o.FIELDS
+
+
+@pytest.mark.parametrize("value", ["", "Hold", "HOLD", " hold", "hold ", "authorized", "approved",
+                                   "applied", "success", "executed", "released", "deny", "unknown",
+                                   None, 0, False, ["hold"], {"hold": 1}])
+def test_unknown_execution_standing_values_refused(value):
+    obs = make()
+    obs["execution_standing"] = value
+    refused("fixed_field_changed", o.validate, reseal(obs))
+
+
+def test_old_disposition_member_is_refused():
+    obs = make()
+    del obs["execution_standing"]
+    obs["disposition"] = "hold"
+    refused("unknown_member", o.validate, reseal(obs))
+    both = make()
+    both["disposition"] = "hold"
+    refused("unknown_member", o.validate, reseal(both))
+
+
+def test_missing_execution_standing_is_schema_invalid():
+    obs = make()
+    del obs["execution_standing"]
+    refused("schema_invalid", o.validate, reseal(obs))
+
+
+def test_execution_standing_is_not_a_forbidden_marker_match():
+    assert not any(m in "execution_standing" for m in o.FORBIDDEN_MARKERS)
+    for name in ("decision_result", "review_disposition_decision", "authority_outcome", "effect_approved"):
+        obs = make()
+        obs[name] = "x"
+        refused("forbidden_member", o.validate, obs)
+    for name in ("review_disposition", "effect_observation", "workflow_status"):
+        obs = make()
+        obs[name] = "x"
+        refused("unknown_member", o.validate, obs)  # separate concepts are not members of this profile
+
+
+def test_rename_changes_digest_and_id():
+    new = make()
+    body = {k: v for k, v in new.items() if k not in ("digest", "observation_id")}
+    body["disposition"] = body.pop("execution_standing")
+    old_digest = o.observation_digest(body)
+    assert old_digest != new["digest"]
+    assert o.observation_id_for(old_digest) != new["observation_id"]
+
+
+def test_store_with_old_shape_record_fails_verification(tmp_path):
+    st = fill(store(tmp_path), 1)
+    old = make()
+    del old["execution_standing"]
+    old["disposition"] = "hold"
+    reseal(old)
+    path = tmp_path / "obs" / "000000000001.json"
+    path.chmod(0o644)
+    path.write_bytes(o.canonical_bytes(old))
+    path.chmod(0o444)
+    refused("unknown_member", st.verify_chain)
 
 
 def test_first_observation_with_predecessor_is_chain_break():
@@ -618,7 +683,7 @@ def _t_unknown_kind(tp): make(kind="release_approved")
 def _t_timestamp_invalid(tp): make(observed_at="nope")
 def _t_digest_mismatch(tp): d = make(); d["subject"] = "other"; o.validate(d)
 def _t_id_mismatch(tp): d = make(); d["observation_id"] = "obs_" + "0" * 64; o.validate(d)
-def _t_fixed_field_changed(tp): d = make(); d["disposition"] = "x"; o.validate(reseal(d))
+def _t_fixed_field_changed(tp): d = make(); d["execution_standing"] = "x"; o.validate(reseal(d))
 def _t_chain_break(tp): make(seq=1, pred=LOCK)
 def _t_unsafe_id(tp): store(tp).load("../x")
 def _t_store_conflict(tp):

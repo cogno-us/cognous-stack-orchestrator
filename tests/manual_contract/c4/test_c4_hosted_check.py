@@ -702,9 +702,9 @@ class CaseResultMutationTests(Base):
         for case in (P1, N1):
             lab = LABEL[case]
             with self.subTest(case=case):
-                self.assert_cause(self.run_mut(self.res(lambda r, case=case: r[case]["native"]["pack"]["validation"].__setitem__("valid", False))), ["%s Pack validation valid" % lab])
+                self.assert_cause(self.run_mut(self.res(lambda r, case=case: r[case]["native"]["pack"]["validation"].__setitem__("valid", False))), ["%s Pack validation valid" % lab], allow=["%s harness-reported valid/errors agree" % lab])
                 self.assert_cause(self.run_mut(self.res(lambda r, case=case: r[case]["native"]["pack"]["validation"].__setitem__("errors", [{"code": "E1"}]))),
-                                  ["%s Pack validation errors" % lab])
+                                  ["%s Pack validation errors" % lab], allow=["%s harness-reported valid/errors agree" % lab])
 
 
 # ======================================================================================= N1-HOLD specific
@@ -1406,6 +1406,46 @@ class ZeroCountTests(Base):
                     (ev / name).read_bytes().replace(b'"control_plane_attempt_count": 0', b'"control_plane_attempt_count": 0, "control_plane_attempt_count": 1', 1)))
                 self.assertEqual(run.rc, 1, run.describe())
                 self.assertTrue(any(name in ln for ln in run.fails), run.describe())
+
+
+class ValidationSummaryTests(Base):
+    def vs(self, case, fn):
+        return self.run_mut(self.pack(case, lambda d: fn(d["validation_summary"])))
+
+    def test_counts_wrong_or_wrong_type(self):
+        for case in (P1, N1):
+            lab = LABEL[case]
+            for key, bads, needle in (("error_count", (1, 5, True, False, "0", None, 0.0), "error_count"),
+                                      ("valid_bundle_count", (0, 2, True, "1", None, 1.0), "valid_bundle_count"),
+                                      ("invalid_bundle_count", (1, True, False, "0", None, 0.0), "invalid_bundle_count")):
+                for bad in bads:
+                    with self.subTest(case=case, key=key, bad=bad):
+                        run = self.vs(case, lambda v, key=key, bad=bad: v.__setitem__(key, bad))
+                        self.assert_cause(run, ["%s Pack dump validation_summary.%s" % (lab, needle)], allow=["%s harness-reported valid/errors agree" % lab])
+
+    def test_missing_validation_summary(self):
+        for case in (P1, N1):
+            lab = LABEL[case]
+            with self.subTest(case=case, how="deleted"):
+                run = self.run_mut(self.pack(case, lambda d: d.pop("validation_summary")))
+                self.assert_cause(run, ["%s Pack dump has a validation_summary object" % lab, "validation_summary.error_count", "validation_summary.valid_bundle_count",
+                                        "validation_summary.invalid_bundle_count"], allow=["%s harness-reported valid/errors agree" % lab])
+            with self.subTest(case=case, how="null"):
+                run = self.run_mut(self.pack(case, lambda d: d.__setitem__("validation_summary", None)))
+                self.assert_cause(run, ["%s Pack dump has a validation_summary object" % lab], allow=["validation_summary.", "%s harness-reported valid/errors agree" % lab])
+
+    def test_dump_says_errors_but_harness_says_valid(self):
+        for case in (P1, N1):
+            lab = LABEL[case]
+            with self.subTest(case=case):
+                run = self.vs(case, lambda v: v.update({"error_count": 2, "invalid_bundle_count": 1, "valid_bundle_count": 0}))
+                self.assert_cause(run, ["%s harness-reported valid/errors agree" % lab], allow=["validation_summary."])
+
+    def test_warning_count_is_not_asserted(self):
+        for case in (P1, N1):
+            with self.subTest(case=case):
+                run = self.vs(case, lambda v: v.__setitem__("warning_count", 99))
+                self.assertEqual(run.rc, 0, run.describe())
 
 
 # ======================================================================================= context, garbage input, summary

@@ -501,6 +501,20 @@ def check_zero_counts(c, label, T):
     return dc
 
 
+def check_validation_summary(c, label, pack, harness_val):
+    """Direct observation of the retained Pack dump's validation_summary; the harness-reported verdict must agree with it."""
+    vs = as_dict(pack.get("validation_summary"))
+    c.true("%s Pack dump has a validation_summary object" % label, isinstance(pack.get("validation_summary"), dict))
+    ec, vb, ib = vs.get("error_count"), vs.get("valid_bundle_count"), vs.get("invalid_bundle_count")
+    c.true("%s Pack dump validation_summary.error_count is an int (not bool) and == 0" % label, type(ec) is int and ec == 0)
+    c.true("%s Pack dump validation_summary.valid_bundle_count is an int (not bool) and == 1" % label, type(vb) is int and vb == 1)
+    c.true("%s Pack dump validation_summary.invalid_bundle_count is an int (not bool) and == 0" % label, type(ib) is int and ib == 0)
+    hv = as_dict(harness_val)
+    dump_ok = type(ec) is int and ec == 0 and type(ib) is int and ib == 0
+    c.eq("%s harness-reported valid/errors agree with the retained dump validation_summary" % label, (dump_ok, dump_ok),
+         (hv.get("valid") is True, hv.get("errors") == []))
+
+
 def check_hashes_vs_harness(c, label, r, rec_bytes, bundle_bytes, bundle, pack_bytes, pack):
     per = as_dict(d(r, "identity", "per_run"))
     h1, h2 = sha(bundle_bytes), h2_of(bundle)
@@ -648,6 +662,7 @@ def check_p1(c, ctx, data, roots):
     c.true("P1 retained decision_id == native record file decision_id (per-run, non-empty)", bool(bd.get("decision_id")) and bd.get("decision_id") == dd.get("decision_id"))
     # ---- validation (harness-reported native Pack validation)
     val = as_dict(d(r, "native", "pack", "validation"))
+    check_validation_summary(c, "P1", pack, val)
     c.eq("P1 Pack validation valid (harness-reported)", True, val.get("valid"))
     c.eq("P1 Pack validation errors (harness-reported, zero)", [], val.get("errors"))
     c.true("P1 Pack validation warnings are recorded (not frozen)", isinstance(val.get("warnings"), list))
@@ -737,6 +752,7 @@ def check_n1(c, ctx, data, roots):
                     leak.append("%s/%s" % (label, "/".join(map(str, path))))
     c.eq("N1-HOLD no 'authorized' value in any retained downstream decision record", [], leak[:5])
     val = as_dict(d(r, "native", "pack", "validation"))
+    check_validation_summary(c, "N1-HOLD", pack, val)
     c.eq("N1-HOLD Pack validation valid (harness-reported; never read as authorization)", True, val.get("valid"))
     c.eq("N1-HOLD Pack validation errors (harness-reported, zero)", [], val.get("errors"))
     c.true("N1-HOLD Pack validation warnings are recorded (not frozen)", isinstance(val.get("warnings"), list))

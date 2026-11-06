@@ -1154,15 +1154,24 @@ class StaticGuardTests(unittest.TestCase):
                 self.assertTrue((REPO / name).is_file(), "deleted relative to base")
                 self.assertEqual(git("-C", str(REPO), "hash-object", "--", name).strip(), git("-C", str(REPO), "rev-parse", "%s:%s" % (BASE, name)).strip())
 
+    # The C3 hosted developer-validation preparation (a later, separately authorised change) is the ONLY change allowed to touch .github or an
+    # existing file: exactly one existing workflow and one new checker. Any other .github path, and any other existing file, still fails.
+    ALLOWED_GITHUB_CHANGES = {".github/workflows/manual-contract-edge.yml", ".github/scripts/c3_hosted_check.py"}
+    ALLOWED_EXISTING_FILE_CHANGES = {".github/workflows/manual-contract-edge.yml"}
+
     def test_no_github_file_is_modified_added_or_untracked(self):
-        self.assertEqual(git("-C", str(REPO), "diff", "--name-only", BASE, "--", ".github").strip(), "")
-        self.assertEqual(git("-C", str(REPO), "status", "--porcelain", "--untracked-files=all", "--", ".github").strip(), "")
+        for rel in sorted(self.ALLOWED_GITHUB_CHANGES):  # an allowlisted path may change but must not be silently deleted
+            self.assertTrue((REPO / rel).is_file(), rel)
+        self.assertEqual(git("-C", str(REPO), "diff", "--name-only", "--diff-filter=D", BASE).strip(), "")
+        self.assertEqual(set(git("-C", str(REPO), "diff", "--name-only", BASE, "--", ".github").split()) - self.ALLOWED_GITHUB_CHANGES, set())
+        untracked = [line[3:] for line in git("-C", str(REPO), "status", "--porcelain", "--untracked-files=all", "--", ".github").splitlines()]
+        self.assertEqual(set(untracked) - self.ALLOWED_GITHUB_CHANGES, set())
         changed = set(git("-C", str(REPO), "diff", "--name-only", BASE).split())
-        self.assertFalse([c for c in changed if c.startswith(".github/")], changed)
+        self.assertEqual({c for c in changed if c.startswith(".github/")} - self.ALLOWED_GITHUB_CHANGES, set(), changed)
 
     def test_no_existing_tracked_file_is_modified_relative_to_base(self):
         changed = git("-C", str(REPO), "diff", "--name-only", "--diff-filter=MDRTUXB", BASE).split()  # everything except added files
-        self.assertEqual(changed, [], "an existing file differs from the base")
+        self.assertEqual(set(changed) - self.ALLOWED_EXISTING_FILE_CHANGES, set(), "an existing file differs from the base")
 
 
 # ------------------------------------------------------------------------------------------------------------------------------

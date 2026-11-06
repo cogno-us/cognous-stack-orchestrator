@@ -26,6 +26,7 @@ import sys
 import tempfile
 import uuid
 
+sys.dont_write_bytecode = True  # never write .pyc into the pinned checkouts: their cleanliness is part of the source gate
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I omits the script dir
 import c2_producer  # noqa: E402  (file hash pinned below; C2 must stay unchanged)
 import c4_producer  # noqa: E402
@@ -53,6 +54,7 @@ FROZEN = {
     "proposal_sha256": "1033c73e7dbe677cc71520711d3aaacb182952e5c12c8eaa489f24be0014cfe2",
     "proposal_commitment": "sha256:becaea3f10b5edf56ea181e0cd62793ebe8262238f948fb72dc5c0389c7f8c53",
     "c2_producer_sha256": "7c4f2595d7939e4a373586faafc0de86469dc03b791d893d7b27fb328a02a895",
+    "real_c3_sha256": "c92883af328f5127a395571887a72ceffccdfbe4d6c983d5c62ff9a21d64c31b",  # base aff43bdd file bytes: its public measure() runs first
     "effect_id_authorized": "sha256:4e5844d6d53ab6f8694e9c76cb6238ec4110137dd35de73cb0b22963961ecde8",
     "effect_id_hold": "sha256:d0e4afe09cdf3a52aa3b530b822411b1dff35031973660fbbf9b707415f18465",
     "action_id": "urn:cognous:action:refund-issue-routine-v1", "tenant_id": "tenant-alpha",
@@ -872,6 +874,8 @@ def run_all(roots=None, workdir=None, *, manifest_path=None, proposal_path=None)
     for k in BOUNDARIES:
         if not roots.get(k) or not os.path.isdir(str(roots[k])):
             raise SourceIdentityError("%s: root missing (set %s)" % (k, ENV[k]))
+    if _sha((pathlib.Path(__file__).resolve().parent / "real_c3.py").read_bytes()) != FROZEN["real_c3_sha256"]:  # checked BEFORE its measure() is executed
+        raise AdapterError("real_c3.py differs from the pinned C3 file (C3 must stay unchanged)")
     ctx = _measure(roots)
     if _sha(pathlib.Path(c2_producer.__file__).read_bytes()) != FROZEN["c2_producer_sha256"]:
         raise AdapterError("c2_producer.py differs from the pinned C2 file (C2 must stay unchanged)")

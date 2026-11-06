@@ -1368,6 +1368,16 @@ class StaticGuardTests(unittest.TestCase):
                         self.assertTrue(isinstance(f, ast.Attribute) and ast.unparse(f.value) == "subprocess", "%s calls a run() that is not subprocess.run" % fn)
 
     def test_no_effect_method_names_are_referenced_as_attributes_in_harness_or_producer(self):
+        tree = self.trees()["c4_producer.py"]  # structural: the CP workflow gets the supplied manifest_obj, T.manifest() only in the equality check
+        ctors = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and call_name(n) == "BoundedAuthorizationWorkflow"]
+        self.assertTrue(ctors)
+        for n in ctors:
+            kw = [k for k in n.keywords if k.arg == "manifest"]
+            self.assertEqual(len(kw), 1)
+            self.assertIn(ast.unparse(kw[0].value), ("manifest_obj", "copy.deepcopy(manifest_obj)"), "workflow manifest= must be the supplied manifest_obj")
+        uses = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and ast.unparse(n.func) == "T.manifest"]
+        compares = [c for c in ast.walk(tree) if isinstance(c, ast.Compare) and ast.unparse(c) == "manifest_obj != T.manifest()"]
+        self.assertEqual((len(uses), len(compares)), (1, 1), "T.manifest() is used only in the equality comparison")
         for fn in ("real_c4.py", "c4_producer.py"):
             for node in ast.walk(self.trees()[fn]):
                 if isinstance(node, ast.Attribute):

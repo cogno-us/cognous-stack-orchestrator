@@ -1160,6 +1160,9 @@ class StaticGuardTests(unittest.TestCase):
     ALLOWED_EXISTING_FILE_CHANGES = {".github/workflows/manual-contract-edge.yml"}
 
     def test_no_github_file_is_modified_added_or_untracked(self):
+        for rel in sorted(self.ALLOWED_GITHUB_CHANGES):  # an allowlisted path may change but must not be silently deleted
+            self.assertTrue((REPO / rel).is_file(), rel)
+        self.assertEqual(git("-C", str(REPO), "diff", "--name-only", "--diff-filter=D", BASE).strip(), "")
         self.assertEqual(set(git("-C", str(REPO), "diff", "--name-only", BASE, "--", ".github").split()) - self.ALLOWED_GITHUB_CHANGES, set())
         untracked = [line[3:] for line in git("-C", str(REPO), "status", "--porcelain", "--untracked-files=all", "--", ".github").splitlines()]
         self.assertEqual(set(untracked) - self.ALLOWED_GITHUB_CHANGES, set())

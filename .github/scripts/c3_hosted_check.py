@@ -755,7 +755,8 @@ def check():
     present = {n: (ev / n).is_file() for n in ("sources.txt", "context.json") + INPUTS + tuple(n for n, _ in SLICES) + DERIVED}
     c.true("every mandatory and derived evidence file exists before indexing", all(present.values()))
     idx = index_files(ev, ("oracle.txt", "evidence-manifest.json"))
-    c.eq("evidence index re-hash (independent second read of every indexed file)", idx, index_files(ev, ("oracle.txt", "evidence-manifest.json")))
+    # The index is verified against the files on disk AFTER the manifest is written (see `again` below); an immediate second read of unchanged
+    # files here would be a tautology and is deliberately not counted as a check.
     verdict = "PASS" if c.failed == 0 else "FAIL"
     lines = c.text()
     header = "C3 hosted oracle comparison: %s (%d checks, %d failed)" % (verdict, len(c.rows), c.failed)

@@ -19,7 +19,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "manual-contract-edge.yml"
 BASE_REV = "716f3247a93fe5b9fcda5aa430412de0aeecfef1"
 BASE_PATH = ".github/workflows/manual-contract-edge.yml"

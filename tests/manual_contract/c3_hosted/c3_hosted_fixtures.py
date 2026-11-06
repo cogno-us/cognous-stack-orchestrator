@@ -17,7 +17,7 @@ import tempfile
 
 sys.dont_write_bytecode = True
 
-REPO = pathlib.Path(__file__).resolve().parents[2]
+REPO = pathlib.Path(__file__).resolve().parents[3]
 CHECKER_REL = ".github/scripts/c3_hosted_check.py"
 CHECKER = REPO / CHECKER_REL
 CASE_ID = "c3_p1_n1_n3_n5_hosted_group"

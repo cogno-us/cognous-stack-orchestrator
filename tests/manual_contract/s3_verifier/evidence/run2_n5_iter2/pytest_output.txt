@@ -1,0 +1,7 @@
+.x.                                                                      [100%]
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_g0_source_identity
+PASSED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_n5_iter2_unsupported_generation_refused_by_generic_schema_closure
+XFAIL tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_n5_unsupported_generation - ORIGINAL frozen N5 expectation (unknown_enum_value at binding.generation) FAILED in run1; kept as visible adverse evidence; see s3_oracle_iteration2.json
+2 passed, 11 deselected, 1 xfailed in 0.62s

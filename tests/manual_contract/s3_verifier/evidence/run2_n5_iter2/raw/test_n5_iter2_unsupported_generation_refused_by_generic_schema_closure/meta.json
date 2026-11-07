@@ -1,0 +1,41 @@
+{
+ "check_verdicts": {
+  "v1.structure": "refuted",
+  "v1.wire.strict-parse": "confirmed",
+  "v2.decisions.authorized-inputs-agree": "could_not_check",
+  "v2.decisions.reason-registry": "could_not_check",
+  "v2.decisions.recomputable-reasons": "could_not_check",
+  "v2.identity.proposal-commitment": "could_not_check",
+  "v2.journal.attempts": "could_not_check",
+  "v2.journal.check_bindings": "could_not_check",
+  "v2.journal.check_ids": "could_not_check",
+  "v2.journal.closeouts": "could_not_check",
+  "v2.journal.decisions": "could_not_check",
+  "v2.journal.inputs_and_times": "could_not_check",
+  "v2.journal.journal_mode": "could_not_check",
+  "v2.journal.reconciliations": "could_not_check",
+  "v2.journal.references": "could_not_check",
+  "v2.journal.refusals": "could_not_check",
+  "v2.journal.vocabulary": "could_not_check",
+  "v2.lifecycle.control_plane_attempts": "could_not_check",
+  "v2.lifecycle.journal_protocol": "could_not_check",
+  "v4.ledger.acknowledged-attempts-have-rows": "could_not_check",
+  "v4.ledger.counts": "could_not_check",
+  "v4.ledger.effects-have-authorized-decisions": "could_not_check",
+  "v4.ledger.keys": "could_not_check",
+  "v4.ledger.observations-agree": "could_not_check",
+  "v4.ledger.row-matches-binding": "could_not_check",
+  "v4.ledger.rows-agree-with-attempts": "could_not_check"
+ },
+ "exit": 1,
+ "input_sha256": {
+  "control_plane_run.json": "e9f678560e84885868cce4b8ecff0d16d3cae5503aad850046efb598e08dbbbc",
+  "proposal.json": "d43ac343139f8c9393ddca4746961d1fc7a4e05bafa5a6c5f446157a53e5178d",
+  "refund_integration_v1_1.manifest.json": "789ad39596b9e1ef84a726a671883e1cb6b83343da3a31db0a1120906d68c074"
+ },
+ "mutation": "mutated control_plane_run.json: binding.generation unsupported value (same as original N5)",
+ "overall": "REJECT",
+ "report_sha256": "0a5c9529dbb9d02b39621b8babd16924fd5afde9d9d0c67b6b3c27769aa324fa",
+ "test": "test_n5_iter2_unsupported_generation_refused_by_generic_schema_closure",
+ "verifier_revision": "7caf25411b8be61178b12e71c48eeea7f62d8eb9"
+}

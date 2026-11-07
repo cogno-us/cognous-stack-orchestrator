@@ -1,0 +1,11 @@
+.......                                                                  [100%]
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/manual_contract/g3_refund/test_g3_cleanup.py::test_success_removes_only_the_owned_workspace_and_says_so
+PASSED tests/manual_contract/g3_refund/test_g3_cleanup.py::test_failed_removal_is_observable_and_never_reported_as_disposed
+PASSED tests/manual_contract/g3_refund/test_g3_cleanup.py::test_silent_noop_removal_does_not_count_as_disposal
+PASSED tests/manual_contract/g3_refund/test_g3_cleanup.py::test_original_failure_is_preserved_and_cleanup_failure_is_reported_with_it
+PASSED tests/manual_contract/g3_refund/test_g3_cleanup.py::test_original_failure_without_cleanup_failure_is_unchanged
+PASSED tests/manual_contract/g3_refund/test_g3_refund.py::test_check1_positive_complete_chain
+PASSED tests/manual_contract/g3_refund/test_g3_refund.py::test_check2_revoked_refusal_chain
+7 passed, 1 deselected in 4.84s

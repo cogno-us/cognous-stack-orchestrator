@@ -1,0 +1,54 @@
+{
+ "authority_id": "urn:cognous:authority:g2-synthetic-refund-root-1",
+ "baseline_reasons": [
+  "grant_not_active"
+ ],
+ "decision_result": "hold",
+ "effect_rows": [],
+ "field_provenance": {
+  "authenticated": false,
+  "cp_native_computed": [
+   "role-mapping digest = CP commitment({institution_id, version, aliases})",
+   "approval runtime_authority_commitment / required_inputs digest (CP native, set by the driver)"
+  ],
+  "ig_derived": [
+   "grant_id<-authority_id",
+   "grant.revision/GrantStatus.revision<-effective authority_revision|new_revision",
+   "GrantStatus.status<-effective mutations at t",
+   "institution_id",
+   "authority_domain",
+   "authority_basis_ref<-external_mandate_ref (source reference, not authenticated mandate)",
+   "grant.not_before<-origin.effective_at",
+   "grant.permissions<-permission_scope (unchanged)"
+  ],
+  "label": "SYNTHETIC FIXTURE FACTS - NOT INSTITUTIONAL AUTHORITY, NOT AUTHENTICATED, DEVELOPMENT ONLY",
+  "synthetic_fixture_only": [
+   "tenant_id",
+   "grant.expires_at",
+   "grant.issued_at",
+   "GrantStatus.observed_at/version/status_ref",
+   "issuer/issuer_role/issuance_record_ref/mandate_valid",
+   "principal/acting_identity/grantee",
+   "IdentityStatus",
+   "accountable_human_role (incl. mandate_ref)",
+   "authority_mode",
+   "context_ref",
+   "supporting_evidence_refs/change (empty constants)",
+   "policy ref/version/status",
+   "requirement (incl. permissions, approvals, tier)",
+   "conflicts",
+   "approval status",
+   "role-mapping aliases/version",
+   "delegation block (root-only constants)"
+  ]
+ },
+ "grant_revision": "r2",
+ "label": "SYNTHETIC DEVELOPER-MODE CP DECISION - not institutional authorization",
+ "reasons": [
+  "grant_revoked"
+ ],
+ "resolver_authenticated": false,
+ "runtime_run": false,
+ "scenario": "revoked",
+ "tenant_id": "tenant-alpha"
+}

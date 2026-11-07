@@ -1,0 +1,86 @@
+[
+ {
+  "stage": "G2 authority + CP decide()",
+  "component": "institutional-governance + control-plane",
+  "revision": "1ebe85be4cfe9e221ebd2618120687eb0b325d24",
+  "input_identity": "urn:cognous:authority:g2-synthetic-refund-root-1@r2",
+  "output_identity": null,
+  "status": "EXECUTED",
+  "outcome": "hold ['grant_revoked']",
+  "assertion_source": "synthetic fixture facts + IG lineage; CP decision is the authority",
+  "evidence_availability": "CP run record retained",
+  "limitation": "synthetic developer-mode; HOLD never bypassed"
+ },
+ {
+  "stage": "Runtime execute",
+  "component": "execution-runtime",
+  "revision": null,
+  "input_identity": null,
+  "output_identity": null,
+  "status": "NOT RUN",
+  "outcome": "not invoked because CP returned hold",
+  "assertion_source": "",
+  "evidence_availability": "",
+  "limitation": "no artifact generated"
+ },
+ {
+  "stage": "Replay import",
+  "component": "replay-bundle",
+  "revision": null,
+  "input_identity": null,
+  "output_identity": null,
+  "status": "NOT RUN",
+  "outcome": "not invoked because CP returned hold",
+  "assertion_source": "",
+  "evidence_availability": "",
+  "limitation": "no artifact generated"
+ },
+ {
+  "stage": "Pack import",
+  "component": "governance-evidence-pack",
+  "revision": null,
+  "input_identity": null,
+  "output_identity": null,
+  "status": "NOT RUN",
+  "outcome": "not invoked because CP returned hold",
+  "assertion_source": "",
+  "evidence_availability": "",
+  "limitation": "no artifact generated"
+ },
+ {
+  "stage": "Verifier",
+  "component": "verifier",
+  "revision": null,
+  "input_identity": null,
+  "output_identity": null,
+  "status": "NOT RUN",
+  "outcome": "not invoked because CP returned hold",
+  "assertion_source": "",
+  "evidence_availability": "",
+  "limitation": "no artifact generated"
+ },
+ {
+  "stage": "G1 attestation",
+  "component": "evidence-attestation",
+  "revision": null,
+  "input_identity": null,
+  "output_identity": null,
+  "status": "NOT RUN",
+  "outcome": "not invoked because CP returned hold",
+  "assertion_source": "",
+  "evidence_availability": "",
+  "limitation": "no artifact generated"
+ },
+ {
+  "stage": "G1b Registry",
+  "component": "evidence-registry",
+  "revision": null,
+  "input_identity": null,
+  "output_identity": null,
+  "status": "NOT RUN",
+  "outcome": "not invoked because CP returned hold",
+  "assertion_source": "",
+  "evidence_availability": "",
+  "limitation": "no artifact generated"
+ }
+]

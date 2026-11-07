@@ -45,8 +45,7 @@ def effects_rows(db: Path):
         return [dict(r) for r in conn.execute("SELECT effect_id, state, target, amount, unit FROM effects")]
 
 
-def capture():
-    work = Path(tempfile.mkdtemp(prefix=f"g3-{SCENARIO}-"))
+def capture(work: Path):
     manifest = json.loads((ROOT / "control_plane" / "tests" / "fixtures" / "refund_integration_v1_1.manifest.json").read_text(encoding="utf-8"))
     facts = D.load_json("synthetic_facts.json")
     bundle = D.load_json(BUNDLE)
@@ -107,8 +106,8 @@ def capture():
     print("RESULT", SCENARIO, res.status, res.error)
 
 
+WORK = Path(tempfile.mkdtemp(prefix=f"g3-{SCENARIO}-"))  # unique workspace owned by THIS invocation (exact path retained)
 try:
-    capture()
+    capture(WORK)
 finally:
-    for leftover in Path(tempfile.gettempdir()).glob(f"g3-{SCENARIO}-*"):  # dispose of the isolated SQLite after the evidence is captured
-        shutil.rmtree(leftover, ignore_errors=True)
+    shutil.rmtree(WORK, ignore_errors=True)  # dispose of the isolated SQLite; only the directory this invocation allocated, never a glob

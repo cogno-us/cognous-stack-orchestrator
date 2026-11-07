@@ -26,5 +26,8 @@ Needs Python with pydantic, cryptography and jsonschema (`PYTHON` = the interpre
 ## What each result does and does not mean
 Synthetic authorization (resolver `authenticated=false`; identity/mandate flags are fixture assertions) is not institutional authority. The Runtime write is real but local and **producer-reported**, not independently observed. The Verifier is ALPHA/HOLD and only abstains. The signature is valid only under a synthetic ephemeral snapshot and is not chain-bound. Registry inclusion is provisional on a disposable loopback chain: no custody, no finality. Nothing here is independent qualification.
 
+## Evidence history
+`evidence/run1/` (3/3 FAILED on a renderer key bug) and `evidence/run2_after_renderer_fix/` (3/3 PASS) belong to the predecessor head `0becf396`. `evidence/run3_cleanup_correction/` is the re-run of checks 1 and 2 after the cleanup-ownership correction: `g3_capture.py` now removes only the unique workspace it allocated (it no longer globs the system temp directory, which could delete another concurrent run's files).
+
 ## Rollback
 Delete `tests/manual_contract/g3_refund/`. The isolated SQLite file and the Ganache chain are disposed after each run.

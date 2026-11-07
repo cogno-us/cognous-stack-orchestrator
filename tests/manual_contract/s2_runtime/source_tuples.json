@@ -1,14 +1,33 @@
 {
   "notice": "DEVELOPMENT ONLY / UNQUALIFIED / NOT AN ADOPTED SOURCE LOCK. Does not replace the P1 source lock. Versioned S2 candidate tuples.",
   "tuple_1_superseded": {
-    "id": "S2-CANDIDATE-1", "note": "Original S2 run; stopped at gate G2 (tenant binding) with Replay accepting a coherently rewritten foreign-tenant operation. Its failed N2/N2b evidence stays associated with this tuple (evidence/runs/).",
-    "control_plane": "484fdbd297235dd24148ddb0703f2055a31eabff", "runtime": "f7a55e2a8494801e49193f9f46935f0a971c248d",
-    "replay": "93a76e281fcae6a65d2cd1d35376f87442dafb95", "evidence_pack": "065150852cc2a8abeb748777bb69d72ccd0e03d8", "manifest": "fa170815ef96a54c233d0dd9da821b60debabf8b"
+    "id": "S2-CANDIDATE-1",
+    "note": "Original S2 run; stopped at gate G2 (tenant binding) with Replay accepting a coherently rewritten foreign-tenant operation. Its failed N2/N2b evidence stays associated with this tuple (evidence/runs/).",
+    "control_plane": "484fdbd297235dd24148ddb0703f2055a31eabff",
+    "runtime": "f7a55e2a8494801e49193f9f46935f0a971c248d",
+    "replay": "93a76e281fcae6a65d2cd1d35376f87442dafb95",
+    "evidence_pack": "065150852cc2a8abeb748777bb69d72ccd0e03d8",
+    "manifest": "fa170815ef96a54c233d0dd9da821b60debabf8b"
   },
   "tuple_2_current": {
-    "id": "S2-CANDIDATE-2", "note": "Architect-approved revised candidate (Hub #273, VNEXT-S2-RESUME): Replay is the exact main merge commit of cogno-us/cognous-replay-bundle#89 (tenant-binding correction), not a branch reference.",
-    "control_plane": "484fdbd297235dd24148ddb0703f2055a31eabff", "runtime": "f7a55e2a8494801e49193f9f46935f0a971c248d",
-    "replay": "7eb7d76eda10ca1ff997bb86853e903e57da625c", "replay_remediation_commit": "5d69fae5e524f8653bb0ea5a7e861b4e1169fa6c",
-    "evidence_pack": "065150852cc2a8abeb748777bb69d72ccd0e03d8", "manifest": "fa170815ef96a54c233d0dd9da821b60debabf8b"
+    "id": "S2-CANDIDATE-2",
+    "note": "SUPERSEDED by tuple_3_current for the Pack-level tests; retained unchanged as evidence (Pack 06515085 refused Replay 7eb7d76e).",
+    "control_plane": "484fdbd297235dd24148ddb0703f2055a31eabff",
+    "runtime": "f7a55e2a8494801e49193f9f46935f0a971c248d",
+    "replay": "7eb7d76eda10ca1ff997bb86853e903e57da625c",
+    "replay_remediation_commit": "5d69fae5e524f8653bb0ea5a7e861b4e1169fa6c",
+    "evidence_pack": "065150852cc2a8abeb748777bb69d72ccd0e03d8",
+    "manifest": "fa170815ef96a54c233d0dd9da821b60debabf8b"
+  },
+  "tuple_3_current": {
+    "id": "S2-CANDIDATE-3",
+    "note": "Architect-selected (Hub #273 comment 6704010888): Pack = merge commit 1906c1fb of Pack PR #68 with the explicit opt-in profile; Replay unchanged from tuple 2. Development testing only; not a source lock.",
+    "control_plane": "484fdbd297235dd24148ddb0703f2055a31eabff",
+    "runtime": "f7a55e2a8494801e49193f9f46935f0a971c248d",
+    "replay": "7eb7d76eda10ca1ff997bb86853e903e57da625c",
+    "replay_remediation_commit": "5d69fae5e524f8653bb0ea5a7e861b4e1169fa6c",
+    "evidence_pack": "1906c1fb1da4b96449565301c143d7a06b6a16bb",
+    "manifest": "fa170815ef96a54c233d0dd9da821b60debabf8b",
+    "pack_profile": "cp2-replay-7eb7d76e-tenant-binding-dev-0.1"
   }
 }

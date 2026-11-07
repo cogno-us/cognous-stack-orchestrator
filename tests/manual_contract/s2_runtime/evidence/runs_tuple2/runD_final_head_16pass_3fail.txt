@@ -1,0 +1,372 @@
+..FREFUSAL N1:operation_amount | code=None | execution_envelope.operation.amount conflicts with committed operation
+.REFUSAL N1:effect_operation_digest | code=None | Moltbot effect operation_digest mismatch
+..REFUSAL N2 | code='binding_contract_mismatch' | execution_envelope.operation.tenant_id conflicts with committed operation
+.REFUSAL N2 | code='binding_contract_mismatch' | execution_envelope.operation.tenant_id conflicts with committed operation
+.REFUSAL N3:revision | code=None | unsupported Moltbot producer repository revision
+REFUSAL N3:undeclared_member | code='undeclared_member' | moltbot_export has unsupported member(s): undeclared_member
+.REFUSAL N4:attempts | code='result_attempt_unresolved' | execution result status 'executed' names no attempt row of the export (a null attempt_id or an id that matches no row is refused)
+.REFUSAL N4:attempt_events | code='attempt_without_events' | executor attempt 0f3d84ff-2e09-447e-a3ad-917118f9406d has no attempt events
+.REFUSAL N5:null_observation | code='observations_mismatch' | accepted executor observations differ from result
+.REFUSAL N5:effects_removed | code=None | new effect claim lacks retained destination row
+.REFUSAL N6:effects | code=None | duplicate destination effect row for sha256:4e5844d6d53ab6f8694e9c76cb6238ec4110137dd35de73cb0b22963961ecde8
+.REFUSAL N6:attempts | code='duplicate_attempt_row' | duplicate executor attempt row
+.N7-REPLAY {"bundle_status": "reconstruction_complete", "result": {"acknowledged": false, "error": "destination_outcome_unknown:TimeoutError", "newly_executed": false, "observed_state": "applied", "status": "reconciled"}}
+.FN8-REPLAY {"kinds": ["control_plane_attempt_transition", "effect_observation", "input_time_floors", "reconciliation", "resolution_check", "resolution_check_event", "runtime_decision", "runtime_proposal"], "moltbot_safe_revision": null, "semantics": {"destination_observation": "not_performed", "external_effect_execution": false, "independent_effect_verification": false, "model_reexecution": false, "notes": "Replay reconstructs recorded events only; import never renews permission or creates an effect.", "policy_reevaluation": false, "record_reconstruction": true}, "status": "reconstruction_partial"}
+.F
+=================================== FAILURES ===================================
+___________________ test_p_pack_native_positive_pack_counts ____________________
+
+bundle = {'bundle_id': 'f16bb4d3-8847-465a-8b61-e4e62d82ed8c', 'bundle_version': '0.2.0', 'run_id': 'run-1', 'status': 'reconstruction_complete', ...}
+
+    def _run_pinned_replay_validator(bundle: dict[str, Any]) -> str:
+        control_plane, proposal, moltbot = _retained_replay_inputs(bundle)
+        try:
+            from agent_replay_bundle.importers import ImportContractError as ReplayImportContractError
+            from agent_replay_bundle.importers import import_bounded_workflow
+        except Exception as exc:
+            raise ImportContractError(f"pinned Replay semantic validator unavailable; install cogno-us/cognous-agent-replay-bundle at {REPLAY_REVISION}") from exc
+        try:
+            revision = _selected_control_plane_revision(bundle)
+            if revision not in {CONTROL_PLANE_REVISION, *ALL_CONTROL_PLANE_V2_REVISIONS}:
+                raise ImportContractError("unsupported Control Plane revision")
+>           _require_pinned_replay_distribution(_expected_replay_revision(bundle))
+
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:992: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+expected = '93a76e281fcae6a65d2cd1d35376f87442dafb95'
+
+    def _require_pinned_replay_distribution(expected: str) -> None:
+        """Refuse to emit a trusted-revision claim unless the imported Replay code is the pinned revision.
+    
+        The revision is read from the installed distribution (or checkout), and the code that is actually imported must be that
+        distribution's own files (see ``_imported_replay_code_problem``).
+        """
+        installed = _installed_replay_revision()
+        if installed != expected:
+>           raise ImportContractError(
+                f"installed Replay distribution revision {installed!r} is not the pinned revision {expected}; "
+                f"install cogno-us/cognous-replay-bundle at {expected} (a trusted-revision claim is not emitted otherwise)")
+E           agent_governance_evidence_pack.importer.ImportContractError: installed Replay distribution revision '7eb7d76eda10ca1ff997bb86853e903e57da625c' is not the pinned revision 93a76e281fcae6a65d2cd1d35376f87442dafb95; install cogno-us/cognous-replay-bundle at 93a76e281fcae6a65d2cd1d35376f87442dafb95 (a trusted-revision claim is not emitted otherwise)
+
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:973: ImportContractError
+
+The above exception was the direct cause of the following exception:
+
+stack = <class 'test_s2_runtime_provenance.S'>
+valid = <class 'test_s2_runtime_provenance.V'>
+
+    def test_p_pack_native_positive_pack_counts(stack, valid):
+        """The Pack part of P (executor counts sourced from Runtime records)."""
+        bundle = _replay(stack, valid, valid.export)
+>       pack = _pack(stack, bundle)
+               ^^^^^^^^^^^^^^^^^^^^
+
+tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py:174: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py:105: in _pack
+    return stack.pack.import_manifest_reconstruction(copy.deepcopy(stack.manifest), copy.deepcopy(bundle), generated_at=GENERATED)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:1582: in import_manifest_reconstruction
+    actions, findings, auth, replay_validator_status = _semantic(manifest, bundle)
+                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:1152: in _semantic
+    validator_status = _run_pinned_replay_validator(bundle)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+bundle = {'bundle_id': 'f16bb4d3-8847-465a-8b61-e4e62d82ed8c', 'bundle_version': '0.2.0', 'run_id': 'run-1', 'status': 'reconstruction_complete', ...}
+
+    def _run_pinned_replay_validator(bundle: dict[str, Any]) -> str:
+        control_plane, proposal, moltbot = _retained_replay_inputs(bundle)
+        try:
+            from agent_replay_bundle.importers import ImportContractError as ReplayImportContractError
+            from agent_replay_bundle.importers import import_bounded_workflow
+        except Exception as exc:
+            raise ImportContractError(f"pinned Replay semantic validator unavailable; install cogno-us/cognous-agent-replay-bundle at {REPLAY_REVISION}") from exc
+        try:
+            revision = _selected_control_plane_revision(bundle)
+            if revision not in {CONTROL_PLANE_REVISION, *ALL_CONTROL_PLANE_V2_REVISIONS}:
+                raise ImportContractError("unsupported Control Plane revision")
+            _require_pinned_replay_distribution(_expected_replay_revision(bundle))
+            if _is_v2(bundle):
+                replay_profiles = _accepted_replay_v2_profiles(require_persistence=revision in (CONTROL_PLANE_V2_PERSISTENCE_REVISION, MERGED_REVISIONS["control_plane"]), require_merged=revision == MERGED_REVISIONS["control_plane"], require_refusal=revision == REFUSAL_REVISIONS["control_plane"], require_authority=revision == RUNTIME_AUTHORITY_REVISIONS["control_plane"], require_security=revision == SECURITY_REVISIONS["control_plane"], require_f5b=revision == F5B_REVISIONS["control_plane"], require_p4=revision == P4_REVISIONS["control_plane"], require_p2=revision == P2_REVISIONS["control_plane"], require_cur=revision == CUR_REVISIONS["control_plane"], require_cp2=revision == CP2_REVISIONS["control_plane"])
+                cp_profile = next(
+                    (p for p in bundle.get("producer_profiles", [])
+                     if isinstance(p, dict) and p.get("repository") == "cogno-us/cognous-agent-control-plane"),
+                    None,
+                )
+                if not isinstance(cp_profile, dict) or cp_profile.get("revision") != revision:
+                    raise ImportContractError("Control Plane producer attribution contradicts selected revision")
+                if cp_profile.get("profile_id") != replay_profiles[revision]:
+                    raise ImportContractError("Control Plane producer profile contradicts accepted Replay mapping")
+                contract = (bundle.get("metadata") or {}).get("moltbot_producer_contract")
+                if isinstance(contract, dict):
+                    compatible = contract.get("compatible_control_plane_revisions")
+                    expected_compatible = [_security_revisions(bundle)["control_plane"]] if _is_security(bundle) else [RUNTIME_AUTHORITY_REVISIONS["control_plane"]] if _is_runtime_authority(bundle) else [REFUSAL_REVISIONS["control_plane"]] if _is_refusal_v2(bundle) else [MERGED_REVISIONS["control_plane"]] if _is_merged_v2(bundle) else list(CONTROL_PLANE_V2_REVISIONS)
+                    if compatible is not None and compatible != expected_compatible:
+                        raise ImportContractError("executor producer compatibility set contradicts accepted Replay mapping")
+                    if contract.get("control_plane_revision") not in (None, revision):
+                        raise ImportContractError("executor producer contract Control Plane revision contradicts selected revision")
+                reconstructed = import_bounded_workflow(control_plane, proposal=proposal,
+                    moltbot_export=moltbot, control_plane_revision=revision)
+                validated = reconstructed.model_dump(mode="json")
+                for field in ("records", "links", "commitments", "producer_profiles", "status", "import_reports", "semantics"):
+                    if bundle.get(field) != validated.get(field):
+                        raise ImportContractError(f"retained Replay {field} differs from accepted reconstruction")
+                for field in ("effect_observation_history", "moltbot_producer_contract"):
+                    if bundle.get("metadata", {}).get(field) != validated["metadata"].get(field):
+                        raise ImportContractError(f"retained Replay {field} differs from accepted reconstruction")
+            else:
+                reconstructed = import_bounded_workflow(control_plane, proposal=proposal, moltbot_export=moltbot)
+        except ReplayImportContractError as exc:
+            raise ImportContractError(f"pinned Replay semantic validation failed: {exc}") from exc
+        except Exception as exc:
+>           raise ImportContractError(f"pinned Replay semantic validation failed unexpectedly: {exc}") from exc
+E           agent_governance_evidence_pack.importer.ImportContractError: pinned Replay semantic validation failed unexpectedly: installed Replay distribution revision '7eb7d76eda10ca1ff997bb86853e903e57da625c' is not the pinned revision 93a76e281fcae6a65d2cd1d35376f87442dafb95; install cogno-us/cognous-replay-bundle at 93a76e281fcae6a65d2cd1d35376f87442dafb95 (a trusted-revision claim is not emitted otherwise)
+
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:1026: ImportContractError
+_________ test_n7_pack_lost_acknowledgment_representation_is_recorded __________
+
+bundle = {'bundle_id': '5e58e925-2995-4b84-a819-9a14250c2173', 'bundle_version': '0.2.0', 'run_id': 'run-1', 'status': 'reconstruction_complete', ...}
+
+    def _run_pinned_replay_validator(bundle: dict[str, Any]) -> str:
+        control_plane, proposal, moltbot = _retained_replay_inputs(bundle)
+        try:
+            from agent_replay_bundle.importers import ImportContractError as ReplayImportContractError
+            from agent_replay_bundle.importers import import_bounded_workflow
+        except Exception as exc:
+            raise ImportContractError(f"pinned Replay semantic validator unavailable; install cogno-us/cognous-agent-replay-bundle at {REPLAY_REVISION}") from exc
+        try:
+            revision = _selected_control_plane_revision(bundle)
+            if revision not in {CONTROL_PLANE_REVISION, *ALL_CONTROL_PLANE_V2_REVISIONS}:
+                raise ImportContractError("unsupported Control Plane revision")
+>           _require_pinned_replay_distribution(_expected_replay_revision(bundle))
+
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:992: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+expected = '93a76e281fcae6a65d2cd1d35376f87442dafb95'
+
+    def _require_pinned_replay_distribution(expected: str) -> None:
+        """Refuse to emit a trusted-revision claim unless the imported Replay code is the pinned revision.
+    
+        The revision is read from the installed distribution (or checkout), and the code that is actually imported must be that
+        distribution's own files (see ``_imported_replay_code_problem``).
+        """
+        installed = _installed_replay_revision()
+        if installed != expected:
+>           raise ImportContractError(
+                f"installed Replay distribution revision {installed!r} is not the pinned revision {expected}; "
+                f"install cogno-us/cognous-replay-bundle at {expected} (a trusted-revision claim is not emitted otherwise)")
+E           agent_governance_evidence_pack.importer.ImportContractError: installed Replay distribution revision '7eb7d76eda10ca1ff997bb86853e903e57da625c' is not the pinned revision 93a76e281fcae6a65d2cd1d35376f87442dafb95; install cogno-us/cognous-replay-bundle at 93a76e281fcae6a65d2cd1d35376f87442dafb95 (a trusted-revision claim is not emitted otherwise)
+
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:973: ImportContractError
+
+The above exception was the direct cause of the following exception:
+
+stack = <class 'test_s2_runtime_provenance.S'>
+lost = <class 'test_s2_runtime_provenance.L'>
+
+    def test_n7_pack_lost_acknowledgment_representation_is_recorded(stack, lost):
+        bundle = _replay(stack, lost, lost.export)
+>       c = _trace(_pack(stack, bundle))["derived_counts"]
+                   ^^^^^^^^^^^^^^^^^^^^
+
+tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py:318: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py:105: in _pack
+    return stack.pack.import_manifest_reconstruction(copy.deepcopy(stack.manifest), copy.deepcopy(bundle), generated_at=GENERATED)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:1582: in import_manifest_reconstruction
+    actions, findings, auth, replay_validator_status = _semantic(manifest, bundle)
+                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:1152: in _semantic
+    validator_status = _run_pinned_replay_validator(bundle)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+bundle = {'bundle_id': '5e58e925-2995-4b84-a819-9a14250c2173', 'bundle_version': '0.2.0', 'run_id': 'run-1', 'status': 'reconstruction_complete', ...}
+
+    def _run_pinned_replay_validator(bundle: dict[str, Any]) -> str:
+        control_plane, proposal, moltbot = _retained_replay_inputs(bundle)
+        try:
+            from agent_replay_bundle.importers import ImportContractError as ReplayImportContractError
+            from agent_replay_bundle.importers import import_bounded_workflow
+        except Exception as exc:
+            raise ImportContractError(f"pinned Replay semantic validator unavailable; install cogno-us/cognous-agent-replay-bundle at {REPLAY_REVISION}") from exc
+        try:
+            revision = _selected_control_plane_revision(bundle)
+            if revision not in {CONTROL_PLANE_REVISION, *ALL_CONTROL_PLANE_V2_REVISIONS}:
+                raise ImportContractError("unsupported Control Plane revision")
+            _require_pinned_replay_distribution(_expected_replay_revision(bundle))
+            if _is_v2(bundle):
+                replay_profiles = _accepted_replay_v2_profiles(require_persistence=revision in (CONTROL_PLANE_V2_PERSISTENCE_REVISION, MERGED_REVISIONS["control_plane"]), require_merged=revision == MERGED_REVISIONS["control_plane"], require_refusal=revision == REFUSAL_REVISIONS["control_plane"], require_authority=revision == RUNTIME_AUTHORITY_REVISIONS["control_plane"], require_security=revision == SECURITY_REVISIONS["control_plane"], require_f5b=revision == F5B_REVISIONS["control_plane"], require_p4=revision == P4_REVISIONS["control_plane"], require_p2=revision == P2_REVISIONS["control_plane"], require_cur=revision == CUR_REVISIONS["control_plane"], require_cp2=revision == CP2_REVISIONS["control_plane"])
+                cp_profile = next(
+                    (p for p in bundle.get("producer_profiles", [])
+                     if isinstance(p, dict) and p.get("repository") == "cogno-us/cognous-agent-control-plane"),
+                    None,
+                )
+                if not isinstance(cp_profile, dict) or cp_profile.get("revision") != revision:
+                    raise ImportContractError("Control Plane producer attribution contradicts selected revision")
+                if cp_profile.get("profile_id") != replay_profiles[revision]:
+                    raise ImportContractError("Control Plane producer profile contradicts accepted Replay mapping")
+                contract = (bundle.get("metadata") or {}).get("moltbot_producer_contract")
+                if isinstance(contract, dict):
+                    compatible = contract.get("compatible_control_plane_revisions")
+                    expected_compatible = [_security_revisions(bundle)["control_plane"]] if _is_security(bundle) else [RUNTIME_AUTHORITY_REVISIONS["control_plane"]] if _is_runtime_authority(bundle) else [REFUSAL_REVISIONS["control_plane"]] if _is_refusal_v2(bundle) else [MERGED_REVISIONS["control_plane"]] if _is_merged_v2(bundle) else list(CONTROL_PLANE_V2_REVISIONS)
+                    if compatible is not None and compatible != expected_compatible:
+                        raise ImportContractError("executor producer compatibility set contradicts accepted Replay mapping")
+                    if contract.get("control_plane_revision") not in (None, revision):
+                        raise ImportContractError("executor producer contract Control Plane revision contradicts selected revision")
+                reconstructed = import_bounded_workflow(control_plane, proposal=proposal,
+                    moltbot_export=moltbot, control_plane_revision=revision)
+                validated = reconstructed.model_dump(mode="json")
+                for field in ("records", "links", "commitments", "producer_profiles", "status", "import_reports", "semantics"):
+                    if bundle.get(field) != validated.get(field):
+                        raise ImportContractError(f"retained Replay {field} differs from accepted reconstruction")
+                for field in ("effect_observation_history", "moltbot_producer_contract"):
+                    if bundle.get("metadata", {}).get(field) != validated["metadata"].get(field):
+                        raise ImportContractError(f"retained Replay {field} differs from accepted reconstruction")
+            else:
+                reconstructed = import_bounded_workflow(control_plane, proposal=proposal, moltbot_export=moltbot)
+        except ReplayImportContractError as exc:
+            raise ImportContractError(f"pinned Replay semantic validation failed: {exc}") from exc
+        except Exception as exc:
+>           raise ImportContractError(f"pinned Replay semantic validation failed unexpectedly: {exc}") from exc
+E           agent_governance_evidence_pack.importer.ImportContractError: pinned Replay semantic validation failed unexpectedly: installed Replay distribution revision '7eb7d76eda10ca1ff997bb86853e903e57da625c' is not the pinned revision 93a76e281fcae6a65d2cd1d35376f87442dafb95; install cogno-us/cognous-replay-bundle at 93a76e281fcae6a65d2cd1d35376f87442dafb95 (a trusted-revision claim is not emitted otherwise)
+
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:1026: ImportContractError
+___ test_n8_pack_missing_export_is_validated_partial_and_counts_are_recorded ___
+
+bundle = {'bundle_id': 'd5461831-812d-48d3-8106-fd1c51375a00', 'bundle_version': '0.2.0', 'run_id': 'run-1', 'status': 'reconstruction_partial', ...}
+
+    def _run_pinned_replay_validator(bundle: dict[str, Any]) -> str:
+        control_plane, proposal, moltbot = _retained_replay_inputs(bundle)
+        try:
+            from agent_replay_bundle.importers import ImportContractError as ReplayImportContractError
+            from agent_replay_bundle.importers import import_bounded_workflow
+        except Exception as exc:
+            raise ImportContractError(f"pinned Replay semantic validator unavailable; install cogno-us/cognous-agent-replay-bundle at {REPLAY_REVISION}") from exc
+        try:
+            revision = _selected_control_plane_revision(bundle)
+            if revision not in {CONTROL_PLANE_REVISION, *ALL_CONTROL_PLANE_V2_REVISIONS}:
+                raise ImportContractError("unsupported Control Plane revision")
+>           _require_pinned_replay_distribution(_expected_replay_revision(bundle))
+
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:992: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+expected = '93a76e281fcae6a65d2cd1d35376f87442dafb95'
+
+    def _require_pinned_replay_distribution(expected: str) -> None:
+        """Refuse to emit a trusted-revision claim unless the imported Replay code is the pinned revision.
+    
+        The revision is read from the installed distribution (or checkout), and the code that is actually imported must be that
+        distribution's own files (see ``_imported_replay_code_problem``).
+        """
+        installed = _installed_replay_revision()
+        if installed != expected:
+>           raise ImportContractError(
+                f"installed Replay distribution revision {installed!r} is not the pinned revision {expected}; "
+                f"install cogno-us/cognous-replay-bundle at {expected} (a trusted-revision claim is not emitted otherwise)")
+E           agent_governance_evidence_pack.importer.ImportContractError: installed Replay distribution revision '7eb7d76eda10ca1ff997bb86853e903e57da625c' is not the pinned revision 93a76e281fcae6a65d2cd1d35376f87442dafb95; install cogno-us/cognous-replay-bundle at 93a76e281fcae6a65d2cd1d35376f87442dafb95 (a trusted-revision claim is not emitted otherwise)
+
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:973: ImportContractError
+
+The above exception was the direct cause of the following exception:
+
+stack = <class 'test_s2_runtime_provenance.S'>
+valid = <class 'test_s2_runtime_provenance.V'>
+
+    def test_n8_pack_missing_export_is_validated_partial_and_counts_are_recorded(stack, valid):
+        bundle = _replay(stack, valid, None)
+>       pack = _pack(stack, bundle)
+               ^^^^^^^^^^^^^^^^^^^^
+
+tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py:335: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py:105: in _pack
+    return stack.pack.import_manifest_reconstruction(copy.deepcopy(stack.manifest), copy.deepcopy(bundle), generated_at=GENERATED)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:1582: in import_manifest_reconstruction
+    actions, findings, auth, replay_validator_status = _semantic(manifest, bundle)
+                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:1152: in _semantic
+    validator_status = _run_pinned_replay_validator(bundle)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+bundle = {'bundle_id': 'd5461831-812d-48d3-8106-fd1c51375a00', 'bundle_version': '0.2.0', 'run_id': 'run-1', 'status': 'reconstruction_partial', ...}
+
+    def _run_pinned_replay_validator(bundle: dict[str, Any]) -> str:
+        control_plane, proposal, moltbot = _retained_replay_inputs(bundle)
+        try:
+            from agent_replay_bundle.importers import ImportContractError as ReplayImportContractError
+            from agent_replay_bundle.importers import import_bounded_workflow
+        except Exception as exc:
+            raise ImportContractError(f"pinned Replay semantic validator unavailable; install cogno-us/cognous-agent-replay-bundle at {REPLAY_REVISION}") from exc
+        try:
+            revision = _selected_control_plane_revision(bundle)
+            if revision not in {CONTROL_PLANE_REVISION, *ALL_CONTROL_PLANE_V2_REVISIONS}:
+                raise ImportContractError("unsupported Control Plane revision")
+            _require_pinned_replay_distribution(_expected_replay_revision(bundle))
+            if _is_v2(bundle):
+                replay_profiles = _accepted_replay_v2_profiles(require_persistence=revision in (CONTROL_PLANE_V2_PERSISTENCE_REVISION, MERGED_REVISIONS["control_plane"]), require_merged=revision == MERGED_REVISIONS["control_plane"], require_refusal=revision == REFUSAL_REVISIONS["control_plane"], require_authority=revision == RUNTIME_AUTHORITY_REVISIONS["control_plane"], require_security=revision == SECURITY_REVISIONS["control_plane"], require_f5b=revision == F5B_REVISIONS["control_plane"], require_p4=revision == P4_REVISIONS["control_plane"], require_p2=revision == P2_REVISIONS["control_plane"], require_cur=revision == CUR_REVISIONS["control_plane"], require_cp2=revision == CP2_REVISIONS["control_plane"])
+                cp_profile = next(
+                    (p for p in bundle.get("producer_profiles", [])
+                     if isinstance(p, dict) and p.get("repository") == "cogno-us/cognous-agent-control-plane"),
+                    None,
+                )
+                if not isinstance(cp_profile, dict) or cp_profile.get("revision") != revision:
+                    raise ImportContractError("Control Plane producer attribution contradicts selected revision")
+                if cp_profile.get("profile_id") != replay_profiles[revision]:
+                    raise ImportContractError("Control Plane producer profile contradicts accepted Replay mapping")
+                contract = (bundle.get("metadata") or {}).get("moltbot_producer_contract")
+                if isinstance(contract, dict):
+                    compatible = contract.get("compatible_control_plane_revisions")
+                    expected_compatible = [_security_revisions(bundle)["control_plane"]] if _is_security(bundle) else [RUNTIME_AUTHORITY_REVISIONS["control_plane"]] if _is_runtime_authority(bundle) else [REFUSAL_REVISIONS["control_plane"]] if _is_refusal_v2(bundle) else [MERGED_REVISIONS["control_plane"]] if _is_merged_v2(bundle) else list(CONTROL_PLANE_V2_REVISIONS)
+                    if compatible is not None and compatible != expected_compatible:
+                        raise ImportContractError("executor producer compatibility set contradicts accepted Replay mapping")
+                    if contract.get("control_plane_revision") not in (None, revision):
+                        raise ImportContractError("executor producer contract Control Plane revision contradicts selected revision")
+                reconstructed = import_bounded_workflow(control_plane, proposal=proposal,
+                    moltbot_export=moltbot, control_plane_revision=revision)
+                validated = reconstructed.model_dump(mode="json")
+                for field in ("records", "links", "commitments", "producer_profiles", "status", "import_reports", "semantics"):
+                    if bundle.get(field) != validated.get(field):
+                        raise ImportContractError(f"retained Replay {field} differs from accepted reconstruction")
+                for field in ("effect_observation_history", "moltbot_producer_contract"):
+                    if bundle.get("metadata", {}).get(field) != validated["metadata"].get(field):
+                        raise ImportContractError(f"retained Replay {field} differs from accepted reconstruction")
+            else:
+                reconstructed = import_bounded_workflow(control_plane, proposal=proposal, moltbot_export=moltbot)
+        except ReplayImportContractError as exc:
+            raise ImportContractError(f"pinned Replay semantic validation failed: {exc}") from exc
+        except Exception as exc:
+>           raise ImportContractError(f"pinned Replay semantic validation failed unexpectedly: {exc}") from exc
+E           agent_governance_evidence_pack.importer.ImportContractError: pinned Replay semantic validation failed unexpectedly: installed Replay distribution revision '7eb7d76eda10ca1ff997bb86853e903e57da625c' is not the pinned revision 93a76e281fcae6a65d2cd1d35376f87442dafb95; install cogno-us/cognous-replay-bundle at 93a76e281fcae6a65d2cd1d35376f87442dafb95 (a trusted-revision claim is not emitted otherwise)
+
+../../s2r/stack2/evidence_pack/src/agent_governance_evidence_pack/importer.py:1026: ImportContractError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_g1_runtime_route_a_executes_once_under_the_strict_tenant_control_plane
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_p_replay_native_positive_runtime_export_replay_complete
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n1_operation_mismatch_is_refused[operation_amount]
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n1_operation_mismatch_is_refused[effect_operation_digest]
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n2_control_reseal_without_tenant_change_is_accepted
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n2_executor_side_tenant_mismatch_is_refused_by_a_tenant_check[tenant_id-tenant-beta]
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n2b_executor_and_control_plane_digests_agree_on_a_foreign_tenant_but_proposal_and_binding_do_not
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n3_unsupported_revision_and_undeclared_member_are_refused
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n4_missing_runtime_attempt_evidence_is_refused[attempts]
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n4_missing_runtime_attempt_evidence_is_refused[attempt_events]
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n5_missing_effect_evidence_is_refused[null_observation]
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n5_missing_effect_evidence_is_refused[effects_removed]
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n6_duplicate_evidence_rows_are_refused[effects]
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n6_duplicate_evidence_rows_are_refused[attempts]
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n7_replay_lost_acknowledgment_stays_unacknowledged_without_false_success
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n8_replay_missing_export_is_partial_with_no_runtime_records
+FAILED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_p_pack_native_positive_pack_counts
+FAILED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n7_pack_lost_acknowledgment_representation_is_recorded
+FAILED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_n8_pack_missing_export_is_validated_partial_and_counts_are_recorded
+3 failed, 16 passed in 1.97s

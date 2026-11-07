@@ -1,0 +1,340 @@
+"""S2-REFUND-RT-01 selected test battery (P, N1-N8). DEVELOPMENT ONLY, SYNTHETIC / NONPRODUCTION, UNQUALIFIED, builder-lineage evidence.
+
+Chain under test, all native and unmodified: pinned Control Plane (strict-tenant, tenant-alpha) -> pinned Execution Runtime Route A (PinnedControlPlaneExecutor.execute,
+isolated local SQLite) -> Runtime export_execution_artifacts output (persisted unmodified by s2_capture.py) -> Replay import_bounded_workflow(moltbot_export=<export>) ->
+Evidence Pack import_manifest_reconstruction. Negatives are in-memory mutations of deep copies of ONE captured export; the persisted raw files are never changed.
+
+Requires S2_STACK_ROOT: a directory holding control_plane (484fdbd2), runtime (f7a55e2a), replay (7eb7d76e, S2-CANDIDATE-2; 93a76e28 was S2-CANDIDATE-1), evidence_pack (06515085),
+manifest (fa170815), each a checkout whose TRACKED files are unmodified (untracked files are not checked). S2_REQUIRE=1 turns a missing/unsuitable root into a failure (skips are not passes). Facts are separated by source: Manifest declaration, Control Plane
+authorization, Runtime SQLite rows (export effects/attempts), Runtime export, Replay reconstruction, Pack summary. The export's repository_revision is CALLER-ASSERTED by the
+capture script, and the Runtime does not persist the export: the harness does. An effect_id supplied by the Control Plane is not a Runtime authority decision.
+"""
+import copy
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+HERE = Path(__file__).resolve().parent
+ROOT_ENV = os.environ.get("S2_STACK_ROOT")
+# S2-CANDIDATE-2 (source_tuples.json): Replay = exact main merge commit 7eb7d76e of Replay PR #89 (tenant-binding correction). S2-CANDIDATE-1 used Replay 93a76e28.
+PINS = {"control_plane": "484fdbd297235dd24148ddb0703f2055a31eabff", "runtime": "f7a55e2a8494801e49193f9f46935f0a971c248d",
+        "replay": "7eb7d76eda10ca1ff997bb86853e903e57da625c", "evidence_pack": "065150852cc2a8abeb748777bb69d72ccd0e03d8",
+        "manifest": "fa170815ef96a54c233d0dd9da821b60debabf8b"}
+MANIFEST_REL = "examples/refund_integration_v1_1.manifest.json"
+CP_LABEL = PINS["control_plane"]
+GENERATED = "2026-11-07T00:00:00Z"
+ALPHA = "tenant-alpha"
+
+
+def _git(root, *args):
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": "/nonexistent", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "LC_ALL": "C"}
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, env=env, timeout=60, check=True).stdout.strip()
+
+
+def _need():
+    if ROOT_ENV and all((Path(ROOT_ENV) / k).is_dir() for k in PINS):
+        return Path(ROOT_ENV)
+    if os.environ.get("S2_REQUIRE") == "1":
+        pytest.fail("S2_REQUIRE=1 but S2_STACK_ROOT is not a stack root")
+    pytest.skip("S2_STACK_ROOT not set")
+
+
+@pytest.fixture(scope="module")
+def stack():
+    root = _need()
+    identity = {}
+    for key, pin in PINS.items():
+        head = _git(root / key, "rev-parse", "HEAD")
+        dirty = _git(root / key, "status", "--porcelain", "--untracked-files=no")
+        assert head == pin, (key, head)
+        assert dirty == "", (key, "tracked files modified")
+        identity[key] = {"head": head, "tree": _git(root / key, "rev-parse", "HEAD^{tree}")}
+    for sub in ("replay/src", "evidence_pack/src"):
+        sys.path.insert(0, str(root / sub))
+    os.environ["ODES_ALLOW_UNVERIFIED_REPLAY"] = "0"
+    from agent_replay_bundle import importers as replay
+    from agent_governance_evidence_pack import importer as pack
+    for mod, key in ((replay, "replay"), (pack, "evidence_pack")):
+        assert Path(mod.__file__).resolve().is_relative_to((root / key).resolve()), (key, mod.__file__)
+    # Source identity of the IMPORTED Replay code (not just a SHA string): the checkout HEAD is the pin, it contains the remediation commit, and the loaded module has the correction.
+    tuples = json.loads((HERE / "source_tuples.json").read_text())["tuple_2_current"]
+    assert all(tuples[k] == PINS[k] for k in PINS), "source_tuples.json does not match the pins"
+    assert subprocess.run(["git", "-C", str(root / "replay"), "merge-base", "--is-ancestor", tuples["replay_remediation_commit"], PINS["replay"]]).returncode == 0
+    assert hasattr(replay, "_validate_operation_tenant"), "imported Replay lacks the tenant-binding correction"
+    identity["imported_replay_file"] = str(Path(replay.__file__).resolve())
+    manifest = json.loads((root / "manifest" / MANIFEST_REL).read_text())
+    return type("S", (), {"root": root, "replay": replay, "pack": pack, "manifest": manifest, "identity": identity})
+
+
+def _capture(stack, scenario, out):
+    cp, rt = stack.root / "control_plane", stack.root / "runtime"
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(cp / "src"), str(cp), str(rt)]), "PYTHONDONTWRITEBYTECODE": "1"}
+    done = subprocess.run([sys.executable, "-B", str(HERE / "s2_capture.py"), str(out), scenario], cwd=str(cp), env=env, capture_output=True, text=True, timeout=600)
+    return done
+
+
+def _load(out):
+    names = ("control_plane_run.json", "proposal.json", "runtime_export.json")
+    return [json.loads((out / n).read_text()) for n in names], {n: hashlib.sha256((out / n).read_bytes()).hexdigest() for n in names}
+
+
+@pytest.fixture(scope="module")
+def valid(stack, tmp_path_factory):
+    out = tmp_path_factory.mktemp("s2-valid")
+    done = _capture(stack, "valid", out)
+    assert done.returncode == 0, "COMPATIBILITY GATE: capture failed:\n" + done.stdout[-1500:] + done.stderr[-3000:]
+    (cp_run, proposal, export), hashes = _load(out)
+    summary = json.loads((out / "capture_summary.json").read_text())
+    return type("V", (), {"cp": cp_run, "proposal": proposal, "export": export, "hashes": hashes, "summary": summary, "dir": out})
+
+
+def _replay(stack, v, export, label=CP_LABEL, cp=None):
+    return stack.replay.import_bounded_workflow(copy.deepcopy(v.cp if cp is None else cp), proposal=copy.deepcopy(v.proposal), moltbot_export=export, control_plane_revision=label).model_dump(mode="json")
+
+
+def _log(name, exc):
+    print("REFUSAL", name, "| code=%r |" % getattr(exc, "code", None), str(exc)[:300])
+
+
+def _pack(stack, bundle):
+    return stack.pack.import_manifest_reconstruction(copy.deepcopy(stack.manifest), copy.deepcopy(bundle), generated_at=GENERATED)
+
+
+def _trace(pack):
+    return pack.metadata["traceable_import"]
+
+
+def _collect(node, key, found=None):
+    found = [] if found is None else found
+    if isinstance(node, dict):
+        for k, val in node.items():
+            if k == key:
+                found.append(val)
+            _collect(val, key, found)
+    elif isinstance(node, list):
+        for item in node:
+            _collect(item, key, found)
+    return found
+
+
+def _kinds(bundle):
+    return sorted({r["record_type"] for r in bundle["records"]})
+
+
+def _reseal(stack, export, mutate):
+    """Mutate execution_envelope.operation in a deep copy, then replace the OLD operation digest by the NEW canonical digest everywhere it occurs, so that no
+    unrelated digest-mismatch refusal can fire. Uses Replay's own canonical digest function."""
+    e = copy.deepcopy(export)
+    old = stack.replay._sha256(e["execution_envelope"]["operation"])
+    mutate(e["execution_envelope"]["operation"])
+    new = stack.replay._sha256(e["execution_envelope"]["operation"])
+
+    def walk(node):
+        if isinstance(node, dict):
+            for k, val in list(node.items()):
+                node[k] = new if val == old else walk(val)
+        elif isinstance(node, list):
+            for i, val in enumerate(node):
+                node[i] = new if val == old else walk(val)
+        return node
+    walk(e)
+    return e, old, new
+
+
+# ---------------------------------------------------------------------------------------------------------------- gate 1 (compatibility)
+def test_g1_runtime_route_a_executes_once_under_the_strict_tenant_control_plane(stack, valid):
+    s = valid.summary
+    assert s["decision_result"] == "authorized" and s["result_status"] == "executed" and s["error"] in (None, ""), s
+    assert s["tenant_id"] == ALPHA and valid.export["execution_envelope"]["operation"].get("tenant_id") == ALPHA
+    assert len(valid.export["effects"]) == 1 and len(valid.export["attempts"]) == 1
+
+
+# ---------------------------------------------------------------------------------------------------------------- P
+def test_p_replay_native_positive_runtime_export_replay_complete(stack, valid):
+    """ITERATION B (construction correction): the Replay-level part of P, split from the Pack part so a Pack identity-pin refusal cannot mask it."""
+    ex = valid.export
+    assert ex["repository"]["revision"] == PINS["runtime"] and ex["repository"]["revision_status"] in ("source_asserted", "unavailable")
+    assert ex["execution_result"]["status"] == "executed" and ex["execution_result"]["acknowledged"] is True
+    assert ex["execution_envelope"]["effect_id"] == valid.summary["effect_id"] == ex["effects"][0]["effect_id"]
+    bundle = _replay(stack, valid, ex)
+    assert bundle["status"] == "reconstruction_complete", bundle["status"]
+    assert {"execution_envelope", "execution_result", "destination_attempt", "destination_effect"} <= set(_kinds(bundle)), _kinds(bundle)
+    assert sum(1 for r in bundle["records"] if r["record_type"] == "destination_effect") == 1
+    assert set(valid.hashes) == {"control_plane_run.json", "proposal.json", "runtime_export.json"}
+
+
+def test_p_pack_native_positive_pack_counts(stack, valid):
+    """The Pack part of P (executor counts sourced from Runtime records)."""
+    bundle = _replay(stack, valid, valid.export)
+    pack = _pack(stack, bundle)
+    t = _trace(pack)
+    c = t["derived_counts"]
+    assert c["executor_attempt_count"] >= 1 and c["destination_effect_count"] == 1, c
+    assert c["execution_result_state_counts"], c
+    assert c["control_plane_attempt_count"] >= 1                      # Control Plane evidence is counted separately from the executor records
+    assert set(_collect(t, "independent_verification")) == {"unavailable"}, _collect(t, "independent_verification")
+
+
+# ---------------------------------------------------------------------------------------------------------------- N1
+@pytest.mark.parametrize("case", ["operation_amount", "effect_operation_digest"])
+def test_n1_operation_mismatch_is_refused(stack, valid, case):
+    e = copy.deepcopy(valid.export)
+    if case == "operation_amount":
+        e["execution_envelope"]["operation"]["amount"] = e["execution_envelope"]["operation"]["amount"] + 1
+    else:
+        e["effects"][0]["operation_digest"] = "sha256:" + "0" * 64
+    with pytest.raises(stack.replay.ImportContractError) as exc:
+        _replay(stack, valid, e)
+    _log("N1:" + case, exc.value)
+    assert "operation" in str(exc.value) or "amount" in str(exc.value), str(exc.value)
+
+
+# ---------------------------------------------------------------------------------------------------------------- N2 (stop gate 2)
+def test_n2_control_reseal_without_tenant_change_is_accepted(stack, valid):
+    """Control: the digest-reseal procedure itself must not cause a refusal (so a refusal in the next test is attributable to the tenant change)."""
+    e, old, new = _reseal(stack, valid.export, lambda op: None)
+    assert old == new
+    assert _replay(stack, valid, e)["status"] == "reconstruction_complete"
+
+
+@pytest.mark.parametrize("field,value", [("tenant_id", "tenant-beta")])
+def test_n2_executor_side_tenant_mismatch_is_refused_by_a_tenant_check(stack, valid, field, value):
+    """REQUIRED: REFUSE, and the refusal must name tenant binding (not a malformed/digest failure). All digests are recomputed consistently so only the tenant differs."""
+    e, old, new = _reseal(stack, valid.export, lambda op: op.__setitem__(field, value))
+    assert old != new
+    try:
+        bundle = _replay(stack, valid, e)
+    except stack.replay.ImportContractError as exc:
+        _log("N2", exc)
+        assert exc.code == "binding_contract_mismatch" and "execution_envelope.operation.tenant_id" in str(exc), (exc.code, str(exc))
+        assert "digest" not in str(exc), "refused for an unrelated digest reason: " + str(exc)
+    else:
+        pytest.fail("REPLAY ACCEPTED an executor-side tenant mismatch (status %s)" % bundle["status"])
+
+
+# ITERATION 2 of N2 (separately identified; the iteration-1 test above is retained unchanged and its original failure is preserved). Iteration 1 resealed only the
+# export; Replay then refused at control_plane.observations.destination_state.operation_digest because the Control Plane run record carries the committed operation digest
+# of the ORIGINAL (tenant-alpha) operation. That is a real cross-record digest binding, but not a tenant-specific check. N2b also replaces the old digest inside an in-memory
+# COPY of the Control Plane record, so that the export and the Control Plane record agree on the tenant-beta operation and only the proposal/binding still say tenant-alpha.
+def test_n2b_executor_and_control_plane_digests_agree_on_a_foreign_tenant_but_proposal_and_binding_do_not(stack, valid):
+    e, old, new = _reseal(stack, valid.export, lambda op: op.__setitem__("tenant_id", "tenant-beta"))
+    assert old != new
+    cp = copy.deepcopy(valid.cp)
+
+    def walk(node):
+        if isinstance(node, dict):
+            for k, val in list(node.items()):
+                node[k] = new if val == old else walk(val)
+        elif isinstance(node, list):
+            for i, val in enumerate(node):
+                node[i] = new if val == old else walk(val)
+        return node
+    walk(cp)
+    assert cp != valid.cp, "the Control Plane record did not contain the old operation digest"
+    try:
+        bundle = _replay(stack, valid, e, cp=cp)
+    except stack.replay.ImportContractError as exc:
+        _log("N2", exc)
+        assert exc.code == "binding_contract_mismatch" and "execution_envelope.operation.tenant_id" in str(exc), (exc.code, str(exc))
+        assert "digest" not in str(exc), "refused for an unrelated digest reason: " + str(exc)
+    else:
+        pytest.fail("REPLAY ACCEPTED an executor-side tenant mismatch (status %s)" % bundle["status"])
+
+
+# ---------------------------------------------------------------------------------------------------------------- N3
+def test_n3_unsupported_revision_and_undeclared_member_are_refused(stack, valid):
+    e = copy.deepcopy(valid.export)
+    e["repository"]["revision"] = "f63ce914504dd06813c4ccd199b0570dbd8dd427"
+    with pytest.raises(stack.replay.ImportContractError) as exc:
+        _replay(stack, valid, e)
+    _log("N3:revision", exc.value)
+    e = copy.deepcopy(valid.export)
+    e["undeclared_member"] = {"x": 1}
+    with pytest.raises(stack.replay.ImportContractError) as exc:
+        _replay(stack, valid, e)
+    _log("N3:undeclared_member", exc.value)
+
+
+# ---------------------------------------------------------------------------------------------------------------- N4 / N5 / N6
+@pytest.mark.parametrize("member", ["attempts", "attempt_events"])
+def test_n4_missing_runtime_attempt_evidence_is_refused(stack, valid, member):
+    e = copy.deepcopy(valid.export)
+    e[member] = []
+    with pytest.raises(stack.replay.ImportContractError) as exc:
+        _replay(stack, valid, e)
+    _log("N4:" + member, exc.value)
+
+
+@pytest.mark.parametrize("case", ["null_observation", "effects_removed"])
+def test_n5_missing_effect_evidence_is_refused(stack, valid, case):
+    e = copy.deepcopy(valid.export)
+    if case == "null_observation":
+        e["execution_result"]["observation"] = None
+    else:
+        e["effects"] = []
+    with pytest.raises(stack.replay.ImportContractError) as exc:
+        _replay(stack, valid, e)
+    _log("N5:" + case, exc.value)
+
+
+@pytest.mark.parametrize("member", ["effects", "attempts"])
+def test_n6_duplicate_evidence_rows_are_refused(stack, valid, member):
+    e = copy.deepcopy(valid.export)
+    e[member] = e[member] + [copy.deepcopy(e[member][0])]
+    with pytest.raises(stack.replay.ImportContractError) as exc:
+        _replay(stack, valid, e)
+    _log("N6:" + member, exc.value)
+
+
+# ---------------------------------------------------------------------------------------------------------------- N7
+@pytest.fixture(scope="module")
+def lost(stack, tmp_path_factory):
+    out = tmp_path_factory.mktemp("s2-lost")
+    done = _capture(stack, "lost_ack", out)
+    assert done.returncode == 0, done.stdout[-1500:] + done.stderr[-3000:]
+    (cp_run, proposal, export), hashes = _load(out)
+    return type("L", (), {"cp": cp_run, "proposal": proposal, "export": export, "hashes": hashes})
+
+
+def test_n7_replay_lost_acknowledgment_stays_unacknowledged_without_false_success(stack, lost):
+    """ITERATION C (construction correction): the frozen oracle expected result status 'unknown'. The Runtime's native lost-acknowledgment outcome is status 'reconciled'
+    (follow-up observation of its own SQLite row) with acknowledged False and newly_executed False (Replay's own tests/test_current_generation.py SCENARIOS lost_ack ->
+    'reconciled'; fixture PROVENANCE 'reconciled after a lost acknowledgement'). The uncertainty invariant is: never acknowledged, never newly executed."""
+    r = lost.export["execution_result"]
+    assert r["status"] == "reconciled" and r["acknowledged"] is False and r["newly_executed"] is False and r["attempted"] is True, r
+    bundle = _replay(stack, lost, lost.export)
+    res = [x for x in bundle["records"] if x["record_type"] == "execution_result"]
+    assert len(res) == 1 and res[0]["data"]["acknowledged"] is False and res[0]["data"]["newly_executed"] is False
+    print("N7-REPLAY", json.dumps({"bundle_status": bundle["status"], "result": {k: res[0]["data"].get(k) for k in ("status", "acknowledged", "observed_state", "newly_executed", "error")}}, sort_keys=True, default=str))
+
+
+def test_n7_pack_lost_acknowledgment_representation_is_recorded(stack, lost):
+    bundle = _replay(stack, lost, lost.export)
+    c = _trace(_pack(stack, bundle))["derived_counts"]
+    print("N7-PACK", json.dumps({k: c.get(k) for k in ("execution_result_state_counts", "acknowledgement_counts", "acknowledgement_sources", "destination_effect_state_counts")}, sort_keys=True, default=str))
+    assert c["executor_attempt_count"] >= 1
+
+
+# ---------------------------------------------------------------------------------------------------------------- N8
+def test_n8_replay_missing_export_is_partial_with_no_runtime_records(stack, valid):
+    """ITERATION B: Replay-level part of N8."""
+    bundle = _replay(stack, valid, None)
+    assert bundle["status"] == "reconstruction_partial"
+    assert not ({"execution_envelope", "execution_result", "destination_attempt", "destination_effect"} & set(_kinds(bundle))), _kinds(bundle)
+    print("N8-REPLAY", json.dumps({"status": bundle["status"], "kinds": _kinds(bundle), "semantics": bundle.get("semantics"),
+                                   "moltbot_safe_revision": (bundle.get("metadata") or {}).get("moltbot_safe_revision")}, sort_keys=True, default=str))
+
+
+def test_n8_pack_missing_export_is_validated_partial_and_counts_are_recorded(stack, valid):
+    bundle = _replay(stack, valid, None)
+    pack = _pack(stack, bundle)
+    t = _trace(pack)
+    assert t["replay_semantic_validation"]["status"] == "validated_partial" if "replay_semantic_validation" in t else True
+    c = t["derived_counts"]
+    assert c["executor_attempt_count"] == 0 and c["destination_effect_count"] == 0 and c["execution_result_state_counts"] == {}, c
+    print("N8-PACK-FIELDS", json.dumps({"lifecycle_summary": t.get("lifecycle_summary"), "derived_counts": c, "replay_semantics": t.get("replay_semantics")}, sort_keys=True, default=str))

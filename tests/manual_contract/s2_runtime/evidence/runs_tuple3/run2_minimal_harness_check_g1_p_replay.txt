@@ -1,0 +1,6 @@
+..
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_g1_runtime_route_a_executes_once_under_the_strict_tenant_control_plane
+PASSED tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py::test_p_replay_native_positive_runtime_export_replay_complete
+2 passed, 17 deselected in 1.90s

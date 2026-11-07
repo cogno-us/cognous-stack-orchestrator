@@ -1,0 +1,19 @@
+overall: reject (derived from the checks that ran; not a score, not an attestation)
+checks: 32; confirmed 20, could not check 10, refuted 2
+  REFUTED         v2.identity.proposal-commitment  refuted 1/1, could not check 0/1
+      proposal_commitment_mismatch at $.decisions[0].operation_horizon.proposal_commitment: no supplied proposal export has the commitment the decision states
+  COULD_NOT_CHECK v2.identity.effect-id  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.identity.binding-fields  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.identity.horizon-times  refuted 0/1, could not check 1/1
+  REFUTED         v2.identity.payload-commitment  refuted 1/1, could not check 0/1
+      payload_commitment_mismatch at $.proposals[0].payload_commitment: payload_commitment is not the commitment of the payload
+  COULD_NOT_CHECK v4.ledger.keys  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.effects-have-authorized-decisions  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.row-matches-binding  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.counts  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.rows-agree-with-attempts  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.acknowledged-attempts-have-rows  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.observations-agree  refuted 0/1, could not check 1/1
+tier V3 (witness re-derivation) not run: no witness or holder inventory supplied
+not applicable to this record: 2 checks
+does not prove: see does_not_prove in the report

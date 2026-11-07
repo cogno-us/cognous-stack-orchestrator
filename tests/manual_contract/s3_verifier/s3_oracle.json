@@ -1,0 +1,133 @@
+{
+  "notice": "FROZEN TEST ORACLE. DEVELOPMENT ONLY / SYNTHETIC / NONPRODUCTION / UNQUALIFIED / builder-lineage / non-authorizing / HOLD. Not independent qualification. Frozen and posted to Hub #273 BEFORE the battery was executed; never edited to fit observed behaviour (a failed expectation stays original adverse evidence; a correction is a separately frozen iteration).",
+  "assignment": "VNEXT-S3-CONTRACT-VALIDATION-01",
+  "authorization": "https://github.com/cogno-us/cognous-open-control-stack/issues/273#issuecomment-6709001983",
+  "gate0_evidence": "https://github.com/cogno-us/cognous-open-control-stack/issues/273#issuecomment-6708951456",
+  "sources": {
+    "verifier_repo": "cogno-us/cognous-open-control-stack-verifier",
+    "verifier_revision": "7caf25411b8be61178b12e71c48eeea7f62d8eb9",
+    "verifier_entry": "cognous_verify.cli:main",
+    "manifest_revision": "fa170815ef96a54c233d0dd9da821b60debabf8b",
+    "orchestrator_base": "dae935cdcda71c3f69414ced0828ed6433e73e95",
+    "s2_tuple_reference": {
+      "control_plane": "484fdbd297235dd24148ddb0703f2055a31eabff",
+      "runtime": "f7a55e2a8494801e49193f9f46935f0a971c248d",
+      "replay": "7eb7d76eda10ca1ff997bb86853e903e57da625c",
+      "evidence_pack": "1906c1fb1da4b96449565301c143d7a06b6a16bb"
+    }
+  },
+  "input_sha256": {
+    "control_plane_run.json": "c7ef11c22873a6e962ac0342b6995cb82789bd11d3c33f9ed2f99bf41df259a7",
+    "proposal.json": "d43ac343139f8c9393ddca4746961d1fc7a4e05bafa5a6c5f446157a53e5178d",
+    "runtime_export.json": "4e0fdc14ac0ff1e28990c5c73989c0f254c9f2dee6e9a3d3ec9d052a269377a4",
+    "refund_integration_v1_1.manifest.json": "789ad39596b9e1ef84a726a671883e1cb6b83343da3a31db0a1120906d68c074"
+  },
+  "exit_to_overall": {"0": "ACCEPT", "1": "REJECT", "2": "ERROR (usage; nothing verified)", "3": "ABSTAIN", "4": "ERROR (verifier crash; no report)"},
+  "fixed_report_time": "2026-11-07T00:00:00+00:00",
+  "p1_confirmed_checks": [
+    "v1.wire.strict-parse", "v1.structure", "v2.journal.decisions", "v2.journal.references",
+    "v2.journal.attempts", "v2.journal.reconciliations", "v2.journal.closeouts",
+    "v2.journal.inputs_and_times", "v2.journal.journal_mode", "v2.journal.check_ids",
+    "v2.lifecycle.control_plane_attempts", "v2.lifecycle.journal_protocol",
+    "v2.journal.check_bindings", "v2.decisions.reason-registry",
+    "v2.decisions.authorized-inputs-agree", "v2.decisions.recomputable-reasons",
+    "v1.structure.proposal-export", "v1.structure.manifest",
+    "v2.identity.proposal-commitment", "v2.identity.effect-id", "v2.identity.binding-fields",
+    "v2.identity.horizon-times", "v2.identity.payload-commitment", "v2.identity.run-id",
+    "v2.identity.manifest-digest"
+  ],
+  "ledger_checks": [
+    "v4.ledger.keys", "v4.ledger.effects-have-authorized-decisions", "v4.ledger.row-matches-binding",
+    "v4.ledger.counts", "v4.ledger.rows-agree-with-attempts",
+    "v4.ledger.acknowledged-attempts-have-rows", "v4.ledger.observations-agree"
+  ],
+  "identity_checks": [
+    "v2.identity.proposal-commitment", "v2.identity.effect-id", "v2.identity.binding-fields",
+    "v2.identity.horizon-times", "v2.identity.payload-commitment", "v2.identity.run-id",
+    "v2.identity.manifest-digest"
+  ],
+  "required_nonclaim_ids": ["self_consistent_forgery_not_detected", "not_an_attestation", "receipt_source_bounded"],
+  "tests": {
+    "test_g0_source_identity": {
+      "expect": "Verifier checkout HEAD == verifier_revision, clean incl. untracked; imported cognous_verify module lives under that checkout's src; Manifest checkout HEAD == manifest_revision, clean; all input hashes equal input_sha256; orchestrator HEAD descends from orchestrator_base. Source identity is a harness precondition, NOT authenticated provenance."
+    },
+    "test_p1_unchanged_s2_record_abstains_with_substantive_commitment_checks": {
+      "mutation": "none (byte-identical originals)",
+      "args": "control_plane_run.json --proposal proposal.json --manifest <manifest> --out report.json --generated-at fixed_report_time",
+      "exit": 3, "overall": "ABSTAIN",
+      "confirmed_exact_set": "p1_confirmed_checks (25, PERFORMED-PASS)",
+      "could_not_check_exact_set": "ledger_checks (7), each could_not_check_reason input_absent and x-reason input_absent:destination_ledger",
+      "summary": {"checks": 32, "confirmed": 25, "could_not_check": 7, "refuted": 0},
+      "not_run": "tier V3 (no v3.* check; scope.tiers_run == [V1,V2,V4]; stdout states V3 not run)",
+      "other": "no refuted check; semantic_quality not_assessed; does_not_prove contains required_nonclaim_ids; stderr empty; check/verdict vector equals the Gate-0 vector. P1 is PASS only for this limited oracle and is a PARTIAL outcome, not whole-record verification."
+    },
+    "test_n1_proposal_commitment_mutation": {
+      "mutation": "proposal.json: amount 50.0 -> 51.0 (changes the proposal's own commitment; decision operation_horizon.proposal_commitment and binding.proposal_commitment NOT updated)",
+      "exit": 1, "overall": "REJECT",
+      "intended_check": "v2.identity.proposal-commitment refuted, finding code proposal_commitment_mismatch, locator $.decisions[0].operation_horizon.proposal_commitment (one proposal, one decision => unpaired decision is refuted)",
+      "also": "v1.wire.strict-parse, v1.structure, v1.structure.proposal-export confirmed; v2.identity.payload-commitment and v2.identity.manifest-digest confirmed (not affected by this mutation)"
+    },
+    "test_n2_effect_identity_mutation": {
+      "mutation": "control_plane_run.json: decisions[0].effect_id last hex digit changed (0 unless already 0, then 1); attempts/other rows still carry the original effect id; nothing resealed",
+      "exit": 1, "overall": "REJECT",
+      "intended_check": "v2.identity.effect-id refuted, finding code invalid_effect_identity, locator $.decisions[0].effect_id",
+      "also": "v1.wire.strict-parse and v1.structure confirmed. Collateral refutations by other native journal/reference checks are permitted and recorded, not asserted."
+    },
+    "test_n3a_payload_commitment_mutation": {
+      "mutation": "proposal.json: payload.refund_reason 'duplicate' -> 'fraudulent'; payload_commitment NOT updated",
+      "exit": 1, "overall": "REJECT",
+      "intended_check": "v2.identity.payload-commitment refuted, finding code payload_commitment_mismatch, locator $.proposals[0].payload_commitment",
+      "also": "v2.identity.proposal-commitment refuted with proposal_commitment_mismatch (the proposal's commitment necessarily changes); v2.identity.manifest-digest confirmed; v1.structure.proposal-export confirmed"
+    },
+    "test_n3b_manifest_binding_mutation": {
+      "mutation": "manifest copy: owner 'cognous-integration-pilot' -> 'cognous-integration-pilot-x' (exactly one occurrence); proposal and record untouched",
+      "exit": 1, "overall": "REJECT",
+      "intended_check": "v2.identity.manifest-digest refuted with finding codes manifest_digest_mismatch (locator $.proposals[0].manifest_digest) and manifest_input_commitment_mismatch (locator $.decisions[0].resolution_inputs[0].record_commitment); no manifest_identity_mismatch (id/version unchanged)",
+      "also": "v1.structure.manifest confirmed; v2.identity.proposal-commitment and v2.identity.payload-commitment confirmed"
+    },
+    "test_n4a_missing_proposal_export": {
+      "mutation": "invocation omits --proposal (run record + manifest only)",
+      "exit": 3, "overall": "ABSTAIN",
+      "intended_check": "all seven identity_checks could_not_check, could_not_check_reason input_absent, x-reason input_absent:proposal_export; no refuted check; seven ledger_checks could_not_check; v1.wire.strict-parse, v1.structure, v1.structure.manifest confirmed; no v1.structure.proposal-export check"
+    },
+    "test_n4b_missing_run_record_argument": {
+      "mutation": "invocation supplies no run record (only --manifest)",
+      "exit": 2, "overall": "ERROR (usage; nothing verified)",
+      "intended_check": "argparse required-argument refusal: no report file written, stdout empty, stderr names run_record. This is a usage refusal, not an assurance verdict."
+    },
+    "test_n5_unsupported_generation": {
+      "mutation": "control_plane_run.json: decisions[0].binding.generation -> 'bounded-authorization-effect/9.9-unsupported'; no new profile",
+      "exit": 1, "overall": "REJECT",
+      "intended_check": "record has no strict marker so it is read under the historical schema; v1.structure refuted with finding code unknown_enum_value whose locator ends with .binding.generation; v2.identity.proposal-commitment could_not_check with x-reason tier_unavailable:structure_refuted (identity not recomputed on a refuted structure)"
+    },
+    "test_n6_partial_evidence_boundary": {
+      "mutation": "none; REUSES the P1 execution (identical input, source, configuration)",
+      "exit": 3, "overall": "ABSTAIN",
+      "intended_check": "seven ledger_checks could_not_check (input_absent:destination_ledger); overall is not ACCEPT although no check is refuted; no ledger file supplied or fabricated; Runtime SQLite not substituted"
+    },
+    "test_n7_replay_or_pack_input": {
+      "status": "NOT EXECUTED - UNSUPPORTED NATIVE CONTRACT",
+      "reason": "The Verifier defines no Replay or Evidence Pack input role or document kind; no Replay bundle or Pack output is retained in the S2 evidence; generating one needs the Replay/Pack stack (out of scope). No adapter is invented."
+    },
+    "test_n7b_non_journal_s2_artifact_is_unsupported_document": {
+      "mutation": "retained runtime_export.json (a Runtime export, NOT Replay/Pack) supplied as the run record; characterizes the native unsupported_document path only",
+      "exit": 3, "overall": "ABSTAIN",
+      "intended_check": "v1.wire.strict-parse confirmed; v1.structure could_not_check with could_not_check_reason not_applicable_to_input and x-reason starting unsupported_document; no refuted check; no v2.identity.* confirmed; NOT an assurance refusal and NOT a Replay/Pack claim"
+    },
+    "test_n8_self_consistent_forgery_characterization": {
+      "mutation": "proposal.correlation_id null -> 'forged-correlation-s3-n8'; proposal commitment and strict-generation effect id recomputed with the Verifier's own cognous_verify.canon.commitment / generation.effect_identity; every occurrence of the old proposal commitment and old effect id in the record replaced by the new values; manifest unchanged",
+      "outcome_A_expected": "v1.structure and all seven identity_checks confirmed, no refuted check, exit 3 ABSTAIN (ledger checks could_not_check). Demonstrates self_consistent_forgery_not_detected: a coherently resealed set passes internal consistency. This is a LIMITATION, not authenticated provenance, and not a failure.",
+      "outcome_B": "any refuted check => test FAIL recorded as original adverse evidence (reseal not self-consistent under the harness); the limitation is then documented from the Verifier's own does_not_prove text only; no re-freeze inside this run",
+      "also": "report does_not_prove still contains self_consistent_forgery_not_detected"
+    }
+  },
+  "nonclaims": [
+    "not independent qualification; builder-lineage, self-run developer contract validation",
+    "no exact producer source authentication; the SHA checks are harness preconditions",
+    "no authenticated provenance, independent custody or independent execution verification",
+    "no Replay-to-Verifier or Evidence Pack-to-Verifier integration",
+    "no independent assessor accountability; Verifier remains ALPHA / ON HOLD",
+    "no S3 internal acceptance; overall ABSTAIN is not whole-record verification",
+    "no production qualification or readiness"
+  ]
+}

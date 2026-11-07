@@ -1,0 +1,656 @@
+{
+ "checks": [
+  {
+   "check_id": "v1.wire.strict-parse",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "input files"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 3,
+    "could_not_check": 0,
+    "n": 3,
+    "refuted": 0
+   },
+   "tier": "V1",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v1.structure",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-notes": [
+     "schema sha256 sha256:aa1de5946a4d0c32c24960531ddb13efc398370dd74db884c7fe9f74b64f134c",
+     "strict-tenant successor schema control-plane-journal-strict-tenant 0.1.0-draft+strict-tenant (generation bounded-authorization-effect/0.3-strict-tenant); the historical 0.1.0-draft schema is unchanged",
+     "raw producer record: no contract or contract_version member; they were supplied for this check only and the record itself was not altered"
+    ],
+    "x-unit": "document"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V1",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.journal.decisions",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "decisions"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.journal.references",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "rows"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 32,
+    "could_not_check": 0,
+    "n": 32,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.journal.attempts",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "attempt rows"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 2,
+    "could_not_check": 0,
+    "n": 2,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.journal.reconciliations",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "reconciliations"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 2,
+    "could_not_check": 0,
+    "n": 2,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.journal.closeouts",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "closeouts and attempt rows"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 2,
+    "could_not_check": 0,
+    "n": 2,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.journal.inputs_and_times",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "inputs and timestamps"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 98,
+    "could_not_check": 0,
+    "n": 98,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.journal.journal_mode",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "decisions and refusals"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.journal.check_ids",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "resolution checks"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 2,
+    "could_not_check": 0,
+    "n": 2,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.lifecycle.control_plane_attempts",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "attempt rows"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 2,
+    "could_not_check": 0,
+    "n": 2,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.lifecycle.journal_protocol",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "journal events"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 26,
+    "could_not_check": 0,
+    "n": 26,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.journal.check_bindings",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "decisions, refusals and resolution checks"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 3,
+    "could_not_check": 0,
+    "n": 3,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.decisions.reason-registry",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-notes": [
+     "registry runtime-authority-reasons/0.1 sha256 sha256:fbc4df2e02457e294ca1f819d0e507c4452e46691e4f139a66be48967c2096c0",
+     "registry runtime-authority-reasons/0.2 sha256 sha256:c7678fa766f4d67d71ad9533672afdc87b3765ac1d336acae26504fc74ce3be6"
+    ],
+    "x-unit": "decisions and refusals"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.decisions.authorized-inputs-agree",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "authorized decisions"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.decisions.recomputable-reasons",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-notes": [
+     "re-derived: grant_revoked",
+     "every other registry code is typed-only: the retained record does not hold the inputs to recompute it (tier V3, deferred)"
+    ],
+    "x-unit": "decisions and refusals"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v1.structure.proposal-export",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "proposal exports"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V1",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v1.structure.manifest",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "manifests"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V1",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.identity.proposal-commitment",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "decisions"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.identity.effect-id",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "decisions"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.identity.binding-fields",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "authorized decisions"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.identity.horizon-times",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "decisions"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.identity.payload-commitment",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "proposal exports"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.identity.run-id",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "proposal exports"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v2.identity.manifest-digest",
+   "could_not_check_reason": null,
+   "extensions": {
+    "x-unit": "proposal exports"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 1,
+    "could_not_check": 0,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V2",
+   "verdict": "confirmed"
+  },
+  {
+   "check_id": "v4.ledger.keys",
+   "could_not_check_reason": "input_absent",
+   "extensions": {
+    "x-reason": "input_absent:destination_ledger",
+    "x-unit": "ledger rows"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 0,
+    "could_not_check": 1,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V4",
+   "verdict": "could_not_check"
+  },
+  {
+   "check_id": "v4.ledger.effects-have-authorized-decisions",
+   "could_not_check_reason": "input_absent",
+   "extensions": {
+    "x-reason": "input_absent:destination_ledger",
+    "x-unit": "ledger rows"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 0,
+    "could_not_check": 1,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V4",
+   "verdict": "could_not_check"
+  },
+  {
+   "check_id": "v4.ledger.row-matches-binding",
+   "could_not_check_reason": "input_absent",
+   "extensions": {
+    "x-reason": "input_absent:destination_ledger",
+    "x-unit": "ledger rows"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 0,
+    "could_not_check": 1,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V4",
+   "verdict": "could_not_check"
+  },
+  {
+   "check_id": "v4.ledger.counts",
+   "could_not_check_reason": "input_absent",
+   "extensions": {
+    "x-reason": "input_absent:destination_ledger",
+    "x-unit": "grants"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 0,
+    "could_not_check": 1,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V4",
+   "verdict": "could_not_check"
+  },
+  {
+   "check_id": "v4.ledger.rows-agree-with-attempts",
+   "could_not_check_reason": "input_absent",
+   "extensions": {
+    "x-reason": "input_absent:destination_ledger",
+    "x-unit": "ledger rows"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 0,
+    "could_not_check": 1,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V4",
+   "verdict": "could_not_check"
+  },
+  {
+   "check_id": "v4.ledger.acknowledged-attempts-have-rows",
+   "could_not_check_reason": "input_absent",
+   "extensions": {
+    "x-reason": "input_absent:destination_ledger",
+    "x-unit": "attempt rows"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 0,
+    "could_not_check": 1,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V4",
+   "verdict": "could_not_check"
+  },
+  {
+   "check_id": "v4.ledger.observations-agree",
+   "could_not_check_reason": "input_absent",
+   "extensions": {
+    "x-reason": "input_absent:destination_ledger",
+    "x-unit": "accepted observations"
+   },
+   "findings": [],
+   "tally": {
+    "confirmed": 0,
+    "could_not_check": 1,
+    "n": 1,
+    "refuted": 0
+   },
+   "tier": "V4",
+   "verdict": "could_not_check"
+  }
+ ],
+ "contract": "verification-report",
+ "contract_version": "0.1.0-draft",
+ "does_not_prove": [
+  {
+   "id": "relative_to_pinned_controller",
+   "statement": "The result holds for the controller revision (as declared by the caller; 'unstated' if none was declared), the contract draft versions and the reason registry named in subject.pinned. It does not carry to any other revision."
+  },
+  {
+   "id": "semantic_quality_not_certified",
+   "statement": "No claim that a decision was correct, that a policy was adequate, or that a grant was lawfully issued. The verifier checks structure, identity and agreement between records, not whether the decisions were right."
+  },
+  {
+   "id": "receipt_source_bounded",
+   "statement": "Destination checks cover only the rows in the supplied ledger snapshot. The snapshot has no sequence number, chain or signature, so completeness is not established: a dropped tail or a decision that never reached the ledger cannot be seen."
+  },
+  {
+   "id": "self_consistent_forgery_not_detected",
+   "statement": "A forged set of records in which every commitment was recomputed to agree is indistinguishable from a genuine one by these checks. Agreement between records is not evidence that they are genuine. An intact journal (counts, order and bindings agree) does not show that any row was durably stored or retained: durable inclusion is not a level this verifier checks."
+  },
+  {
+   "id": "not_an_attestation",
+   "statement": "This is a verification report about supplied records. It is not signed, not an attestation, and authorizes nothing."
+  },
+  {
+   "id": "parse_strictness_is_refusal_not_repair",
+   "statement": "An input the strict parser refuses (duplicate members, NaN or Infinity, non-UTF-8, over-size, lone surrogates) is refused and reported, never repaired and re-read."
+  },
+  {
+   "id": "no_v1_scope_claim",
+   "statement": "No claim about the scope or release status of any V1 of the stack. Nothing here is a release, a publication or an endorsement."
+  },
+  {
+   "id": "differential_agreement_is_not_equivalence",
+   "statement": "Agreement with a reference validator on a fixture set is a check against common-mode error. It does not show that the two implementations are equivalent."
+  }
+ ],
+ "extensions": {
+  "x-not-applicable": [
+   {
+    "check_id": "v2.journal.refusals",
+    "reason": "no_items_in_record",
+    "tier": "V2",
+    "unit": "refusals"
+   },
+   {
+    "check_id": "v2.journal.vocabulary",
+    "reason": "no_items_in_record",
+    "tier": "V2",
+    "unit": "vocabulary changes"
+   }
+  ],
+  "x-notes": [
+   "tier V3 (witness re-derivation) not run: no witness or holder inventory supplied"
+  ],
+  "x-overall": "abstain"
+ },
+ "generated_at": "2026-11-07T00:00:00+00:00",
+ "mutation_report": null,
+ "profile": "verification-report/0.1",
+ "report_id": "vr-18606e7d674e0c51",
+ "report_kind": "verification_report",
+ "scope": {
+  "semantic_quality": "not_assessed",
+  "tiers_run": [
+   "V1",
+   "V2",
+   "V4"
+  ]
+ },
+ "subject": {
+  "canonicalization_profile": "json-sort-keys-compact-utf8-no-nan-python-semantics-v0.1",
+  "inputs": [
+   {
+    "digest": "sha256:789ad39596b9e1ef84a726a671883e1cb6b83343da3a31db0a1120906d68c074",
+    "name": "refund_integration_v1_1.manifest.json",
+    "role": "manifest",
+    "size_bytes": 5436
+   },
+   {
+    "digest": "sha256:d43ac343139f8c9393ddca4746961d1fc7a4e05bafa5a6c5f446157a53e5178d",
+    "name": "proposal.json",
+    "role": "proposal_export",
+    "size_bytes": 1128
+   },
+   {
+    "digest": "sha256:c7ef11c22873a6e962ac0342b6995cb82789bd11d3c33f9ed2f99bf41df259a7",
+    "name": "control_plane_run.json",
+    "role": "run_record",
+    "size_bytes": 51438
+   }
+  ],
+  "inputs_digest": "sha256:6de85a2acf70d5717ee86ef0d5974c135e5596bf01cdba92326e03f8e4666bcb",
+  "pinned": {
+   "contract_versions": {
+    "control-plane-journal": "0.1.0-draft",
+    "execution-attempt-lifecycle": "0.1.0-draft"
+   },
+   "controller_revision": "unstated",
+   "extensions": {
+    "x-reason-registry-digests": {
+     "runtime-authority-reasons/0.1": "sha256:fbc4df2e02457e294ca1f819d0e507c4452e46691e4f139a66be48967c2096c0",
+     "runtime-authority-reasons/0.2": "sha256:c7678fa766f4d67d71ad9533672afdc87b3765ac1d336acae26504fc74ce3be6"
+    }
+   },
+   "reason_registry_digest": "sha256:fbc4df2e02457e294ca1f819d0e507c4452e46691e4f139a66be48967c2096c0"
+  }
+ },
+ "summary": {
+  "checks": 32,
+  "confirmed": 25,
+  "could_not_check": 7,
+  "refuted": 0
+ },
+ "verifier": {
+  "canonicalization_profile": "json-sort-keys-compact-utf8-no-nan-python-semantics-v0.1",
+  "command": "cognous-verify",
+  "name": "cognous-open-control-stack-verifier",
+  "source_revision": "unstated",
+  "version": "0.1.0"
+ }
+}

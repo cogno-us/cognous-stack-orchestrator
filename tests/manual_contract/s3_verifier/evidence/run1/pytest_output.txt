@@ -1,0 +1,40 @@
+.........Fs..                                                            [100%]
+=================================== FAILURES ===================================
+________________________ test_n5_unsupported_generation ________________________
+
+env = {'verifier': PosixPath('/tmp/claude-0/-home-user/ccd68d4a-ce44-5311-af5a-04bf66a9f467/scratchpad/s3/verifier'), 'src':...fest_root': PosixPath('/tmp/claude-0/-home-user/ccd68d4a-ce44-5311-af5a-04bf66a9f467/scratchpad/demo01/roots/am'), ...}
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-173/test_n5_unsupported_generation0')
+originals_unchanged = None
+
+    def test_n5_unsupported_generation(env, tmp_path, originals_unchanged):
+        def edit(rec):
+            rec["decisions"][0]["binding"]["generation"] = "bounded-authorization-effect/9.9-unsupported"
+        rec = mutated_json(S2_INPUTS / "control_plane_run.json", tmp_path / "control_plane_run.json", edit)
+        r = run_verifier(env, base_args(env, rec=rec), tmp_path)
+        retain(env, "test_n5_unsupported_generation", r, "mutated control_plane_run.json: binding.generation unsupported value",
+               [rec, S2_INPUTS / "proposal.json", env["manifest"]])
+        c = checks_of(r)
+        assert r["exit"] == 1
+        assert c["v1.structure"]["verdict"] == "refuted"
+        hits = [f for f in c["v1.structure"]["findings"] if f["code"] == "unknown_enum_value" and f["locator"].endswith(".binding.generation")]
+>       assert hits, c["v1.structure"]["findings"]
+E       AssertionError: [{'code': 'schema_violation', 'locator': '$.decisions[0].binding', 'detail': 'expected type null'}]
+E       assert []
+
+tests/manual_contract/s3_verifier/test_s3_verifier_contract.py:327: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_g0_source_identity
+PASSED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_p1_unchanged_s2_record_abstains_with_substantive_commitment_checks
+PASSED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_n6_partial_evidence_boundary
+PASSED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_n1_proposal_commitment_mutation
+PASSED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_n2_effect_identity_mutation
+PASSED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_n3a_payload_commitment_mutation
+PASSED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_n3b_manifest_binding_mutation
+PASSED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_n4a_missing_proposal_export
+PASSED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_n4b_missing_run_record_argument
+PASSED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_n7b_non_journal_s2_artifact_is_unsupported_document
+PASSED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_n8_self_consistent_forgery_characterization
+SKIPPED [1] tests/manual_contract/s3_verifier/test_s3_verifier_contract.py:332: NOT EXECUTED - UNSUPPORTED NATIVE CONTRACT: the Verifier defines no Replay/Evidence Pack input role or document kind and none is retained; no adapter invented
+FAILED tests/manual_contract/s3_verifier/test_s3_verifier_contract.py::test_n5_unsupported_generation
+1 failed, 11 passed, 1 skipped in 1.65s

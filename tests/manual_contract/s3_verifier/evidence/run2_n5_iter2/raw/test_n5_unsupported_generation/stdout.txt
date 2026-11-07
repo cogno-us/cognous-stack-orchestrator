@@ -1,0 +1,30 @@
+overall: reject (derived from the checks that ran; not a score, not an attestation)
+checks: 26; confirmed 1, could not check 24, refuted 1
+  REFUTED         v1.structure  refuted 1/1, could not check 0/1
+      schema_violation at $.decisions[0].binding: expected type null
+  COULD_NOT_CHECK v2.journal.decisions  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.journal.references  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.journal.attempts  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.journal.reconciliations  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.journal.closeouts  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.journal.refusals  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.journal.inputs_and_times  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.journal.journal_mode  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.journal.vocabulary  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.journal.check_ids  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.lifecycle.control_plane_attempts  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.lifecycle.journal_protocol  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.journal.check_bindings  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.decisions.reason-registry  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.decisions.authorized-inputs-agree  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.decisions.recomputable-reasons  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.identity.proposal-commitment  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.keys  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.effects-have-authorized-decisions  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.row-matches-binding  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.counts  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.rows-agree-with-attempts  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.acknowledged-attempts-have-rows  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.observations-agree  refuted 0/1, could not check 1/1
+tier V3 (witness re-derivation) not run: no witness or holder inventory supplied
+does not prove: see does_not_prove in the report

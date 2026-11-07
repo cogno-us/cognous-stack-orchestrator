@@ -1,0 +1,12 @@
+overall: abstain (derived from the checks that ran; not a score, not an attestation)
+checks: 32; confirmed 25, could not check 7, refuted 0
+  COULD_NOT_CHECK v4.ledger.keys  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.effects-have-authorized-decisions  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.row-matches-binding  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.counts  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.rows-agree-with-attempts  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.acknowledged-attempts-have-rows  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.observations-agree  refuted 0/1, could not check 1/1
+tier V3 (witness re-derivation) not run: no witness or holder inventory supplied
+not applicable to this record: 2 checks
+does not prove: see does_not_prove in the report

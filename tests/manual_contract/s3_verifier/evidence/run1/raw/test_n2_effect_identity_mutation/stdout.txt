@@ -1,0 +1,25 @@
+overall: reject (derived from the checks that ran; not a score, not an attestation)
+checks: 32; confirmed 19, could not check 10, refuted 3
+  REFUTED         v2.journal.decisions  refuted 1/1, could not check 0/1
+      invalid_effect_identity at $.decisions[0].effect_id: effect_id is the commitment of {proposal, grant_id, grant_revision} from the binding and the strict tenant generation marker
+  REFUTED         v2.journal.references  refuted 19/32, could not check 0/32
+      effect_id_mismatch at $.attempts[0]: attempt effect_id differs from its decision
+      effect_id_mismatch at $.attempts[1]: attempt effect_id differs from its decision
+      journal_lineage_mismatch at $.check_events[13]: a journal decision_id and effect_id must name an existing decision and effect
+      journal_lineage_mismatch at $.check_events[14]: a journal decision_id and effect_id must name an existing decision and effect
+      journal_lineage_mismatch at $.check_events[15]: a journal decision_id and effect_id must name an existing decision and effect
+  COULD_NOT_CHECK v2.lifecycle.control_plane_attempts  refuted 0/2, could not check 2/2
+  COULD_NOT_CHECK v2.lifecycle.journal_protocol  refuted 0/26, could not check 26/26
+  COULD_NOT_CHECK v2.journal.check_bindings  refuted 0/3, could not check 3/3
+  REFUTED         v2.identity.effect-id  refuted 1/1, could not check 0/1
+      invalid_effect_identity at $.decisions[0].effect_id: effect_id is not the commitment of {proposal, grant_id, grant_revision} recomputed from the proposal export (with the strict tenant generation marker)
+  COULD_NOT_CHECK v4.ledger.keys  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.effects-have-authorized-decisions  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.row-matches-binding  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.counts  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.rows-agree-with-attempts  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.acknowledged-attempts-have-rows  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v4.ledger.observations-agree  refuted 0/1, could not check 1/1
+tier V3 (witness re-derivation) not run: no witness or holder inventory supplied
+not applicable to this record: 2 checks
+does not prove: see does_not_prove in the report

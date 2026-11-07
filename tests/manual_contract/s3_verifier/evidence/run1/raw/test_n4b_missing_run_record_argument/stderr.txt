@@ -1,0 +1,7 @@
+usage: cognous-verify [-h] [--proposal FILE] [--manifest FILE] [--ledger FILE]
+                      [--witness FILE] [--holder-inventory FILE] [--out FILE]
+                      [--json] [--controller-revision REV]
+                      [--source-revision REV] [--generated-at TIME]
+                      [--version]
+                      run_record
+cognous-verify: error: the following arguments are required: run_record

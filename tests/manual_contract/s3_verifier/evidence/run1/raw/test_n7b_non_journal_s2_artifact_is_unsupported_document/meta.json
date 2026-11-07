@@ -1,0 +1,16 @@
+{
+ "check_verdicts": {
+  "v1.structure": "could_not_check",
+  "v1.wire.strict-parse": "confirmed",
+  "v2.coverage.items-examined": "could_not_check"
+ },
+ "exit": 3,
+ "input_sha256": {
+  "runtime_export.json": "4e0fdc14ac0ff1e28990c5c73989c0f254c9f2dee6e9a3d3ec9d052a269377a4"
+ },
+ "mutation": "retained runtime_export.json supplied as the run record (not Replay/Pack)",
+ "overall": "ABSTAIN",
+ "report_sha256": "58b7f23e2f6d96703dcd50d6a567aaeb2b967591fb2bebbdc84e4402d73fcd6f",
+ "test": "test_n7b_non_journal_s2_artifact_is_unsupported_document",
+ "verifier_revision": "7caf25411b8be61178b12e71c48eeea7f62d8eb9"
+}

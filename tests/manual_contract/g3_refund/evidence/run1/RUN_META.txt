@@ -1,0 +1,4 @@
+run1: the three frozen checks executed once against the frozen oracle (Hub #273 comment 6711352677). ALL THREE FAILED with the same harness defect and no component refusal:
+g3_stages.render_observation indexed stage rows with keys 'source'/'evidence' but stage() stores 'assertion_source'/'evidence_availability' (KeyError: 'source').
+Every substantive assertion BEFORE the final-observation rendering had passed in the checks that reach it (CP, Runtime, Replay, Pack, Verifier, G1b for check 1; CP hold for check 2; Replay/Pack/Verifier for check 3); retained raw artifacts in raw/.
+The oracle was not changed. Run 1 performed one real isolated local SQLite write (disposed) and one disposable-chain registration (discarded). Pre-fix file sha256: g3_stages.py 54e5568e55649817ff5ad2f2297875bb2623b781792932d4bf514f5a59d4bd7d.

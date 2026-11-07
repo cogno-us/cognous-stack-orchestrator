@@ -1,0 +1,74 @@
+[
+ {
+  "stage": "G2 authority + CP decide()",
+  "component": "institutional-governance + control-plane",
+  "revision": "1ebe85be4cfe9e221ebd2618120687eb0b325d24",
+  "input_identity": "urn:cognous:authority:g2-synthetic-refund-root-1@r1",
+  "output_identity": null,
+  "status": "EXECUTED",
+  "outcome": "authorized []",
+  "assertion_source": "synthetic fixture facts + IG lineage; CP decision is the authority",
+  "evidence_availability": "CP run record retained",
+  "limitation": "resolver authenticated=false; authorized = synthetic developer-mode decision"
+ },
+ {
+  "stage": "Runtime execute (one local INSERT)",
+  "component": "execution-runtime",
+  "revision": "f7a55e2a8494801e49193f9f46935f0a971c248d",
+  "input_identity": "sha256:34d2eacdbacac12bdb3fb533b6d3444b480b31d4bf109df3e769258be194048c",
+  "output_identity": "runtime_export.json sha256:b9f7859dd2f7",
+  "status": "EXECUTED",
+  "outcome": "executed / applied (1 row)",
+  "assertion_source": "producer-reported (Runtime export; repository_revision caller-asserted)",
+  "evidence_availability": "export + local SQLite read-back",
+  "limitation": "real isolated local write; NOT independently observed; database disposed after capture"
+ },
+ {
+  "stage": "Replay import",
+  "component": "replay-bundle",
+  "revision": "7eb7d76eda10ca1ff997bb86853e903e57da625c",
+  "input_identity": "CP run + proposal + Runtime export",
+  "output_identity": "bundle 4fd055a0-fc27-4103-bb35-cd9c389dc94d",
+  "status": "EXECUTED",
+  "outcome": "reconstruction_complete",
+  "assertion_source": "Replay import over producer-reported records",
+  "evidence_availability": "complete",
+  "limitation": "destination observation is producer_reported; independent_effect_verification false"
+ },
+ {
+  "stage": "Pack import (opt-in generation)",
+  "component": "governance-evidence-pack",
+  "revision": "1906c1fb1da4b96449565301c143d7a06b6a16bb",
+  "input_identity": "cp2-replay-7eb7d76e-tenant-binding-dev-0.1",
+  "output_identity": "agep-3308a2ed9bc60b38 sha256:081651ff12f0",
+  "status": "EXECUTED",
+  "outcome": "validated_complete",
+  "assertion_source": "Pack validator status is a producer string",
+  "evidence_availability": "complete",
+  "limitation": "independent verification unavailable"
+ },
+ {
+  "stage": "Verifier pack_cli",
+  "component": "verifier (ALPHA/HOLD)",
+  "revision": "2ffe37c5ea1255e9699972980f0cb33c06a080e2",
+  "input_identity": "pack sha256:081651ff12f0",
+  "output_identity": "report sha256:27345cc6a85a",
+  "status": "EXECUTED",
+  "outcome": "exit 3 / abstain; executor kinds present",
+  "assertion_source": "Verifier recomputation over one file",
+  "evidence_availability": "present kinds are source-asserted",
+  "limitation": "source identity never checkable; unsupported claims: 6"
+ },
+ {
+  "stage": "G1 attestation (ephemeral key) + G1b Registry",
+  "component": "evidence-attestation + evidence-registry",
+  "revision": "0729159669d642db69b0ef8d5d45e14b5f5b4405",
+  "input_identity": "report sha256:27345cc6a85a",
+  "output_identity": "claim 0x212ad3985ebc evidence 0x24130014c9a6",
+  "status": "EXECUTED",
+  "outcome": "PRESENT_PROVISIONAL; signature issuer_signature_only",
+  "assertion_source": "G1 statement signed by an ephemeral synthetic key; commitments recomputed from retained bytes",
+  "evidence_availability": "reconstructed; provisional",
+  "limitation": "not chain-bound; disposable chain; no custody or finality"
+ }
+]

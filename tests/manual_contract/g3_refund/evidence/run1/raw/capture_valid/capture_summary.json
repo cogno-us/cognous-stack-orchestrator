@@ -1,0 +1,63 @@
+{
+ "authority_id": "urn:cognous:authority:g2-synthetic-refund-root-1",
+ "baseline_reasons": [],
+ "decision_result": "authorized",
+ "effect_id": "sha256:34d2eacdbacac12bdb3fb533b6d3444b480b31d4bf109df3e769258be194048c",
+ "effect_rows": [
+  {
+   "amount": 50.0,
+   "effect_id": "sha256:34d2eacdbacac12bdb3fb533b6d3444b480b31d4bf109df3e769258be194048c",
+   "state": "applied",
+   "target": "urn:cognous:synthetic-account:customer-001",
+   "unit": "USD"
+  }
+ ],
+ "field_provenance": {
+  "authenticated": false,
+  "cp_native_computed": [
+   "role-mapping digest = CP commitment({institution_id, version, aliases})",
+   "approval runtime_authority_commitment / required_inputs digest (CP native, set by the driver)"
+  ],
+  "ig_derived": [
+   "grant_id<-authority_id",
+   "grant.revision/GrantStatus.revision<-effective authority_revision|new_revision",
+   "GrantStatus.status<-effective mutations at t",
+   "institution_id",
+   "authority_domain",
+   "authority_basis_ref<-external_mandate_ref (source reference, not authenticated mandate)",
+   "grant.not_before<-origin.effective_at",
+   "grant.permissions<-permission_scope (unchanged)"
+  ],
+  "label": "SYNTHETIC FIXTURE FACTS - NOT INSTITUTIONAL AUTHORITY, NOT AUTHENTICATED, DEVELOPMENT ONLY",
+  "synthetic_fixture_only": [
+   "tenant_id",
+   "grant.expires_at",
+   "grant.issued_at",
+   "GrantStatus.observed_at/version/status_ref",
+   "issuer/issuer_role/issuance_record_ref/mandate_valid",
+   "principal/acting_identity/grantee",
+   "IdentityStatus",
+   "accountable_human_role (incl. mandate_ref)",
+   "authority_mode",
+   "context_ref",
+   "supporting_evidence_refs/change (empty constants)",
+   "policy ref/version/status",
+   "requirement (incl. permissions, approvals, tier)",
+   "conflicts",
+   "approval status",
+   "role-mapping aliases/version",
+   "delegation block (root-only constants)"
+  ]
+ },
+ "grant_revision": "r1",
+ "label": "SYNTHETIC DEVELOPER-MODE CP DECISION - not institutional authorization",
+ "newly_executed": true,
+ "reasons": [],
+ "resolver_authenticated": false,
+ "runtime_error": null,
+ "runtime_run": true,
+ "runtime_status": "executed",
+ "scenario": "valid",
+ "sqlite_path_kind": "unique temp file, removed after capture",
+ "tenant_id": "tenant-alpha"
+}

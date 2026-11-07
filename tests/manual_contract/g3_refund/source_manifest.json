@@ -1,0 +1,19 @@
+{
+  "notice": "DEVELOPMENT ONLY / SYNTHETIC / NONPRODUCTION / UNQUALIFIED / NOT A SOURCE LOCK. Exact development references for the G3 synthetic refund integration (Hub #273 freeze comment 6711352677). Does not replace or migrate the hub component-lock.json.",
+  "orchestrator_base": "dae935cdcda71c3f69414ced0828ed6433e73e95",
+  "s2_source_tuple": "S2-CANDIDATE-3 (../s2_runtime/source_tuples.json, tuple_3_current)",
+  "components": {
+    "manifest": {"repo": "cogno-us/cognous-action-manifest", "commit": "fa170815ef96a54c233d0dd9da821b60debabf8b"},
+    "control_plane": {"repo": "cogno-us/cognous-control-plane", "commit": "484fdbd297235dd24148ddb0703f2055a31eabff"},
+    "runtime": {"repo": "cogno-us/cognous-execution-runtime", "commit": "f7a55e2a8494801e49193f9f46935f0a971c248d"},
+    "replay": {"repo": "cogno-us/cognous-replay-bundle", "commit": "7eb7d76eda10ca1ff997bb86853e903e57da625c"},
+    "evidence_pack": {"repo": "cogno-us/cognous-governance-evidence-pack", "commit": "1906c1fb1da4b96449565301c143d7a06b6a16bb"},
+    "institutional_governance": {"repo": "cogno-us/cognous-institutional-governance", "commit": "1ebe85be4cfe9e221ebd2618120687eb0b325d24"},
+    "verifier": {"repo": "cogno-us/cognous-open-control-stack-verifier", "commit": "2ffe37c5ea1255e9699972980f0cb33c06a080e2"},
+    "evidence_attestation": {"repo": "cogno-us/cognous-evidence-attestation", "commit": "b7d23dc7fa30359f129481149d0fdd3405dbf1b1"},
+    "evidence_registry": {"repo": "cogno-us/cognous-evidence-registry", "commit": "0729159669d642db69b0ef8d5d45e14b5f5b4405"}
+  },
+  "replay_generation": "cp2-replay-7eb7d76e-tenant-binding-dev-0.1",
+  "excluded": ["ODES", "GAX"],
+  "env": ["G3_STACK_ROOT (dir with control_plane runtime replay evidence_pack manifest institutional_governance verifier evidence_attestation evidence_registry)", "PYTHON (pydantic, cryptography, jsonschema)", "node + npm ci in evidence_registry/chain"]
+}

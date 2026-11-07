@@ -1,0 +1,6 @@
+..                                                                       [100%]
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/manual_contract/g3_refund/test_g3_refund.py::test_check1_positive_complete_chain
+PASSED tests/manual_contract/g3_refund/test_g3_refund.py::test_check2_revoked_refusal_chain
+2 passed, 1 deselected in 13.79s

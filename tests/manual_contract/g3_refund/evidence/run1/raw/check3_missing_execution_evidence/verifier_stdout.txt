@@ -1,0 +1,7 @@
+overall: abstain (development only; never accept; not an attestation)
+checks: 11; confirmed 9, could not check 2, refuted 0
+  COULD_NOT_CHECK pk.executor.operation-commitments executor_evidence_absent
+  COULD_NOT_CHECK pk.source.identity no_authenticating_mechanism
+unsupported claims: 6 (see report)
+
+--- stderr ---

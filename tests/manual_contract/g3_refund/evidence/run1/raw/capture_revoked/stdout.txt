@@ -1,0 +1,3 @@
+RESULT revoked HOLD ['grant_revoked']
+
+--- stderr ---

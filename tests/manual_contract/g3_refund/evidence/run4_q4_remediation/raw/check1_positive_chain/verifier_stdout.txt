@@ -1,0 +1,6 @@
+overall: abstain (development only; never accept; not an attestation)
+checks: 11; confirmed 10, could not check 1, refuted 0
+  COULD_NOT_CHECK pk.source.identity no_authenticating_mechanism
+unsupported claims: 6 (see report)
+
+--- stderr ---

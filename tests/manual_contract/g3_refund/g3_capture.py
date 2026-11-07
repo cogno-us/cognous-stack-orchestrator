@@ -11,15 +11,14 @@ The Runtime repository_revision recorded in the export is CALLER-ASSERTED by thi
 """
 import json
 import os
-import shutil
 import sqlite3
 import sys
-import tempfile
 from pathlib import Path
 
 ROOT = Path(os.environ["G3_STACK_ROOT"])
 sys.path.insert(0, str(ROOT / "institutional_governance" / "process" / "implementation" / "g2-cp-resolver-dev"))
 import g2_driver as D  # noqa: E402  (merged G2 driver: fixtures, proposal builder, pins)
+import g3_cleanup  # noqa: E402  (invocation-owned workspace lifecycle; script directory is on sys.path)
 from ig_root_resolver import IGRootResolver, load_lineage_harness, load_pinned_control_plane  # noqa: E402
 
 B, RA = load_pinned_control_plane(ROOT / "control_plane")  # verifies the CP pin and clean tree before use
@@ -106,8 +105,6 @@ def capture(work: Path):
     print("RESULT", SCENARIO, res.status, res.error)
 
 
-WORK = Path(tempfile.mkdtemp(prefix=f"g3-{SCENARIO}-"))  # unique workspace owned by THIS invocation (exact path retained)
-try:
-    capture(WORK)
-finally:
-    shutil.rmtree(WORK, ignore_errors=True)  # dispose of the isolated SQLite; only the directory this invocation allocated, never a glob
+# One unique workspace per invocation; only that exact path is removed, and a failed removal is reported (never silent), alongside any
+# earlier failure. See g3_cleanup.py.
+sys.exit(g3_cleanup.run_in_owned_workspace(f"g3-{SCENARIO}-", capture))

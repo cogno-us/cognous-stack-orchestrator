@@ -1,0 +1,4 @@
+RESULT revoked HOLD ['grant_revoked']
+WORKSPACE-DISPOSED /tmp/claude-0/-home-user/ccd68d4a-ce44-5311-af5a-04bf66a9f467/scratchpad/g0/tmpdir/g3-revoked-593h3j_z
+
+--- stderr ---

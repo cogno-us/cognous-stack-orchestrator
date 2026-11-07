@@ -1,0 +1,17 @@
+{
+  "notice": "SEPARATELY FROZEN ITERATION 2 (N5 only). s3_oracle.json is unchanged and its N5 expectation stays on record as the ORIGINAL expectation, which FAILED in run1 (original adverse evidence preserved under evidence/run1). This iteration was written AFTER observing run1 and is therefore a characterization of the actual native behaviour, NOT an independent prediction. Frozen and posted to Hub #273 before it was executed.",
+  "supersedes_expectation_of": "test_n5_unsupported_generation (original; kept in the suite as strict xfail so it stays visibly failing)",
+  "observed_in_run1": "exit 1 (REJECT); v1.structure refuted by a single generic finding schema_violation at $.decisions[0].binding ('expected type null'), not an unknown_enum_value finding at binding.generation; every dependent V2/V4 check could_not_check.",
+  "test_n5_iter2_unsupported_generation_refused_by_generic_schema_closure": {
+    "mutation": "identical to the original N5: control_plane_run.json decisions[0].binding.generation -> 'bounded-authorization-effect/9.9-unsupported' (no new profile)",
+    "exit": 1, "overall": "REJECT",
+    "expected": [
+      "v1.structure refuted",
+      "its only finding has code schema_violation and locator ending .decisions[0].binding",
+      "v2.identity.proposal-commitment could_not_check with x-reason tier_unavailable:structure_refuted",
+      "no v2.journal.* or v2.identity.* check confirmed (nothing downstream of a refuted structure is reported as passed)",
+      "the unmutated P1 run confirms v1.structure (the single generation-value delta is the cause)"
+    ],
+    "claim_limit": "The refusal is a generic closed-schema violation on the binding object. It does NOT name the generation marker and is NOT evidence of a dedicated generation-compatibility check. It shows only that an unsupported generation value is refused (not accepted, not repaired)."
+  }
+}

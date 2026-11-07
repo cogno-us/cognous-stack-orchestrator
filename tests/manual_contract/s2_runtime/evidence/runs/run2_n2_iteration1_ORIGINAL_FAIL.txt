@@ -1,0 +1,67 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_n2_executor_side_tenant_mismatch_is_refused_by_a_tenant_check[tenant_id-tenant-beta] _
+
+stack = <class 'test_s2_runtime_provenance.S'>
+valid = <class 'test_s2_runtime_provenance.V'>, field = 'tenant_id'
+value = 'tenant-beta'
+
+    @pytest.mark.parametrize("field,value", [("tenant_id", "tenant-beta")])
+    def test_n2_executor_side_tenant_mismatch_is_refused_by_a_tenant_check(stack, valid, field, value):
+        """REQUIRED: REFUSE, and the refusal must name tenant binding (not a malformed/digest failure). All digests are recomputed consistently so only the tenant differs."""
+        e, old, new = _reseal(stack, valid.export, lambda op: op.__setitem__(field, value))
+        assert old != new
+        try:
+>           bundle = _replay(stack, valid, e)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py:90: in _replay
+    return stack.replay.import_bounded_workflow(copy.deepcopy(v.cp), proposal=copy.deepcopy(v.proposal), moltbot_export=export, control_plane_revision=label).model_dump(mode="json")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../s1/stack/replay/src/agent_replay_bundle/importers.py:1190: in import_bounded_workflow
+    mr, ml, mc, mf = _import_moltbot(
+../../s1/stack/replay/src/agent_replay_bundle/importers.py:1377: in _import_moltbot
+    _validate_v2_export(source, cp_records, op, envelope_effect)
+../../s1/stack/replay/src/agent_replay_bundle/importers.py:2149: in _validate_v2_export
+    _validate_observation_content(item, effect, op, 'control_plane.observations')
+../../s1/stack/replay/src/agent_replay_bundle/importers.py:444: in _validate_observation_content
+    _require_equal(destination.get("operation_digest"), _sha256(op), path + ".destination_state.operation_digest")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+actual = 'sha256:23e63e113d1793a22f42e4347620115d97d84aec119a5871a5f5c935252ffda9'
+expected = 'sha256:b6ef54385c5b425a0ec7ca1657dec3970fe2820955d7bfaf25f44f336bff5dc8'
+path = 'control_plane.observations.destination_state.operation_digest'
+code = None
+
+    def _require_equal(actual: Any, expected: Any, path: str, code: str | None = None) -> None:
+        if not _json_same(actual, expected, path, code):
+>           raise ImportContractError(f"{path} conflicts with committed operation", code)
+E           agent_replay_bundle.importers.ImportContractError: control_plane.observations.destination_state.operation_digest conflicts with committed operation
+
+../../s1/stack/replay/src/agent_replay_bundle/importers.py:264: ImportContractError
+
+During handling of the above exception, another exception occurred:
+
+stack = <class 'test_s2_runtime_provenance.S'>
+valid = <class 'test_s2_runtime_provenance.V'>, field = 'tenant_id'
+value = 'tenant-beta'
+
+    @pytest.mark.parametrize("field,value", [("tenant_id", "tenant-beta")])
+    def test_n2_executor_side_tenant_mismatch_is_refused_by_a_tenant_check(stack, valid, field, value):
+        """REQUIRED: REFUSE, and the refusal must name tenant binding (not a malformed/digest failure). All digests are recomputed consistently so only the tenant differs."""
+        e, old, new = _reseal(stack, valid.export, lambda op: op.__setitem__(field, value))
+        assert old != new
+        try:
+            bundle = _replay(stack, valid, e)
+        except stack.replay.ImportContractError as exc:
+>           assert "tenant" in str(exc).lower(), "refused for a reason that is not tenant binding: " + str(exc)
+E           AssertionError: refused for a reason that is not tenant binding: control_plane.observations.destination_state.operation_digest conflicts with committed operation
+E           assert 'tenant' in 'control_plane.observations.destination_state.operation_digest conflicts with committed operation'
+E            +  where 'control_plane.observations.destination_state.operation_digest conflicts with committed operation' = <built-in method lower of str object at 0x7fb02f0e98f0>()
+E            +    where <built-in method lower of str object at 0x7fb02f0e98f0> = 'control_plane.observations.destination_state.operation_digest conflicts with committed operation'.lower
+E            +      where 'control_plane.observations.destination_state.operation_digest conflicts with committed operation' = str(ImportContractError('control_plane.observations.destination_state.operation_digest conflicts with committed operation'))
+
+tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py:197: AssertionError
+1 failed, 1 passed, 13 deselected in 1.23s

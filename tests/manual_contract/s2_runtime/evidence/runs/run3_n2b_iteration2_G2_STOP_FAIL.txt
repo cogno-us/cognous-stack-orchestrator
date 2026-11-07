@@ -1,0 +1,32 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_n2b_executor_and_control_plane_digests_agree_on_a_foreign_tenant_but_proposal_and_binding_do_not _
+
+stack = <class 'test_s2_runtime_provenance.S'>
+valid = <class 'test_s2_runtime_provenance.V'>
+
+    def test_n2b_executor_and_control_plane_digests_agree_on_a_foreign_tenant_but_proposal_and_binding_do_not(stack, valid):
+        e, old, new = _reseal(stack, valid.export, lambda op: op.__setitem__("tenant_id", "tenant-beta"))
+        assert old != new
+        cp = copy.deepcopy(valid.cp)
+    
+        def walk(node):
+            if isinstance(node, dict):
+                for k, val in list(node.items()):
+                    node[k] = new if val == old else walk(val)
+            elif isinstance(node, list):
+                for i, val in enumerate(node):
+                    node[i] = new if val == old else walk(val)
+            return node
+        walk(cp)
+        assert cp != valid.cp, "the Control Plane record did not contain the old operation digest"
+        try:
+            bundle = _replay(stack, valid, e, cp=cp)
+        except stack.replay.ImportContractError as exc:
+            assert "tenant" in str(exc).lower(), "refused for a reason that is not tenant binding: " + str(exc)
+        else:
+>           pytest.fail("REPLAY ACCEPTED an executor-side tenant mismatch (status %s)" % bundle["status"])
+E           Failed: REPLAY ACCEPTED an executor-side tenant mismatch (status reconstruction_complete)
+
+tests/manual_contract/s2_runtime/test_s2_runtime_provenance.py:226: Failed
+1 failed, 15 deselected in 1.32s

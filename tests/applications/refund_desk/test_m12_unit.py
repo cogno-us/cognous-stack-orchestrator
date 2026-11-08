@@ -197,6 +197,54 @@ class RequestForwarding(unittest.TestCase):
             self.assertIsNone(json.loads(p.stdout)["requested_profile"])
 
 
+class RequestedProfileLimitations(unittest.TestCase):
+    """M2.2: results for a non-default REQUESTED profile use the profile-neutral note even when F1 returned no profile block (pre-flight refusals)."""
+
+    NEUTRAL_PREFIX = "Application note: the action manifest and profile are bound by F1"
+
+    def run_case(self, profile, *, raises: bool = False):
+        import refund_desk.desk as desk
+
+        def fake(request):
+            if raises:
+                raise RuntimeError("synthetic F1 failure")
+            return f1("refused", profile=None)
+
+        spec = dict(M.A2, profile=profile, case_reference=None)
+        with S.tempdir("m12-u-lim-") as td, S.tempdir("m12-u-lim-stack-") as fake_stack, mock.patch.object(desk, "dispose_refund", fake):
+            return desk.process_refund(M.make_case(spec), S.make_config(Path(fake_stack), Path(td))).to_dict()
+
+    def assert_neutral(self, d):
+        lim = d["limitations"]
+        self.assertTrue(any(s.startswith(self.NEUTRAL_PREFIX) for s in lim), lim)
+        self.assertFalse(any("100.00 USD" in s for s in lim), lim)
+        self.assertNotIn(M.LEGACY_APP_NOTES[2], lim)
+        self.assertEqual(lim[-3:-1], list(M.LEGACY_APP_NOTES[:2]))
+
+    def test_preflight_refusal_with_requested_high_uses_neutral_note(self):
+        d = self.run_case(M.HIGH)
+        self.assertIsNone(d["profile"])
+        self.assertEqual(d["requested_profile"], M.HIGH)
+        self.assert_neutral(d)
+
+    def test_preflight_refusal_with_requested_unsupported_profile_uses_neutral_note(self):
+        d = self.run_case("refund-ghost-v1")
+        self.assertIsNone(d["profile"])
+        self.assert_neutral(d)
+
+    def test_default_and_explicit_routine_without_f1_profile_keep_legacy_list(self):
+        legacy = list(NOT_VERIFIED) + list(M.LEGACY_APP_NOTES)
+        for profile in (None, M.ROUTINE):
+            with self.subTest(profile=profile):
+                self.assertEqual(self.run_case(profile)["limitations"], legacy)
+
+    def test_fail_closed_uncertain_path_for_high_uses_neutral_note(self):
+        d = self.run_case(M.HIGH, raises=True)
+        self.assertEqual(d["outcome"], "uncertain")
+        self.assertEqual(d["requested_profile"], M.HIGH)
+        self.assert_neutral(d)
+
+
 class CliParser(unittest.TestCase):
     def parser(self):
         import refund_desk.cli as cli

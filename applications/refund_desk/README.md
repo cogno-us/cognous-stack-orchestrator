@@ -25,6 +25,9 @@ Observed with the pinned stack (Replay `7eb7d76e`): repeating an identical autho
 `evidence.replay_note: "replay_import_failed: ImportContractError('single-proposal importer does not support multiple authorization bindings')"`.
 The repeat re-runs the Control Plane decision and appends a second decision to the append-only per-correlation record; the pinned Replay single-proposal importer rejects more than one bound decision. This is a Replay evidence limitation, not an execution failure: the effect and its disposition are unchanged. It was reproduced here for both the routine and the high profile; the application reports whatever F1 returns and does not assume every repeat yields this note. Whether a repeat should report `not_run` instead is an F1-owner decision and is not changed here.
 
+## Developer installation (M1-4)
+A one-command CORE-LOCAL setup, guided demonstration, evidence index and exact owned cleanup are in [`development/refund-desk-local/`](../../development/refund-desk-local/README.md) (`dev.sh setup | demo | evidence | cleanup`). It reuses the recipe below and the repository's hash-locked dependency files, and refuses a component at the wrong revision. It is developer packaging only: synthetic, nonproduction, not independently qualified.
+
 ## Installation
 Reuse the F1 recipe exactly. Requirements: Linux, bash, git, Python >= 3.11 (developed on 3.13), `pydantic` 2.x, `cryptography`, `jsonschema` (versions not locked here). Assemble a stack root with the four pinned checkouts:
 

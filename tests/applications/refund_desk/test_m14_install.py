@@ -293,9 +293,9 @@ class FreshInstall(unittest.TestCase):
         # CHECK 3b: repeated authorized action -> still one row, same effect id
         e = dict(os.environ)
         e.update({"REFUND_DESK_STACK_ROOT": str(self.ws / "stack"), "PYTHONPATH": f"{REPO}:{REPO}/applications/refund_desk"})
-        argv = [str(self.ws / "venv/bin/python"), "-m", "refund_desk", "process", "--case-id", "HV-M14-A1", "--tenant", "harborview-retail",
+        argv = [str(self.ws / "venv/bin/python"), "-m", "refund_desk", "process", "--case-id", res["case_id"], "--tenant", "harborview-retail",
                 "--customer-account", "customer-001", "--amount", "64.25", "--reason", "damaged_item", "--authority", "valid", "--state-dir", str(st / "routine")]
-        p = subprocess.run(argv[:5] + ["--case-id", res["case_id"]] + argv[7:], capture_output=True, text=True, env=e)
+        p = subprocess.run(argv, capture_output=True, text=True, env=e)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         r2 = json.loads(p.stdout)
         self.assertEqual(r2["effect"]["effect_id"], res["effect"]["effect_id"])

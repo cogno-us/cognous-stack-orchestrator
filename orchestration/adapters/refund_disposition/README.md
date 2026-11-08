@@ -1,6 +1,6 @@
 # Refund disposition library (F1)
 
-**DEVELOPMENT ONLY / SYNTHETIC / NONPRODUCTION / NON-AUTHORIZING / builder-lineage.** Developer-tested: a local run only (the run record is in the PR description; no CI job runs these tests). Not independently qualified, not
+**DEVELOPMENT ONLY / SYNTHETIC / NONPRODUCTION / NON-AUTHORIZING / builder-lineage.** Developer-tested: a local run only (the run record is given in the PR description, not in this repository; no CI job runs these tests). Not independently qualified, not
 certified, not production-ready. Contract `refund-disposition/0.1.0-dev`. Plan: Hub #281 (Amendment 0.5, VNext-F); decision packet: Hub #273 (F0).
 
 One in-process Python library call that composes the already-demonstrated G3 native path for one synthetic refund and returns a structured
@@ -54,7 +54,7 @@ Excluded: Pack, Verifier, Attestation, Registry, ODES, GAX, CDC, ISS.
 | Runtime `denied` | `denied` | `correct_request_or_runtime_policy` |
 | Runtime `executed` (acknowledged, newly executed, observed applied) | `executed` | `none` |
 | Runtime `reconciled`/`observed` with observed state `applied` (e.g. an idempotent repeat) | `executed` (`newly_executed=false`) | `none` |
-| Runtime `unknown`, `partial`, observed `absent`/`unknown`, any unmapped status, or any exception once the Runtime has been entered | `unknown` | `reconcile_read_only` |
+| Runtime `unknown`, `partial`, observed `absent`/`unknown`, any unmapped status, or any `Exception` once the Runtime has been entered | `unknown` | `reconcile_read_only` |
 | Runtime `failed`, or an adapter error before dispatch | `failed` | `operator_inspection_no_retry_established` |
 
 Uncertain execution is never retried by the adapter, and no result grants a retry. `reconcile_refund(request)` (a second public function, needed because check C requires a read-only reconciliation) is the permitted
@@ -66,6 +66,11 @@ read-only next step for `unknown`: it reads the retained CP decision and observe
 ## Idempotency and repeats
 A caller-initiated repeat is allowed when the earlier attempt was acknowledged; it is **refused** (not re-dispatched) when the earlier attempt for the same
 effect is still uncertain, because absence of evidence never grants a retry. Repeats against one correlation id append to one CP run record.
+
+Known conservative consequence (read from the CP source, not exercised by a test): after a lost acknowledgment that the Runtime re-observes as applied
+(native `reconciled`, mapped to `executed` with `acknowledged=false`), the CP attempt stays `unknown` (its closeout is a separate record), so a later
+caller-initiated `dispose_refund` for the same effect is refused as `prior_uncertain_dispatch`. This fails closed and never double-executes; whether such a
+repeat should instead be allowed is an Architect decision.
 
 The effect id is derived natively from the proposal commitment, grant id, grant revision and tenant generation. A repeat of the same request
 against the same `state_dir` finds the existing applied row and does not insert a second one (native status `reconciled`,
@@ -125,7 +130,7 @@ G3_STACK_ROOT="$STACK" F1_REQUIRE=1 python3 -m unittest discover -s tests/adapte
 
 ## Developer checks and frozen oracles
 `ORACLES.md` was committed (d4e6eb6) before the adapter existed. `tests/adapters/refund_disposition/test_f1_boundary.py` adds four boundary tests (post-dispatch adapter fault -> `unknown`; refusal of a re-dispatch after `unknown`; reconcile creates nothing; hold creates no database). They were added after independent code review and are not part of the frozen oracles.
-`tests/adapters/refund_disposition/test_f1_checks.py` exercises them (some assertions are stricter than the oracle text, none weaker, except where noted in the PR):
+`tests/adapters/refund_disposition/test_f1_checks.py` exercises them (the PR description lists where assertions differ from the oracle text):
 A authorized + idempotent repeat; B revoked authority with measured Runtime noninvocation; C post-commit lost acknowledgment -> `unknown`, no retry,
 read-only reconciliation preserves observed state. Independent measurements use a read-only SQLite connection and call counters on the native
 `PinnedControlPlaneExecutor.execute` and `DurableRefundDestination.commit`.

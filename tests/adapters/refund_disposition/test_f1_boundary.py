@@ -33,6 +33,21 @@ class Boundary(unittest.TestCase):
             self.assertIs(r.effect_absence_established, False)
             self.assertEqual(r.next_step, "reconcile_read_only")
 
+    def test_runtime_raises_is_unknown_with_no_absence_claim(self):
+        root = S.require_stack(self)
+        with tempfile.TemporaryDirectory(prefix="f1-x5-") as td:
+            state = Path(td)
+            with S.native_counters(root) as n:
+                S_ = S.load_stack(root)
+                with mock.patch.object(S_.engine_adapter.PinnedControlPlaneExecutor, "execute", side_effect=RuntimeError("runtime raised")):
+                    r = dispose_refund(S.make_request(root, state, correlation="f1-x5"))
+            self.assertEqual(r.disposition, "unknown")
+            self.assertTrue(r.runtime_invoked)
+            self.assertEqual(r.runtime_invocations, 1)
+            self.assertIs(r.effect_absence_established, False)  # no row exists here, yet absence is still not claimed
+            self.assertIsNotNone(r.native.effect_id)  # native facts established before dispatch are kept
+            self.assertEqual(r.next_step, "reconcile_read_only")
+
     def test_dispose_after_unknown_is_refused_without_reentering_the_runtime(self):
         root = S.require_stack(self)
         with tempfile.TemporaryDirectory(prefix="f1-x2-") as td:
@@ -60,7 +75,7 @@ class Boundary(unittest.TestCase):
             self.assertEqual(rec.disposition, "executed")
             self.assertEqual({t: count(state, t) for t in before}, before)
 
-    def test_hold_with_unrelated_state_leaves_state_dir_without_database(self):
+    def test_hold_on_suspended_authority_creates_no_database(self):
         root = S.require_stack(self)
         with tempfile.TemporaryDirectory(prefix="f1-x4-") as td:
             state = Path(td)

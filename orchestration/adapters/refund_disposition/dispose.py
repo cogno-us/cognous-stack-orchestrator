@@ -45,6 +45,8 @@ class _Probe:
 
     def __init__(self) -> None:
         self.executions = 0
+        self.native: NativeFacts | None = None  # kept so a handler after dispatch still reports what the native path established
+        self.source: tuple = ()
 
 
 def _sha(data: bytes) -> str:
@@ -159,7 +161,8 @@ def dispose_refund(request: DispositionRequest) -> DispositionResult:
             result = _dispose(request, scratch, probe)
         except Exception as exc:  # noqa: BLE001 - unexpected adapter error
             if probe.executions > 0:  # the Runtime was entered: the effect may exist, so never `failed` and never "not invoked"
-                result = _result(request, "unknown", probe=probe, error=f"adapter_error_after_dispatch_outcome_unknown: {exc!r}")
+                result = _result(request, "unknown", native=probe.native, probe=probe, evidence=EvidenceReferences(source=probe.source),
+                                 error=f"adapter_error_after_dispatch_outcome_unknown: {exc!r}")
             else:
                 result = _result(request, "failed", error=f"adapter_error_no_dispatch_occurred: {exc!r}", next_step=_STACK_STEP)
         finally:
@@ -232,6 +235,7 @@ def _dispose(request: DispositionRequest, scratch: Path, probe: _Probe) -> Dispo
         if mirrored != expected:
             return _result(request, "failed", native=native, probe=probe, evidence=EvidenceReferences(source=source),
                            error="effective_grant_digest_mismatch_before_dispatch", next_step=_STACK_STEP)
+        probe.native, probe.source = native, source
         op, pol = _operation(S, p, d.binding, bundle)
         se, ad, pc = S.engine_safe_executor, S.engine_adapter, S.engine_producer
         ex = ad.PinnedControlPlaneExecutor(workflow=wf, destination=dest, policy=pol, observation_clock=lambda: AT)
@@ -247,12 +251,13 @@ def _dispose(request: DispositionRequest, scratch: Path, probe: _Probe) -> Dispo
             dest.heal()  # the simulated outage ends; the recorded native result stays `unknown`
         native = dataclasses.replace(native, runtime_status=res.status, runtime_error=res.error, acknowledged=res.acknowledged,
                                      newly_executed=res.newly_executed, observed_state=res.observed_state)
+        probe.native = native
         disposition = map_runtime(res.status, res.observed_state, res.acknowledged, res.newly_executed)
         try:
             source = (_cp_snapshot(state, request.correlation_id, records),)  # after execute: includes attempt/reconciliation records
             evidence = _evidence(S, request, p, wf, env, res, dest, source)
         except Exception as exc:  # noqa: BLE001 - the effect disposition stands; only the evidence reference is lost
-            evidence = EvidenceReferences(source=source, replay_state="not_run", replay_note=f"evidence_persistence_failed: {exc!r}")
+            evidence = EvidenceReferences(source=source, replay_state="not_run", replay_note=f"evidence_persistence_failed (source reference, if any, is the pre-execute CP snapshot): {exc!r}")
         refusal = None
         if disposition in ("denied", "failed", "unknown") and res.error:
             refusal = Refusal("runtime_" + res.status, res.error, "runtime")

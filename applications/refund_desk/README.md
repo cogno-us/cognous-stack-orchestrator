@@ -6,7 +6,7 @@
 A tiny CLI business application for one synthetic refund. It consumes only the public F1 library (`dispose_refund`, `reconcile_refund` from `orchestration.adapters.refund_disposition`, contract `refund-disposition/0.1.0-dev`) and presents the native disposition as one JSON object. The destination is synthetic local SQLite only.
 
 ## No duplicated native logic
-The application imports only the standard library and the F1 package-level public names. It does not import F1 submodules or private names, nor any Control Plane, Runtime, Replay or IG module. It does not authorize, execute, retry or reconstruct anything, contains no fault injection, and never changes, upgrades or downgrades a native outcome. `present()` only maps and labels the F1 result.
+The application imports only the standard library and the F1 package-level public names. It does not import F1 submodules or private names, nor any Control Plane, Runtime, Replay or IG module. It does not authorize, execute, retry or reconstruct anything, contains no fault injection, and never upgrades a native outcome or hides one. Its only downgrade is conservative: if F1 reports `executed` without an applied native observation, the application's `outcome` is `uncertain` (the `native.*` fields stay verbatim). `present()` only maps and labels the F1 result.
 
 ## Installation
 Reuse the F1 recipe exactly. Requirements: Linux, bash, git, Python >= 3.11 (developed on 3.13), `pydantic` 2.x, `cryptography`, `jsonschema` (versions not locked here). Assemble a stack root with the four pinned checkouts:
@@ -50,7 +50,7 @@ python3 -m refund_desk reconcile --case-id HV-2026-1102-0003 --tenant harborview
 |---|---|
 | 0 | `executed` |
 | 2 | `held`, `refused`, `denied` |
-| 3 | `uncertain` (including a presentation failure after F1 was called) |
+| 3 | `uncertain` (including a presentation failure after F1 was called, or F1 `executed` without a supported applied observation) |
 | 1 | `failed`, or usage error |
 
 ## Example outputs
@@ -216,6 +216,7 @@ The `reconcile` command needs a prior unresolved attempt for the same case (it r
 ```bash
 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_static.py' -v   # 5 tests, no stack needed
 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_present_unit.py' -v   # 7 tests, no stack needed
+python3 -m unittest discover -s tests/applications/refund_desk -p 'test_unsupported_executed.py' -v   # focused R1 regression, no stack needed
 F3_STACK_ROOT="$STACK" F3_REQUIRE=1 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_checks.py' -v   # 13 tests: checks A, B, C and review additions
 ```
 The UNKNOWN used by check C is produced by a test-owned fixture that borrows the F1 **test-tree** fault injection; the application itself contains no fault injection.
@@ -230,13 +231,16 @@ No workflow is added or changed. Existing path-matched workflows do not collect 
 - The evaluation time is a fixed synthetic clock read from the fixtures, not the wall clock.
 - Business inputs are bounded by F1's pinned Control Plane test-fixture manifest, which the caller cannot select: only `customer-001`, up to 100 USD, fixed institution. Anything else is a native HOLD. This is a documented dependency for a separately authorized F2 ("caller-selectable action manifest"); F3 does not work around it.
 - Idempotency is per destination database only; no cross-database exactly-once claim.
-- A lost acknowledgment alone maps to `executed` with `acknowledged=false`.
+- A lost acknowledgment alone maps to `executed` with `acknowledged=false` (when the native observation is `applied`).
 - A repeat after an unresolved uncertain attempt is refused (`prior_uncertain_dispatch`) and shown as `uncertain`; this stays true even after a `reconcile` has observed the effect as applied (the F1 conservative rule), so the same case can show `executed` from `reconcile` and then `uncertain` from a repeat `process`. No result grants a retry (`retry_permission=not_established`).
 - If the application cannot present an F1 result (or F1 raises), it fails closed: `outcome=uncertain`, reconcile only, exit 3. A held/refused/denied message describes only the current request and says nothing about earlier attempts for the case. `failed` is used only for errors before any F1 call.
-- If F1 ever reported `executed` without an applied native observation, the application would still print `outcome=executed` (one-to-one mapping, exit 0) but with `execution_claim.supported=false` and a hedged message; F1 currently prevents this case. Consumers should read `execution_claim.supported`, not only `outcome`.
+- If F1 ever reported `executed` without an applied native observation (or with a runtime status other than `executed`/`reconciled`/`observed`), the application prints `outcome=uncertain` (reconcile only, exit 3, `execution_claim.supported=false`, `native.*` unchanged, no claim of absence). F1 currently prevents this case; the stack-free regression `test_unsupported_executed.py` covers it (Amendment R1, frozen before the change).
 - A `denied` result comes from the Runtime call, so its message does not say the request was "not dispatched".
 - No fault injection in the application.
 - No Pack, Verifier, Attestation or Registry. No independent qualification, certification or production claim.
+
+## Architect decisions recorded (PR #156)
+1. F3's fixed synthetic manifest (customer-001, <=100 USD, fixed institution) is accepted for the bounded F4 developer-consumption profile; caller-selectable manifests are deferred to a separately authorized F2. 2. An application outcome must be UNCERTAIN whenever a native execution-success disposition lacks sufficient applied-effect observation (implemented as Amendment R1). 3. No new CI workflow is introduced here. 4. Independent F1/F3 security qualification is not required before F4 planning, but all existing assurance obligations remain. These decisions do not authorize F2, F4 implementation, deployment, certification or production use.
 
 ## Governance note
 Engineering Constitution adoption in this repository: UNVERIFIED.

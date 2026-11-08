@@ -205,20 +205,25 @@ def present(f1_result: Any, case_id: str) -> DeskResult:
 
     supported = (disposition == "executed" and native.observed_state == "applied"
                  and native.runtime_status in _EXECUTED_STATUSES)
+    # Amendment R1: an F1 "executed" without supporting native observations is treated as uncertain.
+    unsupported_executed = disposition == "executed" and not supported
+    if unsupported_executed:
+        outcome = "uncertain"
     if supported:
         claim = {"supported": True, "basis": "native runtime_status=%s with observed_state=applied (producer-reported)"
                  % native.runtime_status}
     else:
         claim = {"supported": False, "basis": "no supported native execution evidence (F1 disposition=%s)" % disposition}
 
-    if outcome == "executed" and supported:
+    if unsupported_executed:
+        message = ("F1 reported executed, but the native observations do not support an applied effect, so the outcome "
+                   "is treated as UNCERTAIN. No retry was made, and the absence of an effect is not established. "
+                   "Only reconciliation is permitted.")
+    elif outcome == "executed" and supported:
         message = ("The refund effect was observed as applied in the synthetic local SQLite; this is producer-reported, "
                    "not independently verified.")
         if native.acknowledged is False:
             message += " No acknowledgment was received."
-    elif outcome == "executed":
-        message = ("F1 reported executed, but the application cannot support an execution claim from the native "
-                   "observations.")
     elif outcome == "uncertain":
         message = ("The outcome is UNKNOWN. No retry was made, and the absence of an effect is not established. "
                    "Only reconciliation is permitted.")

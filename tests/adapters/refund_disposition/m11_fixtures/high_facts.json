@@ -1,0 +1,103 @@
+{
+  "accountable_human_role": {
+    "human_principal": "urn:cognous:principal:human-1",
+    "mandate_ref": "urn:cognous:mandate:human-1",
+    "role_id": "urn:cognous:role:accountable-human"
+  },
+  "acting_identity": "urn:cognous:identity:refund-agent-1",
+  "approval": {
+    "approval_ref": "urn:cognous:m11-synthetic:approval-1",
+    "approver": "urn:cognous:principal:synthetic-reviewer-1",
+    "role_id": "urn:cognous:role:refund-authorizer"
+  },
+  "authority_mode": "principle_inspired",
+  "conflicts": {
+    "appeal_ref": "urn:cognous:procedure:appeal",
+    "continuity_ref": "urn:cognous:procedure:continuity",
+    "escalation_ref": "urn:cognous:procedure:escalation",
+    "incompatible_role_pairs": [],
+    "precedence_refs": [
+      "urn:cognous:m11-synthetic:policy-1"
+    ],
+    "remedy_ref": "urn:cognous:procedure:remedy"
+  },
+  "context_ref": "urn:cognous:alvorada:public-stack-profile:0.1.0",
+  "evaluation": {
+    "observed_at": "2026-10-05T19:00:00+00:00",
+    "status_observed_at": "2026-10-05T19:00:00+00:00",
+    "status_ref": "urn:cognous:m11-synthetic:status-1",
+    "status_version": "status-v1"
+  },
+  "expires_at": "2026-10-05T20:00:00+00:00",
+  "grantee": "urn:cognous:principal:refund-service",
+  "identity": {
+    "authenticated": true,
+    "chain": [],
+    "delegation_valid": true
+  },
+  "issued_at": "2026-10-05T18:00:00+00:00",
+  "issuer": {
+    "issuance_record_ref": "urn:cognous:m11-synthetic:issuance-1",
+    "issuer": "synthetic-ocs-vnext-ig-issuer",
+    "issuer_role": "synthetic-ocs-vnext-ig-issuer-role",
+    "mandate_valid": true
+  },
+  "label": "SYNTHETIC FIXTURE FACTS (M1-1, profile refund-high-v1) - NOT INSTITUTIONAL AUTHORITY, NOT AUTHENTICATED, DEVELOPMENT ONLY; reviewer role 'refund-authorizer' is a synthetic alias, not a real approver",
+  "policy": {
+    "ref": "urn:cognous:m11-synthetic:policy-1",
+    "status": "active",
+    "version": "1.0"
+  },
+  "principal": "urn:cognous:principal:refund-service",
+  "requirement": {
+    "approvals": [
+      {
+        "independent_of_actor": true,
+        "role_id": "urn:cognous:role:refund-authorizer"
+      }
+    ],
+    "consequence": {
+      "profile_ref": "urn:cognous:consequence:T2",
+      "rationale": "Synthetic development tier.",
+      "tier": "T2"
+    },
+    "evidence": [],
+    "governing_sources": [
+      {
+        "provision": "refund",
+        "ref": "urn:cognous:m11-synthetic:policy-1",
+        "standing": "local_policy",
+        "version": "1.0"
+      }
+    ],
+    "permissions": [
+      {
+        "action": "refund_issue_high_consequence",
+        "data_scopes": [
+          "refund.issue.high"
+        ],
+        "max_amount": 1000.0,
+        "max_effects": 1,
+        "targets": [
+          "urn:cognous:synthetic-account:customer-002"
+        ],
+        "unit": "USD"
+      }
+    ],
+    "requirement_id": "urn:cognous:authority-requirement:refund-high-v1"
+  },
+  "role_mapping": {
+    "aliases": {
+      "refund-authorizer": [
+        "urn:cognous:role:refund-authorizer"
+      ]
+    },
+    "version": "roles-v1"
+  },
+  "roles": {
+    "issuer": "synthetic-ocs-vnext-ig-issuer",
+    "policy_owner": "synthetic-ocs-vnext-ig-policy-owner",
+    "revoker": "synthetic-ocs-vnext-ig-revoker"
+  },
+  "tenant_id": "m11-tenant"
+}

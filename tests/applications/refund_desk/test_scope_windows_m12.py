@@ -54,21 +54,21 @@ class M12Windows(unittest.TestCase):
 
     def test_r3_2_window_declaration_and_selection(self):
         # lifecycle advanced in M1-3 (Amendment M3.6): W-M1-2 is now CLOSED at the PR #159 merge and W-M1-3 is the open last window (originals in git history)
-        self.assertEqual([w.id for w in W.WINDOWS], ["W-F3", "W-M1-1", "W-M1-2", "W-M1-3"])
+        self.assertEqual([w.id for w in W.WINDOWS], ["W-F3", "W-M1-1", "W-M1-2", "W-M1-3", "W-M1-4"])
         self.assertEqual(W.W_M1_2.base, M1_1_MERGE)
         self.assertEqual(W.W_M1_2.head, "ffd97cda085ea9afd5bf14a9c3de4c9d0ae0f2b1")
-        self.assertEqual([w.id for w in W.WINDOWS if w.head is None], ["W-M1-3"], "exactly one open window, and it is the last one")
+        self.assertEqual([w.id for w in W.WINDOWS if w.head is None], ["W-M1-4"], "exactly one open window, and it is the last one")
         for w in W.WINDOWS:
             self.assertRegex(w.base, HEX40)
             if w.head is not None:
                 self.assertRegex(w.head, HEX40)
-        self.assertIs(W.select_window(lambda sha: True), W.W_M1_3)
+        self.assertIs(W.select_window(lambda sha: True), W.W_M1_4)
         self.assertIs(W.select_window(lambda sha: sha in (W.W_F3.base, W.W_M1_1.base)), W.W_M1_1)
         self.assertIs(W.select_window(lambda sha: sha == W.W_F3.base), W.W_F3)
         self.assertIsNone(W.select_window(lambda sha: False))
         self.assertIs(W.window_by_id("W-M1-2"), W.W_M1_2)
         with self.assertRaises(ValueError):
-            W.window_by_id("W-M1-4")
+            W.window_by_id("W-M1-5")
 
     def test_r3_3_f3_product_allowed_but_f1_native_and_workflows_are_violations_in_m1_2(self):
         allowed = ["applications/refund_desk/refund_desk/desk.py", "applications/refund_desk/refund_desk/cli.py",

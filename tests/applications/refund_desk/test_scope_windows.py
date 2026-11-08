@@ -84,7 +84,7 @@ class LiveWindows(unittest.TestCase):
     def test_r2_4_closed_f3_window_contains_only_f3_paths(self):
         if not have_commits(W.W_F3.base, W.W_F3.head):
             self.skipTest("window commits are not present in this checkout (a skip is not a pass)")
-        out = git("diff", "--name-only", W.W_F3.base, W.W_F3.head)
+        out = git("diff", "--name-only", "--no-renames", W.W_F3.base, W.W_F3.head)
         self.assertEqual(out.returncode, 0, out.stderr)
         paths = [p for p in out.stdout.split("\n") if p]
         self.assertTrue(paths, "the F3 window cannot be empty")

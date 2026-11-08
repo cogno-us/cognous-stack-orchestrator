@@ -65,7 +65,7 @@ def scope_violations(paths, window: Window) -> list[str]:
 
 def changed_paths(git: Callable[..., "subprocess.CompletedProcess"], base: str) -> set[str]:  # noqa: F821
     """Committed diff against `base` plus uncommitted and untracked paths of the current checkout."""
-    diff = git("diff", "--name-only", base)
+    diff = git("diff", "--name-only", "--no-renames", base)  # no rename detection: both sides of a rename must be reported
     status = git("status", "--porcelain", "--untracked-files=all")
     if diff.returncode != 0 or status.returncode != 0:
         raise RuntimeError(f"git failed: {diff.stderr or status.stderr}")

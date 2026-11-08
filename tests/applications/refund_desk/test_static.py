@@ -145,7 +145,7 @@ class StaticScope(unittest.TestCase):
         for sha in (W.W_F3.base, W.W_F3.head):
             if git("cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
                 self.skipTest(f"window commit {sha} not present in this checkout (a skip is not a pass)")
-        closed = git("diff", "--name-only", W.W_F3.base, W.W_F3.head)
+        closed = git("diff", "--name-only", "--no-renames", W.W_F3.base, W.W_F3.head)
         self.assertEqual(closed.returncode, 0, closed.stderr)
         self.assertEqual(W.scope_violations([p for p in closed.stdout.split("\n") if p], W.W_F3), [], "the closed F3 window left its allowed paths")
         win = W.select_window(lambda sha: git("merge-base", "--is-ancestor", sha, "HEAD").returncode == 0)

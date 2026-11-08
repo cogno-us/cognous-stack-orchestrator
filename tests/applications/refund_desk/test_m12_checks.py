@@ -101,24 +101,67 @@ class CheckA(Base):
             self.assertFalse(any("100.00 USD" in s for s in d["limitations"]), d["limitations"])
         return rows
 
-    def _run(self, root, spec, **kw):
+    def _run(self, root, spec, _extra_commit_on_repeat: bool = False, **kw):
+        """First request and idempotent repeat BOTH run inside one active native_counters context (Copilot finding r4505037853;
+        the original version exited the context before the repeat, so its repeat assertion could not observe any call).
+
+        Invariant: no additional native COMMIT and no duplicate effect. The repeat may legitimately re-enter native execute to
+        reconcile, so the execute count is NOT required to stay at 1.
+        `_extra_commit_on_repeat` is a test-owned mutation probe: it injects one extra native commit during the repeat so a
+        test can show this check fails when an additional commit occurs. It never changes product code."""
         from refund_desk import process_refund
+        from orchestration.adapters.refund_disposition.stack import load_stack
 
         with S.tempdir("m12-a-") as td:
             state = Path(td)
             with S.native_counters(root) as n:
-                d = process_refund(M.make_case(spec), S.make_config(root, state)).to_dict()
-            rows = self.assert_a(d, state, spec, **kw)
-            self.assertEqual((n["execute"], n["commit"]), (1, 1))
-            d2 = process_refund(M.make_case(spec), S.make_config(root, state)).to_dict()
-            self.assertEqual((n["execute"], n["commit"]), (1, 1), "idempotent repeat: no additional native execute/commit")
+                recorded = []
+                dest = load_stack(root).engine_safe_executor.DurableRefundDestination
+                counted_commit = dest.commit
+
+                def recorder(self, *a, **k):
+                    recorded.append((self, a, k))
+                    return counted_commit(self, *a, **k)
+
+                with mock.patch.object(dest, "commit", recorder):
+                    d = process_refund(M.make_case(spec), S.make_config(root, state)).to_dict()
+                rows = self.assert_a(d, state, spec, **kw)
+                self.assertEqual((n["execute"], n["commit"]), (1, 1))
+                self.assertEqual(len(recorded), 1)
+                commits_after_first = n["commit"]
+                if _extra_commit_on_repeat:
+                    executor = load_stack(root).engine_adapter.PinnedControlPlaneExecutor
+                    real_execute = executor.execute
+
+                    def execute_plus_commit(self, *a, **k):
+                        r = real_execute(self, *a, **k)
+                        s0, ca, ck = recorded[0]
+                        dest.commit(s0, *ca, **ck)  # the injected additional commit
+                        return r
+
+                    with mock.patch.object(executor, "execute", execute_plus_commit):
+                        d2 = process_refund(M.make_case(spec), S.make_config(root, state)).to_dict()
+                else:
+                    d2 = process_refund(M.make_case(spec), S.make_config(root, state)).to_dict()
+                # still inside the active counter context: n observes the repeat
+                self.assertEqual(n["commit"], 1, "idempotent repeat: native commit count must remain 1")
+                self.assertEqual(n["commit"] - commits_after_first, 0, "idempotent repeat: commit delta must be 0")
+                self.assertGreaterEqual(n["execute"], 1)  # repeat may re-enter execute to reconcile; not required to stay 1
             self.assertEqual(d2["outcome"], "executed", d2)
             self.assertEqual(d2["effect"]["effect_id"], d["effect"]["effect_id"])
             self.assertIs(d2["native"]["newly_executed"], False)
             self.assertEqual(S.effect_rows(state), rows)
+            self.assertEqual(len(S.effect_rows(state)), 1)
             self.assertEqual(d2["profile"], d["profile"])
             self.assertEqual(d2["requested_profile"], d["requested_profile"])
             return d
+
+    def test_a_repeat_check_detects_an_extra_commit(self):
+        """Corrected-check effectiveness: with one injected extra native commit during the repeat the check MUST fail."""
+        root = S.require_stack(self)
+        with self.assertRaises(AssertionError) as cm:
+            self._run(root, M.A1, _extra_commit_on_repeat=True, profile_id=M.ROUTINE, requested=None, amount=64.25)
+        self.assertIn("commit", str(cm.exception))
 
     def test_a1_default_profile_api_and_repeat(self):
         root = S.require_stack(self)

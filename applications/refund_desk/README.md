@@ -8,6 +8,16 @@ A tiny CLI business application for one synthetic refund. It consumes only the p
 ## No duplicated native logic
 The application imports only the standard library and the F1 package-level public names. It does not import F1 submodules or private names, nor any Control Plane, Runtime, Replay or IG module. It does not authorize, execute, retry or reconstruct anything, contains no fault injection, and never upgrades a native outcome or hides one. Its only downgrade is conservative: if F1 reports `executed` without an applied native observation, the application's `outcome` is `uncertain` (the `native.*` fields stay verbatim). `present()` only maps and labels the F1 result.
 
+## Approved profiles (M1-2; Issue https://github.com/cogno-us/cognous-open-control-stack/issues/282, OCS-M1-ARCH-001 v0.9)
+Refund Desk consumes the two approved F1 profiles through the public F1 interface. `--profile` is optional: omitted means the historical `refund-routine-v1` (customer-001, up to 100 USD). `--profile refund-high-v1` selects F1's second approved synthetic action (customer-002, native maximum 1000 USD, tier T2) and requires `--case-reference TEXT`. The application **only selects a profile id** and its own synthetic authority fixtures; it supplies no manifest, path, grant, Runtime policy or reviewer permission, performs no profile or case-reference validation (F1 and the native Control Plane own all of it; an unsupported id is refused by F1 with exit 2) and invents no case-reference format. Results gain two additive keys: `profile` (F1's selected profile identity: profile id, registry version, manifest id/version/digest, action id, requirement id; `null` when F1 returned none, e.g. a pre-flight refusal) and `requested_profile` (the id the case asked for, `null` when omitted). For the high profile, F1's disclosures are shown verbatim in `limitations`: the reviewer role is a synthetic alias, not authenticated institutional reviewer authority, and the manifest's evidence obligations are not evaluated natively. **A profile selection is not authorization.**
+
+```bash
+python3 -m refund_desk process --case-id HV-M12-0002 --tenant harborview-retail \
+  --customer-account customer-002 --amount 150.00 --reason damaged_item \
+  --profile refund-high-v1 --case-reference CASE-M12-0001 --state-dir /tmp/rd-high
+```
+`--case` remains accepted as an explicit alias of `--case-id`.
+
 ## Installation
 Reuse the F1 recipe exactly. Requirements: Linux, bash, git, Python >= 3.11 (developed on 3.13), `pydantic` 2.x, `cryptography`, `jsonschema` (versions not locked here). Assemble a stack root with the four pinned checkouts:
 
@@ -212,12 +222,22 @@ Recorded from real runs against the pinned stack (paths shortened; the objects b
 
 The `reconcile` command needs a prior unresolved attempt for the same case (it reads the retained Control Plane record); on a fresh state dir it prints `outcome: refused` with `refusal.code: no_prior_dispatch_record` (exit 2). The UNKNOWN above was produced by a test-owned fixture that uses the F1 test-tree fault injection; the application cannot produce it.
 
+## Example outputs - M1-2 (real runs against the pinned stack; key excerpts)
+High profile, authorized (`--profile refund-high-v1`, customer-002, 150.00 USD) - exit 0: `outcome: executed`, `control_plane: {result: authorized, reasons: []}`, `profile: {profile_id: refund-high-v1, registry_version: refund-profiles/0.1.0-dev, manifest_id: refund-integration-pilot-v1, manifest_version: "1.1", manifest_digest: sha256:4d1ad6c9...f6ac, action_id: urn:cognous:action:refund-issue-high-v1, requirement_id: urn:cognous:authority-requirement:refund-high-v1}`, `requested_profile: refund-high-v1`, `limitations` = the four F1 strings + the two high-profile disclosures + application notes.
+Routine customer under the high profile (customer-001) - exit 2: `outcome: held`, `control_plane.reasons: [grant_scope_mismatch, requirement_scope_mismatch, target_out_of_scope]`, `refusal.code: control_plane_hold`, `profile` populated (the native hold bound the profile), nothing dispatched.
+High profile without `--case-reference` - exit 2: `outcome: refused`, `refusal.code: request_invalid` (`case_reference_required_for_profile`), `profile: null`, `requested_profile: refund-high-v1`.
+Unsupported profile (`--profile refund-ghost-v1`) - exit 2: `outcome: refused`, `refusal.code: profile_unsupported`, `profile: null`.
+
 ## Tests
 ```bash
 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_static.py' -v   # 5 tests, no stack needed
 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_present_unit.py' -v   # 7 tests, no stack needed
 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_unsupported_executed.py' -v   # focused R1 regression, no stack needed
 F3_STACK_ROOT="$STACK" F3_REQUIRE=1 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_checks.py' -v   # 13 tests: checks A, B, C and review additions
+python3 -m unittest discover -s tests/applications/refund_desk -p 'test_scope_windows.py' -v   # scope-window rules R2 (stack-free)
+python3 -m unittest discover -s tests/applications/refund_desk -p 'test_scope_windows_m12.py' -v   # scope windows after M1-2, R3 (stack-free)
+python3 -m unittest discover -s tests/applications/refund_desk -p 'test_m12_unit.py' -v   # M1-2 profile contract and forwarding (stack-free)
+F3_STACK_ROOT="$STACK" F3_REQUIRE=1 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_m12_checks.py' -v   # M1-2 primary checks A, B, C (API + CLI)
 ```
 The UNKNOWN used by check C is produced by a test-owned fixture that borrows the F1 **test-tree** fault injection; the application itself contains no fault injection.
 `F3_REQUIRE=1` turns a missing stack into a failure (a skip is not a pass).
@@ -229,9 +249,10 @@ No workflow is added or changed. Existing path-matched workflows do not collect 
 - Authority is a synthetic fixture (`authenticated=false`), not institutional authority.
 - Evidence is producer-reported; the SQLite write is local and not independently verified.
 - The evaluation time is a fixed synthetic clock read from the fixtures, not the wall clock.
-- Business inputs are bounded by F1's pinned Control Plane test-fixture manifest, which the caller cannot select: only `customer-001`, up to 100 USD, fixed institution. Anything else is a native HOLD. This is a documented dependency for a separately authorized F2 ("caller-selectable action manifest"); F3 does not work around it.
+- Business inputs are bounded by the two approved F1 profiles of one pinned manifest, which the caller cannot author or select by path: routine = `customer-001`, up to 100 USD; high = `customer-002`, native maximum 1000 USD, `case_reference` required. Anything else is a native HOLD or an F1 refusal. There is no arbitrary profile registration or manifest-authoring interface. (Predecessor wording about a single fixed profile described PR #156 / F1 `09e1ba3` and is superseded by M1-1/M1-2.)
 - Idempotency is per destination database only; no cross-database exactly-once claim.
 - A lost acknowledgment alone maps to `executed` with `acknowledged=false` (when the native observation is `applied`).
+- The high profile's reviewer role is a synthetic alias and its evidence obligations are not natively evaluated; `authenticated=false` throughout. `case_reference` accepts arbitrary text (no separately approved business format).
 - A repeat after an unresolved uncertain attempt is refused (`prior_uncertain_dispatch`) and shown as `uncertain`; this stays true even after a `reconcile` has observed the effect as applied (the F1 conservative rule), so the same case can show `executed` from `reconcile` and then `uncertain` from a repeat `process`. No result grants a retry (`retry_permission=not_established`).
 - If the application cannot present an F1 result (or F1 raises), it fails closed: `outcome=uncertain`, reconcile only, exit 3. A held/refused/denied message describes only the current request and says nothing about earlier attempts for the case. `failed` is used only for errors before any F1 call.
 - If F1 ever reported `executed` without an applied native observation (or with a runtime status other than `executed`/`reconciled`/`observed`), the application prints `outcome=uncertain` (reconcile only, exit 3, `execution_claim.supported=false`, `native.*` unchanged, no claim of absence). F1 currently prevents this case; the stack-free regression `test_unsupported_executed.py` covers it (Amendment R1, frozen before the change).
@@ -240,6 +261,7 @@ No workflow is added or changed. Existing path-matched workflows do not collect 
 - No Pack, Verifier, Attestation or Registry. No independent qualification, certification or production claim.
 
 ## Architect decisions recorded (PR #156)
+*(Historical record of the PR #156 decisions. Decision 1 describes the single fixed profile of F1 `09e1ba3`; it is superseded for the bounded development profile by the two approved F1 profiles consumed in M1-2. Nothing in this section authorizes anything beyond its original scope.)*
 1. F3's fixed synthetic manifest (customer-001, <=100 USD, fixed institution) is accepted for the bounded F4 developer-consumption profile; caller-selectable manifests are deferred to a separately authorized F2. 2. An application outcome must be UNCERTAIN whenever a native execution-success disposition lacks sufficient applied-effect observation (implemented as Amendment R1). 3. No new CI workflow is introduced here. 4. Independent F1/F3 security qualification is not required before F4 planning, but all existing assurance obligations remain. These decisions do not authorize F2, F4 implementation, deployment, certification or production use.
 
 ## Governance note

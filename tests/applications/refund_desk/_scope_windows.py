@@ -23,11 +23,17 @@ class Window:
 W_F3 = Window("W-F3", "09e1ba3d33aa64dd7054746838d16b64d868cf9f", "77701cfcc46d52658ffcec10b6a38516c82feeaf",
               ("applications/refund_desk/", "tests/applications/refund_desk/"))
 # M1-1 window (PR #158): F1 package and its tests, plus the exact F3 files the authorized scope-test maintenance touches. F3 product code is NOT allowed.
-W_M1_1 = Window("W-M1-1", "77701cfcc46d52658ffcec10b6a38516c82feeaf", None,
+# CLOSED at its verified integration commit (the PR #158 merge); its immutable range is re-checked against the allowed set below.
+W_M1_1 = Window("W-M1-1", "77701cfcc46d52658ffcec10b6a38516c82feeaf", "2d4999b752e53d26f1a5e89b2310e9417d931043",
                 ("orchestration/adapters/refund_disposition/", "tests/adapters/refund_disposition/"),
                 ("applications/refund_desk/CONTRACT_AND_EXPECTATIONS.md", "tests/applications/refund_desk/test_static.py",
                  "tests/applications/refund_desk/_scope_windows.py", "tests/applications/refund_desk/test_scope_windows.py"))
-WINDOWS = (W_F3, W_M1_1)
+# M1-2 window (this PR): the Refund Desk application itself - code and its fixtures, the three exact documentation/manifest files, and its tests. OPEN (current checkout).
+# F1 (orchestration/**, tests/adapters/**), native components, workflows and every other path are NOT allowed: F1 implementation changes are not authorized in M1-2.
+W_M1_2 = Window("W-M1-2", "2d4999b752e53d26f1a5e89b2310e9417d931043", None,
+                ("applications/refund_desk/refund_desk/", "tests/applications/refund_desk/"),
+                ("applications/refund_desk/README.md", "applications/refund_desk/SOURCES.json", "applications/refund_desk/CONTRACT_AND_EXPECTATIONS.md"))
+WINDOWS = (W_F3, W_M1_1, W_M1_2)
 
 
 def window_by_id(window_id: str) -> Window:

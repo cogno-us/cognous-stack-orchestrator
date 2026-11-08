@@ -50,11 +50,11 @@ python3 -m refund_desk reconcile --case-id HV-2026-1102-0003 --tenant harborview
 |---|---|
 | 0 | `executed` |
 | 2 | `held`, `refused`, `denied` |
-| 3 | `uncertain` |
+| 3 | `uncertain` (including a presentation failure after F1 was called) |
 | 1 | `failed`, or usage error |
 
 ## Example outputs
-Recorded from real runs against the pinned stack (paths shortened; full raw outputs are in the PR description). Key fields only:
+Recorded from real runs against the pinned stack (paths shortened; the objects below are **excerpts of the real nested output** - every result also carries the other `to_dict()` keys, `labels`, `limitations` and `cleanup`; complete raw outputs are attached in the PR description):
 
 **Authorized (`process`, valid authority) - exit 0**
 ```json
@@ -63,16 +63,30 @@ Recorded from real runs against the pinned stack (paths shortened; full raw outp
   "reasons": [],
   "result": "authorized"
  },
+ "effect_absence_established": false,
+ "evidence": {
+  "replay": {
+   "path": ".../replay_bundle-516d92d4442a4e57.json",
+   "resolvable": true,
+   "sha256": "sha256:516d92d4442a4e5775d63a385f57fba5b84bdb6e5c00507fbd3ad2980f34acc5",
+   "status": "reconstruction_complete"
+  },
+  "replay_state": "imported"
+ },
  "execution_claim": {
   "basis": "native runtime_status=executed with observed_state=applied (producer-reported)",
   "supported": true
  },
  "message": "The refund effect was observed as applied in the synthetic local SQLite; this is producer-reported, not independently verified.",
- "native_runtime_status": "executed",
+ "native": {
+  "acknowledged": true,
+  "newly_executed": true,
+  "observed_state": "applied",
+  "runtime_invocations": 1,
+  "runtime_status": "executed"
+ },
  "outcome": "executed",
  "permitted_next_actions": [],
- "replay_resolvable": true,
- "replay_status": "reconstruction_complete",
  "retry_permission": "not_established"
 }
 ```
@@ -86,11 +100,19 @@ Recorded from real runs against the pinned stack (paths shortened; full raw outp
   ],
   "result": "hold"
  },
+ "effect_absence_established": false,
+ "evidence": {
+  "replay_state": "not_run"
+ },
  "execution_claim": {
   "basis": "no supported native execution evidence (F1 disposition=held)",
   "supported": false
  },
- "message": "The refund was put on hold before anything was dispatched: the authority that would permit this refund has been revoked.",
+ "message": "This request was not dispatched (the authority that would permit this refund has been revoked). This result says nothing about any earlier attempt for this case.",
+ "native": {
+  "disposition": "held",
+  "runtime_invoked": false
+ },
  "outcome": "held",
  "permitted_next_actions": [],
  "refusal": {
@@ -100,12 +122,11 @@ Recorded from real runs against the pinned stack (paths shortened; full raw outp
    "grant_revoked"
   ]
  },
- "retry_permission": "not_established",
- "runtime_invoked": false
+ "retry_permission": "not_established"
 }
 ```
 
-**Uncertain outcome, presenting a previously generated F1 UNKNOWN result**
+**Uncertain outcome (application presenting a previously generated F1 UNKNOWN result)**
 ```json
 {
  "control_plane": {
@@ -118,7 +139,11 @@ Recorded from real runs against the pinned stack (paths shortened; full raw outp
   "supported": false
  },
  "message": "The outcome is UNKNOWN. No retry was made, and the absence of an effect is not established. Only reconciliation is permitted.",
- "native_disposition": "unknown",
+ "native": {
+  "acknowledged": false,
+  "disposition": "unknown",
+  "runtime_status": "unknown"
+ },
  "outcome": "uncertain",
  "permitted_next_actions": [
   "reconcile"
@@ -127,34 +152,71 @@ Recorded from real runs against the pinned stack (paths shortened; full raw outp
 }
 ```
 
-**After reconciliation (`reconcile`) - exit 0**
+**Repeat `process` for that case (CLI) - exit 3, no dispatch**
 ```json
 {
- "acknowledged": false,
  "control_plane": {
   "reasons": [],
   "result": "authorized"
  },
+ "effect_absence_established": false,
+ "execution_claim": {
+  "basis": "no supported native execution evidence (F1 disposition=refused)",
+  "supported": false
+ },
+ "message": "The outcome is UNKNOWN. No retry was made, and the absence of an effect is not established. Only reconciliation is permitted.",
+ "native": {
+  "disposition": "refused",
+  "runtime_invocations": 0
+ },
+ "outcome": "uncertain",
+ "permitted_next_actions": [
+  "reconcile"
+ ],
+ "refusal": {
+  "code": "prior_uncertain_dispatch",
+  "explanation": "an earlier attempt for this effect is unknown/partial/unresolved; reconcile first",
+  "reasons": [
+   "an earlier attempt for this effect is unknown/partial/unresolved; reconcile first"
+  ]
+ },
+ "retry_permission": "not_established"
+}
+```
+
+**After explicit `reconcile` (CLI) - exit 0, nothing dispatched**
+```json
+{
+ "control_plane": {
+  "reasons": [],
+  "result": "authorized"
+ },
+ "effect_absence_established": false,
  "execution_claim": {
   "basis": "native runtime_status=observed with observed_state=applied (producer-reported)",
   "supported": true
  },
  "message": "The refund effect was observed as applied in the synthetic local SQLite; this is producer-reported, not independently verified. No acknowledgment was received.",
- "native_runtime_status": "observed",
- "newly_executed": false,
- "observed_state": "applied",
+ "native": {
+  "acknowledged": false,
+  "newly_executed": false,
+  "observed_state": "applied",
+  "runtime_invocations": 0,
+  "runtime_status": "observed"
+ },
  "outcome": "executed",
  "permitted_next_actions": [],
  "retry_permission": "not_established"
 }
 ```
 
-Uncertain-outcome path via the CLI: after an F1 UNKNOWN exists for a case, `process` for that case prints `outcome: uncertain` (exit 3, `refusal.code: prior_uncertain_dispatch`, `permitted_next_actions: ["reconcile"]`) and does not dispatch.
+The `reconcile` command needs a prior unresolved attempt for the same case (it reads the retained Control Plane record); on a fresh state dir it prints `outcome: refused` with `refusal.code: no_prior_dispatch_record` (exit 2). The UNKNOWN above was produced by a test-owned fixture that uses the F1 test-tree fault injection; the application cannot produce it.
 
 ## Tests
 ```bash
 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_static.py' -v   # 5 tests, no stack needed
-F3_STACK_ROOT="$STACK" F3_REQUIRE=1 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_checks.py' -v   # 7 tests: checks A, B, C
+python3 -m unittest discover -s tests/applications/refund_desk -p 'test_present_unit.py' -v   # 7 tests, no stack needed
+F3_STACK_ROOT="$STACK" F3_REQUIRE=1 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_checks.py' -v   # 11 tests: checks A, B, C and review additions
 ```
 The UNKNOWN used by check C is produced by a test-owned fixture that borrows the F1 **test-tree** fault injection; the application itself contains no fault injection.
 `F3_REQUIRE=1` turns a missing stack into a failure (a skip is not a pass).
@@ -169,7 +231,8 @@ No workflow is added or changed. Existing path-matched workflows do not collect 
 - Business inputs are bounded by F1's pinned Control Plane test-fixture manifest, which the caller cannot select: only `customer-001`, up to 100 USD, fixed institution. Anything else is a native HOLD. This is a documented dependency for a separately authorized F2 ("caller-selectable action manifest"); F3 does not work around it.
 - Idempotency is per destination database only; no cross-database exactly-once claim.
 - A lost acknowledgment alone maps to `executed` with `acknowledged=false`.
-- A repeat after an unresolved uncertain attempt is refused (`prior_uncertain_dispatch`); no result grants a retry (`retry_permission=not_established`).
+- A repeat after an unresolved uncertain attempt is refused (`prior_uncertain_dispatch`) and shown as `uncertain`; this stays true even after a `reconcile` has observed the effect as applied (the F1 conservative rule), so the same case can show `executed` from `reconcile` and then `uncertain` from a repeat `process`. No result grants a retry (`retry_permission=not_established`).
+- If the application cannot present an F1 result (or F1 raises), it fails closed: `outcome=uncertain`, reconcile only, exit 3. A held/refused/denied message describes only the current request and says nothing about earlier attempts for the case. `failed` is used only for errors before any F1 call.
 - No fault injection in the application.
 - No Pack, Verifier, Attestation or Registry. No independent qualification, certification or production claim.
 

@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from .desk import DeskConfig, RefundCase, failed_result, process_refund, reconcile_case
+from .desk import DeskConfig, RefundCase, failed_result, process_refund, reconcile_case, uncertain_result
 
 _EXIT = {"executed": 0, "held": 2, "refused": 2, "denied": 2, "uncertain": 3, "failed": 1}
 
@@ -28,8 +28,15 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _emit(result) -> int:
-    sys.stdout.write(json.dumps(result.to_dict(), sort_keys=True, indent=2) + "\n")
-    return _EXIT.get(result.outcome, 1)
+    try:
+        text = json.dumps(result.to_dict(), sort_keys=True, indent=2)
+        code = _EXIT.get(result.outcome, 1)
+    except Exception as exc:
+        text = json.dumps(uncertain_result(getattr(result, "case_id", ""), "%s: %s" % (type(exc).__name__, exc)).to_dict(),
+                          sort_keys=True, indent=2)
+        code = 3
+    sys.stdout.write(text + "\n")
+    return code
 
 
 class _Usage(Exception):
@@ -59,6 +66,6 @@ def main(argv=None) -> int:
     config = DeskConfig(stack_root=Path(stack_root), state_dir=Path(args.state_dir))
     try:
         result = process_refund(case, config) if args.command == "process" else reconcile_case(case, config)
-    except Exception as exc:  # reported as failed; never converted into an execution claim
+    except Exception as exc:  # only reachable before the F1 call (request building); never an execution claim
         return _emit(failed_result(args.case_id, "%s: %s" % (type(exc).__name__, exc)))
     return _emit(result)

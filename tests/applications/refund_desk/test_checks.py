@@ -61,6 +61,7 @@ class CheckA(Base):
         self.assertEqual(d["native"]["runtime_status"], "executed" if first else "reconciled")
         self.assertIs(d["native"]["newly_executed"], first)
         self.assertEqual(d["native"]["runtime_invocations"], 1)
+        self.assertIs(d["native"]["runtime_invoked"], True)
         self.assertIs(d["execution_claim"]["supported"], True)
         self.assertTrue(d["execution_claim"]["basis"])
         rows = S.effect_rows(state)
@@ -209,7 +210,8 @@ class CheckC(Base):
         self.shape_ok(d)
         self.assertEqual(d["outcome"], "executed", d)
         self.assertIs(d["execution_claim"]["supported"], True)
-        self.assertIn("observed", d["execution_claim"]["basis"])
+        self.assertEqual(d["native"]["runtime_status"], "observed")
+        self.assertIn("runtime_status=observed", d["execution_claim"]["basis"])
         self.assertEqual(d["native"]["observed_state"], "applied")
         self.assertIs(d["native"]["newly_executed"], False)
         self.assertEqual(d["native"]["runtime_invocations"], 0)
@@ -243,6 +245,90 @@ class CheckC(Base):
         text = (p.stdout + p.stderr).lower()
         self.assertIn("--case-id", text, "expected the CLI usage text")
         self.assertFalse(any(w in text for w in words), text)
+
+
+def spec_with(base: dict, **kw) -> dict:
+    return {**base, **kw}
+
+
+class ReviewAdditions(Base):
+    def test_revoked_resubmission_after_execution_holds_without_claiming_no_effect(self):
+        root = S.require_stack(self)
+        from refund_desk import process_refund
+
+        with S.tempdir("f3-r1-") as td:
+            state = Path(td)
+            cfg = S.make_config(root, state)
+            d1 = process_refund(S.make_case(S.CASE_C), cfg).to_dict()
+            self.assertEqual(d1["outcome"], "executed", d1)
+            rows = S.effect_rows(state)
+            self.assertEqual(len(rows), 1)
+            d2 = process_refund(S.make_case(spec_with(S.CASE_C, authority="revoked")), cfg).to_dict()
+            self.shape_ok(d2)
+            self.assertEqual(d2["outcome"], "held", d2)
+            self.assertIs(d2["effect_absence_established"], False)
+            after = S.effect_rows(state)
+            self.assertEqual(len(after), 1)
+            self.assertEqual(after[0]["state"], "applied")
+            self.assertEqual(after, rows)
+            msg = d2["message"].lower()
+            self.assertNotIn("before anything", msg)
+            self.assertNotIn("no effect", msg)
+            self.assertTrue("not dispatched" in msg or "request was not dispatched" in msg, d2["message"])
+
+    def test_present_failure_after_real_f1_call_is_uncertain(self):
+        root = S.require_stack(self)
+        from unittest import mock
+
+        import refund_desk.cli as cli
+        import refund_desk.desk as desk
+
+        with S.tempdir("f3-r2-") as td:
+            state = Path(td)
+
+            def boom(*a, **k):
+                raise RuntimeError("synthetic presentation failure")
+
+            with S.native_counters(root) as n, mock.patch.object(desk, "present", boom):
+                d = desk.process_refund(S.make_case(S.CASE_A), S.make_config(root, state)).to_dict()
+            self.assertEqual((n["execute"], n["commit"]), (1, 1), "the real F1 call ran")
+            self.assertEqual(d["outcome"], "uncertain", d)
+            self.assertEqual(d["permitted_next_actions"], ["reconcile"])
+            self.assertIs(d["effect_absence_established"], False)
+            self.assertIs(d["execution_claim"]["supported"], False)
+            rows = S.effect_rows(state)
+            self.assertEqual(len(rows), 1, "the effect did commit")
+            self.assertEqual(rows[0]["state"], "applied")
+            self.assertEqual(cli._EXIT["uncertain"], 3)
+            self.assertEqual(cli._EXIT["failed"], 1)
+
+    def test_missing_stack_root_cli_is_failed_exit_1_with_json(self):
+        with S.tempdir("f3-r3-") as td:
+            p = S.run_cli(S.cli_args("process", S.CASE_A, Path(td)), root=None)
+            self.assertEqual(p.returncode, 1, (p.stdout, p.stderr))
+            d = json.loads(p.stdout)
+            self.assertEqual(d["outcome"], "failed")
+            self.assertIs(d["execution_claim"]["supported"], False)
+
+    def test_repeat_process_after_reconcile_stays_uncertain(self):
+        """Documents the F1-conservative consequence: reconcile returning executed does not clear the unresolved prior dispatch."""
+        root = S.require_stack(self)
+        from refund_desk import process_refund, reconcile_case
+
+        with S.tempdir("f3-r7-") as td:
+            state = Path(td)
+            case, cfg = S.make_case(S.CASE_C), S.make_config(root, state)
+            with S.native_counters(root) as n:
+                S.f1_unknown_for_case_c(self, root, state)
+                rows = S.effect_rows(state)
+                r = reconcile_case(case, cfg).to_dict()
+                self.assertEqual(r["outcome"], "executed", r)
+                d = process_refund(case, cfg).to_dict()
+                self.assertEqual(d["outcome"], "uncertain", d)
+                self.assertEqual(d["refusal"]["code"], "prior_uncertain_dispatch")
+                self.assertEqual(d["permitted_next_actions"], ["reconcile"])
+                self.assertEqual((n["execute"], n["commit"]), (1, 1))
+                self.assertEqual(S.effect_rows(state), rows)
 
 
 if __name__ == "__main__":

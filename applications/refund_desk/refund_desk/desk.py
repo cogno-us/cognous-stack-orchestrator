@@ -105,6 +105,18 @@ def failed_result(case_id: str, text: str) -> DeskResult:
         limitations=list(_APP_NOTES))
 
 
+def uncertain_result(case_id: str, text: str) -> DeskResult:
+    """Fail-closed shape used when the F1 call was entered but its result could not be obtained or presented."""
+    res = failed_result(case_id, text)
+    res.outcome = "uncertain"
+    res.message = ("The outcome is UNKNOWN because the application could not present the F1 result (%s). "
+                   "No retry was made, the absence of an effect is not established, and only reconciliation is permitted."
+                   % text)
+    res.refusal = None
+    res.permitted_next_actions = ["reconcile"]
+    return res
+
+
 def _load(name: str) -> dict:
     with open(_FIXTURES / name, "r", encoding="utf-8") as handle:
         return json.load(handle)
@@ -127,12 +139,24 @@ def _build_request(case: RefundCase, config: DeskConfig) -> DispositionRequest:
         environment=SyntheticEnvironment(stack_root=Path(config.stack_root), state_dir=Path(config.state_dir)))
 
 
+def _call_and_present(fn: Any, request: DispositionRequest, case_id: str) -> DeskResult:
+    # Request building happens before this point; once F1 is entered, any failure is reported as uncertain, never failed.
+    try:
+        f1_result = fn(request)
+    except Exception as exc:
+        return uncertain_result(case_id, "%s: %s" % (type(exc).__name__, exc))
+    try:
+        return present(f1_result, case_id)
+    except Exception as exc:
+        return uncertain_result(case_id, "%s: %s" % (type(exc).__name__, exc))
+
+
 def process_refund(case: RefundCase, config: DeskConfig) -> DeskResult:
-    return present(dispose_refund(_build_request(case, config)), case.case_id)
+    return _call_and_present(dispose_refund, _build_request(case, config), case.case_id)
 
 
 def reconcile_case(case: RefundCase, config: DeskConfig) -> DeskResult:
-    return present(reconcile_refund(_build_request(case, config)), case.case_id)
+    return _call_and_present(reconcile_refund, _build_request(case, config), case.case_id)
 
 
 def _val(x: Any) -> Any:
@@ -187,22 +211,26 @@ def present(f1_result: Any, case_id: str) -> DeskResult:
     else:
         claim = {"supported": False, "basis": "no supported native execution evidence (F1 disposition=%s)" % disposition}
 
-    if outcome == "executed":
+    if outcome == "executed" and supported:
         message = ("The refund effect was observed as applied in the synthetic local SQLite; this is producer-reported, "
                    "not independently verified.")
         if native.acknowledged is False:
             message += " No acknowledgment was received."
+    elif outcome == "executed":
+        message = ("F1 reported executed, but the application cannot support an execution claim from the native "
+                   "observations.")
     elif outcome == "uncertain":
         message = ("The outcome is UNKNOWN. No retry was made, and the absence of an effect is not established. "
                    "Only reconciliation is permitted.")
-    elif outcome == "held":
-        message = ("The refund was put on hold before anything was dispatched: "
-                   + _explain(cp_reasons, "the authority decision did not authorize it") + ".")
-    elif outcome == "refused":
-        reason = (refusal.reason if refusal is not None else None) or "the request was refused before dispatch"
-        message = "The refund request was refused before dispatch: %s." % reason
-    elif outcome == "denied":
-        message = "The refund was denied by the runtime policy; nothing is reported as applied."
+    elif outcome in ("held", "refused", "denied"):
+        if outcome == "held":
+            why = _explain(cp_reasons, "the authority decision did not authorize it")
+        elif outcome == "refused":
+            why = (refusal.reason if refusal is not None else None) or "the request was refused"
+        else:
+            why = "the runtime policy denied it"
+        message = ("This request was not dispatched (%s). This result says nothing about any earlier attempt for this case."
+                   % why)
     else:
         message = ("The refund could not be completed: %s. Nothing is reported as applied."
                    % (f1_result.error or native.runtime_error or "an error was reported"))

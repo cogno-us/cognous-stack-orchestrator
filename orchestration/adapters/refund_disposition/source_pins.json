@@ -1,0 +1,16 @@
+{
+  "notice": "DEVELOPMENT ONLY / SYNTHETIC / NONPRODUCTION / NOT A SOURCE LOCK. Copy of the G3 development tuple pins (tests/manual_contract/g3_refund/source_manifest.json at 67c49e27). A test asserts equality with that file. Does not replace or migrate any component-lock.json.",
+  "used_by_f1": ["control_plane", "runtime", "replay", "institutional_governance"],
+  "not_used_by_f1": ["manifest", "evidence_pack", "verifier", "evidence_attestation", "evidence_registry"],
+  "components": {
+    "manifest": "fa170815ef96a54c233d0dd9da821b60debabf8b",
+    "control_plane": "484fdbd297235dd24148ddb0703f2055a31eabff",
+    "runtime": "f7a55e2a8494801e49193f9f46935f0a971c248d",
+    "replay": "7eb7d76eda10ca1ff997bb86853e903e57da625c",
+    "evidence_pack": "1906c1fb1da4b96449565301c143d7a06b6a16bb",
+    "institutional_governance": "1ebe85be4cfe9e221ebd2618120687eb0b325d24",
+    "verifier": "2ffe37c5ea1255e9699972980f0cb33c06a080e2",
+    "evidence_attestation": "b7d23dc7fa30359f129481149d0fdd3405dbf1b1",
+    "evidence_registry": "0729159669d642db69b0ef8d5d45e14b5f5b4405"
+  }
+}

@@ -142,12 +142,14 @@ class StaticScope(unittest.TestCase):
             return subprocess.run(["git", *a], cwd=str(S.REPO), capture_output=True, text=True)
 
         self.assertEqual(W.W_F3.base, BASE)  # the original anchor is unchanged
-        for sha in (W.W_F3.base, W.W_F3.head):
-            if git("cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
-                self.skipTest(f"window commit {sha} not present in this checkout (a skip is not a pass)")
-        closed = git("diff", "--name-only", "--no-renames", W.W_F3.base, W.W_F3.head)
-        self.assertEqual(closed.returncode, 0, closed.stderr)
-        self.assertEqual(W.scope_violations([p for p in closed.stdout.split("\n") if p], W.W_F3), [], "the closed F3 window left its allowed paths")
+        for closed_window in (w for w in W.WINDOWS if w.head is not None):  # every CLOSED window is re-checked against its immutable range
+            for sha in (closed_window.base, closed_window.head):
+                if git("cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
+                    self.skipTest(f"window commit {sha} not present in this checkout (a skip is not a pass)")
+            closed = git("diff", "--name-only", "--no-renames", closed_window.base, closed_window.head)
+            self.assertEqual(closed.returncode, 0, closed.stderr)
+            self.assertEqual(W.scope_violations([p for p in closed.stdout.split("\n") if p], closed_window), [],
+                             f"the closed window {closed_window.id} left its allowed paths")
         win = W.select_window(lambda sha: git("merge-base", "--is-ancestor", sha, "HEAD").returncode == 0)
         self.assertIsNotNone(win, "HEAD descends from no declared scope window: declare a new window by a dated amendment")
         outside = W.scope_violations(sorted(W.changed_paths(git, win.base)), win)

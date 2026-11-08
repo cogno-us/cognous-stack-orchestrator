@@ -24,5 +24,5 @@
     "packages": ["pydantic>=2", "cryptography", "jsonschema"],
     "note": "Inherited from F1; dependency versions are not locked here."
   },
-  "application_source_commit": "592ac4b47b3ac6c74ddd1cf70c5a8e57fa0d0a24"
+  "application_source_commit": "76acbc9e279f25606bda475104cb0536b3fd1ee9"
 }

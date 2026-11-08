@@ -1,0 +1,14 @@
+# OCS-09 targeted probes (exact main 41f651d)
+two allocations distinct: True | both exist: True
+dispose(a) ok: True | a removed: True | b intact: True
+dispose(b) ok: True | b removed: True
+# static: removal calls and glob use in F1/F3/installer sources
+orchestration/adapters/refund_disposition/dispose.py:11:process-global, so calls are serialized by a lock and run one at a time.
+orchestration/adapters/refund_disposition/stack.py:81:    global _CACHE
+orchestration/adapters/refund_disposition/workspace.py:3:Each call allocates ONE unique scratch directory and later removes exactly that path. It never globs, never touch
+orchestration/adapters/refund_disposition/workspace.py:31:        shutil.rmtree(work)
+orchestration/adapters/refund_disposition/workspace.py:33:        errors.append(f"rmtree({work}) failed: {exc!r}")
+development/refund-desk-local/devtool.py:308:    for p in sorted(x for x in st.rglob("*") if x.is_file() and not x.is_symlink()):
+development/refund-desk-local/devtool.py:313:    for db in sorted(st.rglob("*.sqlite3")):
+development/refund-desk-local/devtool.py:358:            shutil.rmtree(t) if t.is_dir() else t.unlink()
+development/refund-desk-local/devtool.py:364:            ws.rmdir()

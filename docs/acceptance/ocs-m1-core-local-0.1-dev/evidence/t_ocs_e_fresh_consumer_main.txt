@@ -1,0 +1,113 @@
+# T-OCS-E fresh consumer on integrated main, 2026-11-08T05:54:48Z; env -i, empty HOME, new clone
+$ git clone -q https://github.com/cogno-us/cognous-stack-orchestrator.git cs
+exit=0
+$ git checkout -q --detach 41f651d27e159f7b348e87f83475bf1bda7a6214
+exit=0
+head: 41f651d27e159f7b348e87f83475bf1bda7a6214
+$ git --version
+git version 2.43.0
+exit=0
+$ python3 --version
+Python 3.13.18
+exit=0
+$ development/refund-desk-local/dev.sh setup
+owner marker: <fresh>/home/.cognous-refund-desk-dev/.cognous-refund-desk-dev-owner
+workspace: <fresh>/home/.cognous-refund-desk-dev
+creating venv ...
+installing hash-locked dependencies (repository .github/locks) ...
+control_plane: fetching cognous-control-plane @ 484fdbd297235dd24148ddb0703f2055a31eabff ...
+control_plane: at pin 484fdbd297235dd24148ddb0703f2055a31eabff
+runtime: fetching cognous-execution-runtime @ f7a55e2a8494801e49193f9f46935f0a971c248d ...
+runtime: at pin f7a55e2a8494801e49193f9f46935f0a971c248d
+replay: fetching cognous-replay-bundle @ 7eb7d76eda10ca1ff997bb86853e903e57da625c ...
+replay: at pin 7eb7d76eda10ca1ff997bb86853e903e57da625c
+institutional_governance: fetching cognous-institutional-governance @ 1ebe85be4cfe9e221ebd2618120687eb0b325d24 ...
+institutional_governance: at pin 1ebe85be4cfe9e221ebd2618120687eb0b325d24
+install record: <fresh>/home/.cognous-refund-desk-dev/install-record.json
+setup complete. Next: dev.sh demo   |   eval "$(dev.sh --workspace '<fresh>/home/.cognous-refund-desk-dev' env)"
+exit=0
+control_plane: already at pin 484fdbd297235dd24148ddb0703f2055a31eabff
+runtime: already at pin f7a55e2a8494801e49193f9f46935f0a971c248d
+replay: already at pin 7eb7d76eda10ca1ff997bb86853e903e57da625c
+institutional_governance: already at pin 1ebe85be4cfe9e221ebd2618120687eb0b325d24
+setup complete. Next: dev.sh demo   |   eval "$(dev.sh --workspace '<fresh>/home/.cognous-refund-desk-dev' env)"
+exit=0
+$ development/refund-desk-local/dev.sh demo --name accept
+CORE-LOCAL / SYNTHETIC / NONPRODUCTION demonstration; evidence under <fresh>/home/.cognous-refund-desk-dev/state/accept
+PASS  routine   exit 0; executed; native CP authorized; one applied SQLite row; effect id matches SQLite; replay source references present; nonproduction label
+PASS  high      exit 0; executed; profile refund-high-v1; requested_profile echoed; one applied SQLite row; own effect id, distinct from routine
+PASS  hold      exit 2; held; reason grant_revoked; zero SQLite rows; no execution claim
+PASS  mismatch  exit 2; held (customer outside the high profile's scope); zero rows; ghost profile exit 2; profile_unsupported refusal; still zero rows
+PASS  uncertain F1 disposition unknown (fixture); presented as uncertain; absence of effect not claimed; retry not established; one row committed; repeat: exit 3, refused, no redispatch; repeat added no row; reconcile: observed, e
+ALL PASS; inspect with: dev.sh evidence --state <fresh>/home/.cognous-refund-desk-dev/state/accept/<scenario>
+exit=0
+routine executed authorized sha256:0909f4f427126e32 False True imported
+high executed refund-high-v1 sha256:4d1ad6c96bc2 imported None
+{
+ "limitations": [
+  "authority is a synthetic developer-mode fixture decision (resolver authenticated=false); not institutional authority",
+  "the effect is a real local SQLite write reported by the producer; it is not independently observed",
+  "no independent qualification or certification; the Verifier, Attestation and Registry are not part of this interface",
+  "idempotency holds per destination database only; there is no cross-database exactly-once claim",
+  "Application note: everything here is synthetic and nonproduction; the destination is a local SQLite file only.",
+  "Application note: the evaluation time is a fixed synthetic clock read from the facts fixture, not the wall clock.",
+  "Application note: the action manifest is bound by F1 (one allowed synthetic customer, maximum 100.00 USD); the application cannot widen it."
+ ],
+ "labels": {
+  "authenticated": false,
+  "evidence_basis": "producer_reported",
+  "non_authorizing": true,
+  "nonproduction": true,
+  "not_verified": [
+   "authority is a synthetic developer-mode fixture decision (resolver authenticated=false); not institutional authority",
+   "the effect is a real local SQLite write reported by the producer; it is not independently observed",
+   "no independent qualification or certification; the Verifier, Attestation and Registry are not part of this interface",
+   "idempotency holds per destination database only; there is no cross-database exactly-once claim"
+  ],
+  "retry_permission": "not_established",
+  "synthetic_authority": true
+ }
+}
+Control Plane decision/run record
+    path   : <fresh>/home/.cognous-refund-desk-dev/state/accept/routine/cp/HV-DEV-R1.json
+    sha256 : sha256:fac929f680936f2673a9c790844cf829c10aa8e90641300548f675ab12c3b82d
+    path   : <fresh>/home/.cognous-refund-desk-dev/state/accept/routine/cp/HV-DEV-R1.json.check-31ae999f-05c4-4cfa-bb91-945b0
+    sha256 : sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    path   : <fresh>/home/.cognous-refund-desk-dev/state/accept/routine/cp/HV-DEV-R1.json.check-52bc2bbf-afd3-4256-ace8-92441
+    sha256 : sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    path   : <fresh>/home/.cognous-refund-desk-dev/state/accept/routine/cp/HV-DEV-R1.json.lock
+    sha256 : sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+Control Plane run record (evidence copy)
+    path   : <fresh>/home/.cognous-refund-desk-dev/state/accept/routine/evidence/HV-DEV-R1/cp_run_record-3ec9a7c29a7b9a4c.jso
+    sha256 : sha256:3ec9a7c29a7b9a4c2a7cc56142d50ccfbd2b7cb04078b03b8141fc9f02597900
+Control Plane run record (evidence copy)
+    path   : <fresh>/home/.cognous-refund-desk-dev/state/accept/routine/evidence/HV-DEV-R1/cp_run_record-cf6901360df4a356.jso
+    sha256 : sha256:cf6901360df4a356285ae97ea11788ef0ab0d70def092ed313ab4378167f9c47
+Replay bundle
+    path   : <fresh>/home/.cognous-refund-desk-dev/state/accept/routine/evidence/HV-DEV-R1/replay_bundle-1be725b43d22221f.jso
+    sha256 : sha256:1be725b43d22221f9b6aa71c8ccd56a113d10a38a207c73c61f200c8f2530094
+Runtime observation/export
+    path   : <fresh>/home/.cognous-refund-desk-dev/state/accept/routine/evidence/HV-DEV-R1/runtime_export-9d791c00e42ec197.js
+    sha256 : sha256:9d791c00e42ec197bb0d7182cdfec8e2b467f508a1c4b64289b669720b1ed5dd
+application JSON result
+    path   : <fresh>/home/.cognous-refund-desk-dev/state/accept/routine/routine.result.json
+    sha256 : sha256:0d5ee22e96212a040d642b6077ed6fa198245e350a1ed022353a8c2ac1cbcd8a
+    summary: outcome=executed control_plane=authorized execution_claim.supported=True native.disposition=executed replay_state=imported replay_note=None retry_permission=not_established effect_id=sha2
+SQLite destination
+    path   : <fresh>/home/.cognous-refund-desk-dev/state/accept/routine/sqlite/refunds.sqlite3
+    sha256 : sha256:e0341561828986aa9e01cbb82838d30dbc5cce6b76a4519d092fdfcba40deb34
+SQLite sidecar (shared memory; the digest of the main file may omit un-checkpointed WAL pages)
+    path   : <fresh>/home/.cognous-refund-desk-dev/state/accept/routine/sqlite/refunds.sqlite3-shm
+    sha256 : sha256:fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb
+SQLite sidecar (write-ahead log)
+    path   : <fresh>/home/.cognous-refund-desk-dev/state/accept/routine/sqlite/refunds.sqlite3-wal
+    sha256 : sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+SQLite effects (opened read-only): <fresh>/home/.cognous-refund-desk-dev/state/accept/routine/sqlite/refunds.sqlite3
+    1 row(s)
+    {"amount": 64.25, "effect_id": "sha256:0909f4f427126e32eaf1b1ae502e1e845d91eb7f7274f3a6992e9754212a339c", "grant_id": "urn:cognous:authority:harborview-refund-desk-1", "operation_digest": "sha256:
+  then remove the workspace directory <fresh>/home/.cognous-refund-desk-dev only if it is empty
+Nothing removed. Re-run with --yes to remove exactly the targets above.
+exit=3
+removed <fresh>/home/.cognous-refund-desk-dev
+exit=0
+.cache

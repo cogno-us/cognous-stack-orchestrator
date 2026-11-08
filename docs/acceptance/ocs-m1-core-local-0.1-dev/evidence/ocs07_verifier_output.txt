@@ -1,0 +1,26 @@
+== routine
+PASS replay reference present - replay_state=imported replay_note=None
+PASS replay file exists - <scratch>/ws_ocs07/state/v/routine/evidence/HV-DEV-R1/replay_bundle-2db29994e8a8d0b5.json
+PASS replay sha256 recomputed equals reported
+PASS source cp_run_record sha256 recomputed equals reported
+PASS source runtime_export sha256 recomputed equals reported
+PASS exactly one destination row - 1 row(s)
+PASS row effect_id equals result effect_id
+PASS row state applied
+PASS replay bundle carries the same effect_id with an amount
+PASS replay amount equals row amount - row amount 64.25 USD
+PASS replay unit equals row unit - replay units ['USD']
+exit=0
+== high
+PASS replay reference present - replay_state=imported replay_note=None
+PASS replay file exists - <scratch>/ws_ocs07/state/v/high/evidence/HV-DEV-H1/replay_bundle-29357f2fcb8c6a7d.json
+PASS replay sha256 recomputed equals reported
+PASS source cp_run_record sha256 recomputed equals reported
+PASS source runtime_export sha256 recomputed equals reported
+PASS exactly one destination row - 1 row(s)
+PASS row effect_id equals result effect_id
+PASS row state applied
+PASS replay bundle carries the same effect_id with an amount
+PASS replay amount equals row amount - row amount 150.0 USD
+PASS replay unit equals row unit - replay units ['USD']
+exit=0

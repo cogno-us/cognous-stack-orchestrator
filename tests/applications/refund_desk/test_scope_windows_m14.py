@@ -25,17 +25,17 @@ def git(*a):
 
 class M14Windows(unittest.TestCase):
     def test_r5_1_declaration_and_closure(self):
-        self.assertEqual([w.id for w in W.WINDOWS], ["W-F3", "W-M1-1", "W-M1-2", "W-M1-3", "W-M1-4"])
+        self.assertEqual([w.id for w in W.WINDOWS], ["W-F3", "W-M1-1", "W-M1-2", "W-M1-3", "W-M1-4", "W-M1-5"])
         self.assertEqual(W.W_M1_3.head, M1_3_MERGE)
         self.assertEqual(W.W_M1_3.base, M1_2_MERGE)
         self.assertEqual(W.W_M1_4.base, M1_3_MERGE)
-        self.assertIsNone(W.W_M1_4.head)
-        self.assertEqual([w.id for w in W.WINDOWS if w.head is None], ["W-M1-4"])
-        self.assertIs(W.select_window(lambda sha: True), W.W_M1_4)
-        self.assertIs(W.select_window(lambda sha: sha != M1_3_MERGE), W.W_M1_3)
+        self.assertEqual(W.W_M1_4.head, "41f651d27e159f7b348e87f83475bf1bda7a6214")  # closed in M1-5
+        self.assertEqual([w.id for w in W.WINDOWS if w.head is None], ["W-M1-5"])
+        self.assertIs(W.select_window(lambda sha: True), W.W_M1_5)
+        self.assertIs(W.select_window(lambda sha: sha not in (M1_3_MERGE, "41f651d27e159f7b348e87f83475bf1bda7a6214")), W.W_M1_3)
         self.assertIs(W.window_by_id("W-M1-4"), W.W_M1_4)
         with self.assertRaises(ValueError):
-            W.window_by_id("W-M1-5")
+            W.window_by_id("W-M1-6")
 
     def test_r5_2_closed_m1_3_range_stays_inside_its_allowed_set(self):
         if shutil.which("git") is None or git("cat-file", "-e", f"{M1_3_MERGE}^{{commit}}").returncode != 0:

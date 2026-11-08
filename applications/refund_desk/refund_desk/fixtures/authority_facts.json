@@ -1,0 +1,103 @@
+{
+ "accountable_human_role": {
+  "human_principal": "urn:cognous:principal:harborview-human-1",
+  "mandate_ref": "urn:cognous:mandate:harborview-human-1",
+  "role_id": "urn:cognous:role:accountable-human"
+ },
+ "acting_identity": "urn:cognous:identity:refund-agent-1",
+ "approval": {
+  "approval_ref": "urn:cognous:harborview-synthetic:approval-1",
+  "approver": "urn:cognous:principal:harborview-reviewer-1",
+  "role_id": "urn:cognous:role:customer-service-supervisor"
+ },
+ "authority_mode": "principle_inspired",
+ "conflicts": {
+  "appeal_ref": "urn:cognous:procedure:appeal",
+  "continuity_ref": "urn:cognous:procedure:continuity",
+  "escalation_ref": "urn:cognous:procedure:escalation",
+  "incompatible_role_pairs": [],
+  "precedence_refs": [
+   "urn:cognous:harborview-synthetic:policy-1"
+  ],
+  "remedy_ref": "urn:cognous:procedure:remedy"
+ },
+ "context_ref": "urn:cognous:alvorada:public-stack-profile:0.1.0",
+ "evaluation": {
+  "observed_at": "2026-11-02T14:30:00+00:00",
+  "status_observed_at": "2026-11-02T14:30:00+00:00",
+  "status_ref": "urn:cognous:harborview-synthetic:status-1",
+  "status_version": "status-v1"
+ },
+ "expires_at": "2026-11-02T15:30:00+00:00",
+ "grantee": "urn:cognous:principal:refund-service",
+ "identity": {
+  "authenticated": true,
+  "chain": [],
+  "delegation_valid": true
+ },
+ "issued_at": "2026-11-02T13:30:00+00:00",
+ "issuer": {
+  "issuance_record_ref": "urn:cognous:harborview-synthetic:issuance-1",
+  "issuer": "harborview-synthetic-issuer",
+  "issuer_role": "harborview-synthetic-issuer-role",
+  "mandate_valid": true
+ },
+ "label": "HARBORVIEW SYNTHETIC FACTS - NOT INSTITUTIONAL AUTHORITY, NOT AUTHENTICATED, DEVELOPMENT ONLY",
+ "policy": {
+  "ref": "urn:cognous:harborview-synthetic:policy-1",
+  "status": "active",
+  "version": "1.0"
+ },
+ "principal": "urn:cognous:principal:refund-service",
+ "requirement": {
+  "approvals": [
+   {
+    "independent_of_actor": true,
+    "role_id": "urn:cognous:role:customer-service-supervisor"
+   }
+  ],
+  "consequence": {
+   "profile_ref": "urn:cognous:consequence:T1",
+   "rationale": "Synthetic development tier.",
+   "tier": "T1"
+  },
+  "evidence": [],
+  "governing_sources": [
+   {
+    "provision": "refund",
+    "ref": "urn:cognous:harborview-synthetic:policy-1",
+    "standing": "local_policy",
+    "version": "1.0"
+   }
+  ],
+  "permissions": [
+   {
+    "action": "refund_issue_routine",
+    "data_scopes": [
+     "refund.issue.routine"
+    ],
+    "max_amount": 100.0,
+    "max_effects": 1,
+    "targets": [
+     "urn:cognous:synthetic-account:customer-001"
+    ],
+    "unit": "USD"
+   }
+  ],
+  "requirement_id": "urn:cognous:authority-requirement:refund-routine-v1"
+ },
+ "role_mapping": {
+  "aliases": {
+   "customer-service-supervisor": [
+    "urn:cognous:role:customer-service-supervisor"
+   ]
+  },
+  "version": "roles-v1"
+ },
+ "roles": {
+  "issuer": "harborview-synthetic-issuer",
+  "policy_owner": "harborview-synthetic-policy-owner",
+  "revoker": "harborview-synthetic-revoker"
+ },
+ "tenant_id": "harborview-retail"
+}

@@ -74,13 +74,22 @@ class PresentMapping(unittest.TestCase):
             with self.subTest(code=code):
                 self.assertEqual(self.go("refused", refusal_code=code)["outcome"], "refused")
 
+    def assert_r1(self, d: dict) -> None:
+        """Amendment R1 lineage: unsupported native `executed` is presented as uncertain."""
+        self.assertEqual(d["outcome"], "uncertain", d)
+        self.assertEqual(d["permitted_next_actions"], ["reconcile"])
+        self.assertIsNone(d["refusal"])
+        self.assertEqual(d["native"]["disposition"], "executed")
+
     def test_executed_requires_applied_observation(self):
         for observed in (None, "absent", "unknown", "partial", "pending"):
             with self.subTest(observed_state=observed):
                 d = self.go("executed", runtime_status="executed", observed_state=observed, acknowledged=True, newly_executed=True)
                 self.assertIs(d["execution_claim"]["supported"], False, d)
+                self.assert_r1(d)
         d = self.go("executed", runtime_status="unknown", observed_state="applied")
         self.assertIs(d["execution_claim"]["supported"], False, "applied with a non-executed runtime status is not a supported claim")
+        self.assert_r1(d)
 
     def test_executed_reconciled_or_observed_with_applied_is_supported(self):
         for status in ("executed", "reconciled", "observed"):

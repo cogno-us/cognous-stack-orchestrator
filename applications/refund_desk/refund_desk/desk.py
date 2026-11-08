@@ -245,7 +245,7 @@ def present(f1_result: Any, case_id: str) -> DeskResult:
                    % (f1_result.error or native.runtime_error or "an error was reported"))
 
     refusal_dict = None
-    if refusal is not None or outcome in ("held", "refused", "denied"):
+    if not unsupported_executed and (refusal is not None or outcome in ("held", "refused", "denied")):
         code = refusal_code or "control_plane_hold"
         reasons = cp_reasons if (code == "control_plane_hold" and cp_reasons) else [
             (refusal.reason if refusal is not None else code)]

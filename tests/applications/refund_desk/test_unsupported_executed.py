@@ -25,7 +25,8 @@ from refund_desk import present  # noqa: E402
 CASE = "HV-2026-1102-0098"
 SUPPORTED_STATUSES = ("executed", "reconciled", "observed")
 BAD_WORDS = ("observed as applied", "failed", "denied", "held", "nothing happened", "no effect", "succeeded")
-REQUIRED = ("uncertain", "no retry", "absence of an effect is not established")
+REQUIRED = ("uncertain", "no retry", "absence of an effect is not established", "f1 reported executed", "do not support an applied effect",
+            "treated as uncertain")
 
 
 def evidence(with_replay: bool) -> EvidenceReferences:
@@ -51,6 +52,9 @@ def unsupported_variants():
         yield dict(runtime_status="executed", observed_state=observed)
     for status in ("unknown", "partial", "denied", "failed", "something_new", None):
         yield dict(runtime_status=status, observed_state="applied")
+    yield dict(runtime_status="unknown", observed_state="absent")
+    yield dict(runtime_status=None, observed_state=None)
+    yield dict(runtime_status="something_new", observed_state="pending")
 
 
 class UnsupportedExecutedIsUncertain(unittest.TestCase):
@@ -92,6 +96,41 @@ class UnsupportedExecutedIsUncertain(unittest.TestCase):
                             for bad in BAD_WORDS:
                                 self.assertNotIn(bad, msg, d["message"])
                             self.assertEqual(cli._EXIT["uncertain"], 3)
+
+
+class ExecutedWithRefusal(unittest.TestCase):
+    def test_executed_with_refusal_object_is_uncertain_and_refusal_dropped(self):
+        for code in ("prior_uncertain_dispatch", "request_invalid", "control_plane_hold"):
+            # Unsupported pairs only. executed+applied+supported with a stray refusal object is outside R1 (R1 preserves a supported
+            # claim) and is deliberately not asserted here.
+            for status, observed in (("executed", "absent"), ("unknown", "applied"), ("unknown", "absent")):
+                with self.subTest(code=code, runtime_status=status, observed_state=observed):
+                    d = present(f1("executed", refusal_code=code, runtime_status=status, observed_state=observed), CASE).to_dict()
+                    self.assertEqual(d["outcome"], "uncertain", d["message"])
+                    self.assertIs(d["execution_claim"]["supported"], False)
+                    self.assertEqual(d["permitted_next_actions"], ["reconcile"])
+                    self.assertIsNone(d["refusal"])
+
+
+class CliUnsupportedExecuted(unittest.TestCase):
+    def test_cli_main_unsupported_executed_exits_3(self):
+        import contextlib
+        import io
+        from unittest import mock
+
+        import refund_desk.cli as cli
+        import refund_desk.desk as desk
+
+        r = f1("executed", runtime_status="executed", observed_state="absent", acknowledged=True, newly_executed=True, effect_id="eff-1")
+        with S.tempdir("f3-ux-") as td, S.tempdir("f3-ux-stack-") as fake, mock.patch.object(desk, "dispose_refund", lambda *a, **k: r):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = cli.main(S.cli_args("process", S.CASE_A, Path(td)) + ["--stack-root", fake])
+        d = json.loads(buf.getvalue())
+        self.assertEqual(rc, 3, d)
+        self.assertEqual(d["outcome"], "uncertain")
+        self.assertIs(d["execution_claim"]["supported"], False)
+        self.assertEqual(d["permitted_next_actions"], ["reconcile"])
 
 
 class Controls(unittest.TestCase):

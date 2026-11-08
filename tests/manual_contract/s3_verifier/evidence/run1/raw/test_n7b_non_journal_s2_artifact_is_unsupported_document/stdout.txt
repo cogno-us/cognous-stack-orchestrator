@@ -1,0 +1,7 @@
+overall: abstain (derived from the checks that ran; not a score, not an attestation)
+checks: 3; confirmed 1, could not check 2, refuted 0
+  COULD_NOT_CHECK v1.structure  refuted 0/1, could not check 1/1
+  COULD_NOT_CHECK v2.coverage.items-examined  refuted 0/1, could not check 1/1
+tier V3 (witness re-derivation) not run: no witness or holder inventory supplied
+note: identity and ledger checks apply to control-plane run records only; this document kind has none
+does not prove: see does_not_prove in the report

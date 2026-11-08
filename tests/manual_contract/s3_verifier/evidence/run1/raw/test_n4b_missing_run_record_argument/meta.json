@@ -1,0 +1,12 @@
+{
+ "check_verdicts": {},
+ "exit": 2,
+ "input_sha256": {
+  "refund_integration_v1_1.manifest.json": "789ad39596b9e1ef84a726a671883e1cb6b83343da3a31db0a1120906d68c074"
+ },
+ "mutation": "invocation supplies no run record",
+ "overall": "ERROR (usage; nothing verified)",
+ "report_sha256": null,
+ "test": "test_n4b_missing_run_record_argument",
+ "verifier_revision": "7caf25411b8be61178b12e71c48eeea7f62d8eb9"
+}

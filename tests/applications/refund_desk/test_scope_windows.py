@@ -99,5 +99,35 @@ class LiveWindows(unittest.TestCase):
         self.assertEqual(W.scope_violations(sorted(paths), win), [], f"paths outside window {win.id}")
 
 
+class RenameEvasion(unittest.TestCase):
+    """R2.6 (added after the independent delta review; see the dated note under Amendment R2): moving an F3 product file into an allowed F1 directory must not hide the
+    deletion of the F3 file. Uses a throwaway git repository under a temp dir; the real repository is never touched."""
+
+    def test_r2_6_committed_rename_out_of_f3_is_reported_on_both_sides(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is unavailable (a skip is not a pass)")
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="r2-6-") as td:
+            def g(*a):
+                return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", *a], cwd=td,
+                                      capture_output=True, text=True)
+            self.assertEqual(g("init", "-q").returncode, 0)
+            body = "".join(f"line {i} of the F3 product file\n" for i in range(40))
+            for rel in ("applications/refund_desk/refund_desk/desk.py", "orchestration/adapters/refund_disposition/keep.py"):
+                p = Path(td) / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(body)
+            g("add", "-A")
+            self.assertEqual(g("commit", "-q", "-m", "base").returncode, 0)
+            base = g("rev-parse", "HEAD").stdout.strip()
+            (Path(td) / "orchestration/adapters/refund_disposition").mkdir(parents=True, exist_ok=True)
+            self.assertEqual(g("mv", "applications/refund_desk/refund_desk/desk.py", "orchestration/adapters/refund_disposition/desk_moved.py").returncode, 0)
+            self.assertEqual(g("commit", "-q", "-m", "move F3 product file into the F1 directory").returncode, 0)
+            paths = W.changed_paths(g, base)
+            self.assertIn("applications/refund_desk/refund_desk/desk.py", paths, "the deleted F3 source side of a committed rename must be reported")
+            self.assertIn("orchestration/adapters/refund_disposition/desk_moved.py", paths)
+            self.assertEqual(W.scope_violations(sorted(paths), W.W_M1_1), ["applications/refund_desk/refund_desk/desk.py"])
+
+
 if __name__ == "__main__":
     unittest.main()

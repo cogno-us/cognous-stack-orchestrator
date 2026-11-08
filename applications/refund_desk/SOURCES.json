@@ -59,7 +59,7 @@
     ],
     "note": "Inherited from F1; dependency versions are not locked here."
   },
-  "application_source_commit": "16fed41cd094ac5f57a5fee92115e9cd39b56af7",
+  "application_source_commit": "6390bfcbd38a942731233db5ce4afd89612ea84c",
   "plan": {
     "issue": "https://github.com/cogno-us/cognous-open-control-stack/issues/282",
     "architecture": "OCS-M1-ARCH-001 v0.9",

@@ -26,7 +26,6 @@ from unittest import mock
 from . import workspace
 from .contract import (CONTRACT_VERSION, CleanupReport, DispositionRequest, DispositionResult, EvidenceReferences, FileReference, NativeFacts,
                        Refusal, request_problems)
-from .fault_seam import make_fault_destination_class
 from .stack import PINS, NativeStack, StackError, load_stack
 
 _LOCK = threading.Lock()
@@ -38,6 +37,15 @@ ACCOUNT_PREFIX = "urn:cognous:synthetic-account:"
 RUNTIME_REVISION = PINS["components"]["runtime"]  # caller-asserted in the Runtime export, exactly as in G3
 CP_REVISION = PINS["components"]["control_plane"]
 _STACK_STEP = "operator_inspection_no_retry_established"
+
+
+@dataclasses.dataclass(frozen=True)
+class _TestInjection:
+    """PRIVATE, test-only. Not part of the request contract, not exported, not reachable through `dispose_refund(request)`.
+    `wrap_destination` maps the pinned destination class to a test subclass; `simulate` is passed to the native Runtime `simulate` argument."""
+
+    wrap_destination: Any
+    simulate: str
 
 
 class _Probe:
@@ -149,6 +157,10 @@ def _operation(S: NativeStack, p, binding, bundle: dict):
 def dispose_refund(request: DispositionRequest) -> DispositionResult:
     """Dispose one synthetic refund proposal through the native IG/CP/Runtime/Replay path. Returns a structured result; it does not raise
     for refusals, holds, denials, failures or uncertain outcomes. `retry_permission` is always `not_established`."""
+    return _dispose_refund(request, None)
+
+
+def _dispose_refund(request: DispositionRequest, injection: _TestInjection | None) -> DispositionResult:
     problems = request_problems(request)
     if problems:
         return _refused(request, "request_invalid", ";".join(problems))
@@ -158,7 +170,7 @@ def dispose_refund(request: DispositionRequest) -> DispositionResult:
     with _LOCK:
         try:
             scratch = workspace.allocate()
-            result = _dispose(request, scratch, probe)
+            result = _dispose(request, scratch, probe, injection)
         except Exception as exc:  # noqa: BLE001 - unexpected adapter error
             if probe.executions > 0:  # the Runtime was entered: the effect may exist, so never `failed` and never "not invoked"
                 result = _result(request, "unknown", native=probe.native, probe=probe, evidence=EvidenceReferences(source=probe.source),
@@ -170,7 +182,7 @@ def dispose_refund(request: DispositionRequest) -> DispositionResult:
     return dataclasses.replace(result, cleanup=cleanup)
 
 
-def _dispose(request: DispositionRequest, scratch: Path, probe: _Probe) -> DispositionResult:
+def _dispose(request: DispositionRequest, scratch: Path, probe: _Probe, injection: _TestInjection | None) -> DispositionResult:
     try:
         S = load_stack(request.environment.stack_root)
     except StackError as exc:
@@ -226,8 +238,8 @@ def _dispose(request: DispositionRequest, scratch: Path, probe: _Probe) -> Dispo
                            refusal=Refusal("prior_uncertain_dispatch", "an earlier attempt for this effect is unknown/partial/unresolved; reconcile first", "adapter"),
                            next_step="reconcile_read_only")
         dest_cls = S.engine_effective_grant.EffectiveGrantDestination
-        if request.dev_fault == "lost_ack_observation_unavailable":
-            dest_cls = make_fault_destination_class(dest_cls)
+        if injection is not None:
+            dest_cls = injection.wrap_destination(dest_cls)
         dest = dest_cls(state / "sqlite")
         # Authorized: the trusted host mirrors the authorized grant into the destination (as G3 did), then the Runtime executes ONCE.
         mirrored = dest.set_effective_grant(principal=p.principal, grant_id=d.binding.grant_id, revision=d.binding.grant_revision,
@@ -240,7 +252,7 @@ def _dispose(request: DispositionRequest, scratch: Path, probe: _Probe) -> Dispo
         se, ad, pc = S.engine_safe_executor, S.engine_adapter, S.engine_producer
         ex = ad.PinnedControlPlaneExecutor(workflow=wf, destination=dest, policy=pol, observation_clock=lambda: AT)
         env = se.ExecutionEnvelope(se.EXECUTION_ENVELOPE_VERSION, d.decision_id, d.effect_id, op)
-        simulate = "lost_ack" if request.dev_fault == "lost_ack_observation_unavailable" else None
+        simulate = injection.simulate if injection is not None else None
         probe.executions += 1  # counted before the call: if the call raises, dispatch may have happened
         try:
             res = ex.execute(envelope=env, proposal=p, decision=d, now=AT, simulate=simulate)  # exactly one attempt; never retried
@@ -293,8 +305,6 @@ def reconcile_refund(request: DispositionRequest) -> DispositionResult:
     problems = request_problems(request)
     if problems:
         return _refused(request, "request_invalid", ";".join(problems), mode="reconcile")
-    if request.dev_fault is not None:
-        return _refused(request, "dev_fault_not_applicable_to_reconcile", "reconciliation always uses a healthy destination", mode="reconcile")
     scratch: Path | None = None
     with _LOCK:
         try:

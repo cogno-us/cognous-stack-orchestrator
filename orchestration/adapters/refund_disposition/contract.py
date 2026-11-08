@@ -18,8 +18,6 @@ Disposition = Literal["executed", "held", "denied", "refused", "unknown", "faile
 DISPOSITIONS = ("executed", "held", "denied", "refused", "unknown", "failed")
 NextStep = Literal["none", "resolve_authority_hold", "correct_request", "correct_request_or_runtime_policy",
                    "reconcile_read_only", "operator_inspection_no_retry_established"]
-DevFault = Literal["lost_ack_observation_unavailable"]
-DEV_FAULTS = ("lost_ack_observation_unavailable",)
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _CURRENCY = re.compile(r"^[A-Z]{3}$")
@@ -69,7 +67,6 @@ class DispositionRequest:
     correlation_id: str
     evaluation_time: datetime  # explicit and timezone-aware: no default clock is invented
     environment: SyntheticEnvironment
-    dev_fault: DevFault | None = None  # development-only fault seam; None in every normal call
 
 
 def request_problems(request: Any) -> list[str]:
@@ -114,8 +111,6 @@ def request_problems(request: Any) -> list[str]:
         out.append("evaluation_time_must_be_timezone_aware")
     if not isinstance(e.stack_root, Path) or not isinstance(e.state_dir, Path):
         out.append("environment_paths_must_be_Path")
-    if request.dev_fault is not None and request.dev_fault not in DEV_FAULTS:
-        out.append("dev_fault_unknown")
     return out
 
 

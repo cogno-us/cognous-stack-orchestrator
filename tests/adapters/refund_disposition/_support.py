@@ -41,11 +41,11 @@ def fixture(root: Path, name: str) -> dict:
     return json.loads((root / FIXTURES / name).read_text(encoding="utf-8"))
 
 
-def make_request(root: Path, state_dir: Path, *, bundle: str = "root_lineage.json", correlation: str = "f1-check", dev_fault=None) -> DispositionRequest:
+def make_request(root: Path, state_dir: Path, *, bundle: str = "root_lineage.json", correlation: str = "f1-check") -> DispositionRequest:
     return DispositionRequest(
         proposal=RefundProposal(tenant_id="tenant-alpha", customer_id="customer-001", refund_reason="duplicate", amount=50.0, unit="USD"),
         authority=AuthorityFacts(authority_id=AUTHORITY_ID, lineage_bundle=fixture(root, bundle), facts=fixture(root, "synthetic_facts.json")),
-        correlation_id=correlation, evaluation_time=AT, environment=SyntheticEnvironment(stack_root=root, state_dir=state_dir), dev_fault=dev_fault)
+        correlation_id=correlation, evaluation_time=AT, environment=SyntheticEnvironment(stack_root=root, state_dir=state_dir))
 
 
 def db_path(state_dir: Path) -> Path:

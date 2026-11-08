@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import _fault_injection as F
 import _support as S
 from orchestration.adapters.refund_disposition import dispose_refund, reconcile_refund
 
@@ -105,7 +106,7 @@ class CheckC(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="f1-c-") as td:
             state = Path(td)
             with S.native_counters(root) as n:
-                r = dispose_refund(S.make_request(root, state, correlation="f1-check-c", dev_fault="lost_ack_observation_unavailable"))
+                r = F.dispose_with_lost_ack_unavailable_observation(S.make_request(root, state, correlation="f1-check-c"))
                 self.assertEqual(r.disposition, "unknown", r)
                 self.assertEqual(r.native.runtime_status, "unknown")
                 self.assertIs(r.native.acknowledged, False)

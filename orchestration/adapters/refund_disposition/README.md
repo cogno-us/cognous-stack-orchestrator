@@ -24,7 +24,7 @@ the Runtime `PinnedControlPlaneExecutor.execute` runs exactly once into syntheti
 Excluded: Pack, Verifier, Attestation, Registry, ODES, GAX, CDC, ISS.
 
 ## Request
-`DispositionRequest(proposal: RefundProposal, authority: AuthorityFacts, correlation_id, evaluation_time, environment, dev_fault=None)`
+`DispositionRequest(proposal: RefundProposal, authority: AuthorityFacts, correlation_id, evaluation_time, environment)`
 - `RefundProposal`: tenant_id, customer_id, refund_reason, amount, unit (default USD), actor, principal. The action, adapter, permission and
   requirement identities are fixed constants of this synthetic profile.
 - `AuthorityFacts`: authority_id, IG root-lineage document, IG synthetic facts document. Passed to the pinned IG resolver unevaluated. The
@@ -32,7 +32,6 @@ Excluded: Pack, Verifier, Attestation, Registry, ODES, GAX, CDC, ISS.
 - `evaluation_time`: explicit, timezone-aware; no default clock is invented (CA05).
 - `environment`: `stack_root` (the pinned checkouts) and `state_dir` (caller-owned; holds the destination SQLite, the CP run record and evidence
   files; persists across calls; never deleted by the adapter).
-- `dev_fault`: `None`, or the single development-only option `lost_ack_observation_unavailable` (see Fault seam).
 
 ## Result: `DispositionResult`
 `disposition` is one of `executed | held | denied | refused | unknown | failed`, plus:
@@ -69,23 +68,23 @@ effect is still uncertain, because absence of evidence never grants a retry. Rep
 
 Known conservative consequence (read from the CP source, not exercised by a test): after a lost acknowledgment that the Runtime re-observes as applied
 (native `reconciled`, mapped to `executed` with `acknowledged=false`), the CP attempt stays `unknown` (its closeout is a separate record), so a later
-caller-initiated `dispose_refund` for the same effect is refused as `prior_uncertain_dispatch`. This fails closed and never double-executes; whether such a
-repeat should instead be allowed is an Architect decision.
+caller-initiated `dispose_refund` for the same effect is refused as `prior_uncertain_dispatch`. This fails closed and never double-executes; Architect-approved for F1: the refusal is preserved, and a read-only reconciliation (`reconcile_refund`) grants no retry.
 
 The effect id is derived natively from the proposal commitment, grant id, grant revision and tenant generation. A repeat of the same request
 against the same `state_dir` finds the existing applied row and does not insert a second one (native status `reconciled`,
 `newly_executed=false`). This holds **per destination database only**. There is no cross-database exactly-once claim.
 
-## Fault seam (development only)
-`dev_fault="lost_ack_observation_unavailable"` swaps in an adapter-local subclass of the pinned `EffectiveGrantDestination`. The native
-`simulate="lost_ack"` path commits durably and withholds the acknowledgment; the subclass additionally makes the destination read path
-unavailable until the call returns, so the native result is genuinely `unknown` while one row is committed. No Runtime source or semantics
-change. So check C is a lost acknowledgment **plus** an unavailable observation. A lost acknowledgment alone is different: the native Runtime
-re-observes the applied row and reports `reconciled`, which this adapter maps to `executed` with `acknowledged=false` and `runtime_error` set. That
-mapping is a native validated observation, not an adapter assumption; whether it should instead be `unknown` is listed as an Architect decision in the PR.
-The seam is a public request field for simplicity; it is development-only and must not be used by a production caller.
-The Runtime export and Replay import run after the simulated outage ends, so a Replay bundle for an `unknown` result may read the committed row and
-report `reconstruction_complete`; that does **not** resolve the `unknown` (only `reconcile_refund` or an operator can, and the result stays producer-reported).
+## Test-only fault injection (not part of the request contract)
+The request has no fault field and `dispose_refund(request)` / `reconcile_refund(request)` take nothing else. Check C needs a post-commit lost acknowledgment, so
+`dispose.py` has one PRIVATE entry point, `_dispose_refund(request, _TestInjection)`, that is not exported and not reachable through the public call. The injection
+itself lives in the test tree (`tests/adapters/refund_disposition/_fault_injection.py`): a subclass of the pinned `EffectiveGrantDestination` plus the native
+`simulate="lost_ack"` argument. After the durable commit the native path withholds the acknowledgment and the subclass makes the destination read path unavailable
+until the call returns, so the native result is genuinely `unknown` while one row is committed. No Runtime source or semantics change. Check C is therefore a lost
+acknowledgment **plus** an unavailable observation. A lost acknowledgment alone is different: the native Runtime re-observes the applied row and reports
+`reconciled`, which this adapter maps to `executed` with `acknowledged=false` and `runtime_error` set. That mapping is a native validated observation, not an adapter
+assumption, and is Architect-approved for F1: `acknowledged=false` stays visible in `native`.
+The Runtime export and Replay import run after the simulated outage ends, so a Replay bundle for an `unknown` result may read the committed row and report
+`reconstruction_complete`; that does **not** resolve the `unknown` (only `reconcile_refund` or an operator can, and the result stays producer-reported).
 
 ## Workspace and cleanup
 Each call allocates one unique scratch directory (CP baseline pass files only) and removes exactly that path. A symlink in its place is refused,
@@ -143,7 +142,7 @@ run is the only basis for the label "developer-tested". No CI job exercises them
 
 ## Deviations from defaults, named
 - `stack.py` runs `git` via `subprocess` to verify pins and prepends the verified checkouts to `sys.path` (process-global); this is the same mechanism as the G3 harness and the IG adapter.
-- `reconcile_refund` is a second public function; `dev_fault` is a public field of the request (development only).
+- `reconcile_refund` is a second public function. `_dispose_refund` / `_TestInjection` are private test hooks (underscore-named, unexported, test-only use).
 
 ## Limitations
 - Authority is a synthetic fixture decision (resolver `authenticated=false`; identity/mandate flags are fixture assertions). Not institutional authority.

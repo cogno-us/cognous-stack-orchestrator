@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import _fault_injection as F
 import _support as S
 from orchestration.adapters.refund_disposition import dispose as D
 from orchestration.adapters.refund_disposition import dispose_refund, reconcile_refund
@@ -53,7 +54,7 @@ class Boundary(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="f1-x2-") as td:
             state = Path(td)
             with S.native_counters(root) as n:
-                first = dispose_refund(S.make_request(root, state, correlation="f1-x2", dev_fault="lost_ack_observation_unavailable"))
+                first = F.dispose_with_lost_ack_unavailable_observation(S.make_request(root, state, correlation="f1-x2"))
                 self.assertEqual(first.disposition, "unknown")
                 again = dispose_refund(S.make_request(root, state, correlation="f1-x2"))
             self.assertEqual(again.disposition, "refused")
@@ -69,7 +70,7 @@ class Boundary(unittest.TestCase):
             missing = reconcile_refund(S.make_request(root, state, correlation="f1-x3"))
             self.assertEqual(missing.disposition, "refused")
             self.assertFalse(S.db_path(state).exists())
-            dispose_refund(S.make_request(root, state, correlation="f1-x3", dev_fault="lost_ack_observation_unavailable"))
+            F.dispose_with_lost_ack_unavailable_observation(S.make_request(root, state, correlation="f1-x3"))
             before = {t: count(state, t) for t in ("effects", "attempts", "attempt_events")}
             rec = reconcile_refund(S.make_request(root, state, correlation="f1-x3"))
             self.assertEqual(rec.disposition, "executed")

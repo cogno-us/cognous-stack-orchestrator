@@ -37,7 +37,7 @@ class RequestValidation(unittest.TestCase):
     def test_refused_before_any_native_call(self):
         bad = [req(correlation_id="../x"), req(evaluation_time=datetime(2026, 1, 1)), req(proposal=RefundProposal("t", "c", "r", -1.0)),
                req(proposal=RefundProposal("t", "c", "r", 5.0, unit="usd")), req(proposal=RefundProposal("other", "c", "r", 5.0)),
-               req(dev_fault="nope"), req(authority=AuthorityFacts("a", {"origins": [{}]}, {"tenant_id": "t", "context_ref": "u", "approval": {}})),
+               req(authority=AuthorityFacts("a", {"origins": [{}]}, {"tenant_id": "t", "context_ref": "u", "approval": {}})),
                req(authority=AuthorityFacts("a", {"origins": [{"institution_id": "i", "authority_domain": "d"}]}, {"tenant_id": "t"}))]
         for r in bad:
             res = dispose_refund(r)
@@ -55,8 +55,9 @@ class RequestValidation(unittest.TestCase):
         self.assertFalse(res.runtime_invoked)
         self.assertTrue(res.cleanup.ok)
 
-    def test_reconcile_rejects_fault_option(self):
-        self.assertEqual(reconcile_refund(req(dev_fault="lost_ack_observation_unavailable")).refusal.code, "dev_fault_not_applicable_to_reconcile")
+    def test_reconcile_without_prior_record_is_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual(reconcile_refund(req(environment=SyntheticEnvironment(Path(td), Path(td) / "s"))).disposition, "refused")
 
 
 class StatusMapping(unittest.TestCase):
@@ -154,8 +155,17 @@ class ScopeAndPins(unittest.TestCase):
         self.assertFalse(found & banned, found & banned)
         self.assertFalse((PKG / "__main__.py").exists())  # library only: no CLI entrypoint
 
-    def test_dev_fault_is_confined_to_one_named_option(self):
-        self.assertEqual(contract.DEV_FAULTS, ("lost_ack_observation_unavailable",))
+    def test_no_fault_injection_in_the_application_facing_contract(self):
+        import dataclasses
+        import inspect
+        import orchestration.adapters.refund_disposition as pkg
+        self.assertNotIn("dev_fault", {f.name for f in dataclasses.fields(DispositionRequest)})
+        self.assertEqual(list(inspect.signature(pkg.dispose_refund).parameters), ["request"])
+        self.assertEqual(list(inspect.signature(pkg.reconcile_refund).parameters), ["request"])
+        self.assertFalse([n for n in pkg.__all__ if "fault" in n.lower() or "inject" in n.lower()])
+        self.assertFalse(hasattr(contract, "DEV_FAULTS"))
+        self.assertFalse((PKG / "fault_seam.py").exists())
+        self.assertNotIn("simulate", (PKG / "contract.py").read_text())
 
 
 if __name__ == "__main__":

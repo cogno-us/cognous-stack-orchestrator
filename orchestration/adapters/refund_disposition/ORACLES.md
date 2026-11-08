@@ -44,4 +44,6 @@ identical to the pre-reconcile read), observed state `applied`, disposition `exe
 `newly_executed=false`, still `retry_permission == "not_established"`.
 
 ## Amendments
-(none)
+- 2026-11-08 (access path only; **no oracle expectation changed**): the fault of check C was originally reachable through a `dev_fault` field on the request. Following Architect
+  direction on PR #155 it is now injected only by the test tree through a private entry point (`_dispose_refund(request, _TestInjection)`), and the request contract has no fault
+  field. The injected fault (native `simulate="lost_ack"` plus an unavailable destination read path until the call returns) and every expected result of A, B and C are unchanged.

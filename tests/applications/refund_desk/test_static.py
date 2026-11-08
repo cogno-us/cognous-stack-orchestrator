@@ -126,25 +126,32 @@ class StaticScope(unittest.TestCase):
                     self.assertNotIn(ident, text, f"{f.name} contains G3 identifier {ident!r}")
 
     def test_only_allowed_paths_touched(self):
+        """F3 PR-scope check, applicability by explicit source window (Amendment R2; originally a whole-repo comparison with BASE, which failed on every
+        legitimate later F1 change - history preserved in git and in CONTRACT_AND_EXPECTATIONS.md). The closed F3 implementation window is re-checked against
+        its immutable commit range with the ORIGINAL rule; the current checkout is checked against the last declared window whose base it descends from."""
+        W = sys.modules.get("_refund_desk_scope_windows")
+        if W is None:
+            spec = importlib.util.spec_from_file_location("_refund_desk_scope_windows", Path(__file__).with_name("_scope_windows.py"))
+            W = importlib.util.module_from_spec(spec)
+            sys.modules["_refund_desk_scope_windows"] = W
+            spec.loader.exec_module(W)
         if shutil.which("git") is None or not (S.REPO / ".git").exists():
             self.skipTest("git or a git checkout is unavailable (a skip is not a pass)")
 
         def git(*a):
             return subprocess.run(["git", *a], cwd=str(S.REPO), capture_output=True, text=True)
 
-        if git("cat-file", "-e", f"{BASE}^{{commit}}").returncode != 0:
-            self.skipTest(f"base commit {BASE} not present in this checkout")
-        diff = git("diff", "--name-only", BASE)
-        status = git("status", "--porcelain", "--untracked-files=all")
-        self.assertEqual(diff.returncode, 0, diff.stderr)
-        self.assertEqual(status.returncode, 0, status.stderr)
-        paths = set(diff.stdout.split("\n"))
-        for line in status.stdout.splitlines():
-            paths.update(p.strip().strip('"') for p in line[3:].split(" -> "))
-        paths.discard("")
-        allowed = ("applications/refund_desk/", "tests/applications/refund_desk/")
-        outside = sorted(p for p in paths if not p.startswith(allowed))
-        self.assertEqual(outside, [], f"paths outside {allowed}: {outside}")
+        self.assertEqual(W.W_F3.base, BASE)  # the original anchor is unchanged
+        for sha in (W.W_F3.base, W.W_F3.head):
+            if git("cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
+                self.skipTest(f"window commit {sha} not present in this checkout (a skip is not a pass)")
+        closed = git("diff", "--name-only", "--no-renames", W.W_F3.base, W.W_F3.head)
+        self.assertEqual(closed.returncode, 0, closed.stderr)
+        self.assertEqual(W.scope_violations([p for p in closed.stdout.split("\n") if p], W.W_F3), [], "the closed F3 window left its allowed paths")
+        win = W.select_window(lambda sha: git("merge-base", "--is-ancestor", sha, "HEAD").returncode == 0)
+        self.assertIsNotNone(win, "HEAD descends from no declared scope window: declare a new window by a dated amendment")
+        outside = W.scope_violations(sorted(W.changed_paths(git, win.base)), win)
+        self.assertEqual(outside, [], f"paths outside window {win.id} ({win.base[:8]}..): {outside}")
 
 
 if __name__ == "__main__":

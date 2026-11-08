@@ -80,7 +80,7 @@ class DeskResult:
     native: dict = field(default_factory=dict)
     execution_claim: dict = field(default_factory=lambda: {"supported": False, "basis": "no native execution evidence"})
     effect: dict = field(default_factory=lambda: {"effect_id": None})
-    evidence: dict = field(default_factory=lambda: {"replay_state": "not_run", "replay": None, "source": []})
+    evidence: dict = field(default_factory=lambda: {"replay_state": "not_run", "replay": None, "source": [], "replay_note": None})
     refusal: dict | None = None
     permitted_next_actions: list = field(default_factory=list)
     retry_permission: str = "not_established"
@@ -305,7 +305,9 @@ def present(f1_result: Any, case_id: str) -> DeskResult:
         execution_claim=claim,
         effect={"effect_id": native.effect_id},
         evidence={"replay_state": ev.replay_state, "replay": replay,
-                  "source": [_file_ref(s, False) for s in ev.source]},
+                  "source": [_file_ref(s, False) for s in ev.source],
+                  # Amendment M3 / Issue #157: F1's replay_note verbatim (None when F1 gave none); informational only, never interpreted
+                  "replay_note": getattr(ev, "replay_note", None)},
         refusal=refusal_dict,
         permitted_next_actions=["reconcile"] if outcome == "uncertain" else [],
         retry_permission="not_established",

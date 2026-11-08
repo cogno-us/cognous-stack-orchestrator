@@ -157,7 +157,7 @@ class RequestForwarding(unittest.TestCase):
             with self.subTest(profile=spec["profile"]):
                 req, d = self.capture(spec)
                 self.assertEqual(req.profile, spec["profile"])
-                self.assertEqual(req.proposal.case_reference, spec["case_reference"])
+                self.assertEqual(req.proposal.case_reference, spec.get("case_reference"))
                 self.assertEqual(d["requested_profile"], spec["profile"])
 
     def test_legacy_refund_case_construction_and_new_trailing_defaults(self):

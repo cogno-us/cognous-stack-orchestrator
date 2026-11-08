@@ -207,7 +207,9 @@ class CheckB(Base):
         self.assertEqual(d["retry_permission"], "not_established")
         self.assertIs(d["effect_absence_established"], False)
         self.assertIsNone(SUCCESS_WORDS.search(d["message"].lower()), d["message"])
-        self.assertIsNone(d["effect"]["effect_id"])
+        if profile_id is None:
+            self.assertIsNone(d["effect"]["effect_id"])
+        # a native hold carries the would-be effect id from the Control Plane; no effects row exists (checked above), so only the claim is asserted
         self.assertEqual(d["requested_profile"], spec.get("profile"), "requested_profile is echoed in every refusal/hold")
         if profile_id is None:
             self.assertIsNone(d["profile"], "pre-flight refusals carry no profile block")

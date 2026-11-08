@@ -1,0 +1,50 @@
+{
+ "bundle_id": "urn:cognous:harborview-synthetic:high-bundle-root",
+ "captured_at": "2026-11-02T14:00:00Z",
+ "delegations": [],
+ "interface_status": "proposed_non_authorizing_evidence_only",
+ "mutations": [],
+ "origins": [
+  {
+   "authority_claim_status": "asserted",
+   "authority_domain": "customer-refunds",
+   "authority_id": "urn:cognous:authority:harborview-high-refund-desk-1",
+   "authority_revision": "r1",
+   "effective_at": "2026-11-02T13:45:00Z",
+   "external_mandate_ref": "urn:cognous:harborview-synthetic:high-mandate-1",
+   "institution_id": "urn:cognous:institution:synthetic-customer-service",
+   "mandate_kind": "other_external_basis",
+   "non_authorizing": true,
+   "origin_id": "urn:cognous:harborview-synthetic:high-origin-1",
+   "permission_scope": {
+    "actions": [
+     "refund_issue_high_consequence"
+    ],
+    "data_scopes": [
+     "refund.issue.high"
+    ],
+    "max_amount": 1000.0,
+    "max_effects": 1,
+    "targets": [
+     "urn:cognous:synthetic-account:customer-002"
+    ],
+    "unit": "USD"
+   },
+   "record_type": "AuthorityOriginRecord",
+   "recorded_at": "2026-11-02T13:46:00Z",
+   "source_evidence_refs": [
+    "urn:cognous:harborview-synthetic:high-evidence-1"
+   ]
+  }
+ ],
+ "portability": {
+  "format": "application/json",
+  "portable_evidence_only": true,
+  "source_bundle_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+  "transfers_permission": false
+ },
+ "resolution_commitments": [],
+ "schema_version": "0.1.0",
+ "successions": [],
+ "use_links": []
+}

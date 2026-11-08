@@ -15,7 +15,11 @@ from orchestration.adapters.refund_disposition import (AuthorityFacts, Dispositi
 
 APP_CONTRACT = "refund-desk/0.1.0-dev"
 AUTHORITY_ID = "urn:cognous:authority:harborview-refund-desk-1"
+DEFAULT_PROFILE_ID = "refund-routine-v1"  # the historical profile; F1 owns the registry and all profile validation
 _FIXTURES = Path(__file__).resolve().parent / "fixtures"
+# Which of THIS application's own synthetic authority fixture sets matches a profile id. This is fixture selection only: it grants nothing and validates
+# nothing (an id not listed here uses the default set and is forwarded to F1, which refuses an unsupported profile natively).
+_PROFILE_FIXTURES = {"refund-high-v1": ("profiles/refund-high-v1", "urn:cognous:authority:harborview-high-refund-desk-1")}
 _EXECUTED_STATUSES = ("executed", "reconciled", "observed")
 
 _OUTCOMES = {"executed": "executed", "held": "held", "refused": "refused", "denied": "denied",
@@ -28,9 +32,23 @@ _APP_NOTES = (
     "the application cannot widen it.",
 )
 
+_PROFILE_NEUTRAL_NOTE = ("Application note: the action manifest and profile are bound by F1 (see the profile block); "
+                         "the application cannot widen them.")
+
 _REASON_TEXT = {
     "grant_revoked": "the authority that would permit this refund has been revoked",
+    "target_out_of_scope": "the customer account is outside the target allowed by this profile",
+    "amount_exceeded": "the amount exceeds the maximum allowed by this profile",
+    "grant_scope_mismatch": "the granted authority's scope does not cover this request",
+    "requirement_scope_mismatch": "the authority requirement's scope does not cover this request",
 }
+
+
+def _notes_for(profile_id: str | None) -> tuple:
+    """Legacy application notes for the default/routine profile (byte-identical); the third note quotes the routine limits, so other profiles get a neutral one."""
+    if profile_id is None or profile_id == DEFAULT_PROFILE_ID:
+        return _APP_NOTES
+    return _APP_NOTES[:2] + (_PROFILE_NEUTRAL_NOTE,)
 
 
 @dataclass(frozen=True)
@@ -42,6 +60,8 @@ class RefundCase:
     reason: str
     currency: str = "USD"
     authority: str = "valid"  # valid | revoked
+    profile: str | None = None  # optional approved F1 profile id, forwarded unvalidated; None keeps the historical profile
+    case_reference: str | None = None  # forwarded unvalidated to F1 (required by refund-high-v1, forbidden by refund-routine-v1)
 
 
 @dataclass(frozen=True)
@@ -68,6 +88,8 @@ class DeskResult:
     labels: dict = field(default_factory=dict)
     limitations: list = field(default_factory=list)
     cleanup: dict = field(default_factory=lambda: {"ok": True, "errors": []})
+    profile: dict | None = None  # the F1-selected ProfileIdentity (None when F1 returned none, e.g. a pre-flight refusal)
+    requested_profile: str | None = None  # the profile id the case asked for (None when omitted); an unvalidated echo
 
     def to_dict(self) -> dict:
         return {
@@ -88,10 +110,12 @@ class DeskResult:
             "labels": self.labels,
             "limitations": list(self.limitations),
             "cleanup": self.cleanup,
+            "profile": self.profile,
+            "requested_profile": self.requested_profile,
         }
 
 
-def failed_result(case_id: str, text: str) -> DeskResult:
+def failed_result(case_id: str, text: str, requested_profile: str | None = None) -> DeskResult:
     """Shape for a usage or unexpected error. It never claims an execution."""
     return DeskResult(
         case_id=case_id, outcome="failed",
@@ -102,12 +126,12 @@ def failed_result(case_id: str, text: str) -> DeskResult:
         labels={"synthetic_authority": True, "authenticated": False, "evidence_basis": "producer_reported",
                 "nonproduction": True, "non_authorizing": True, "retry_permission": "not_established",
                 "not_verified": []},
-        limitations=list(_APP_NOTES))
+        limitations=list(_notes_for(requested_profile)), requested_profile=requested_profile)
 
 
-def uncertain_result(case_id: str, text: str) -> DeskResult:
+def uncertain_result(case_id: str, text: str, requested_profile: str | None = None) -> DeskResult:
     """Fail-closed shape used when the F1 call was entered but its result could not be obtained or presented."""
-    res = failed_result(case_id, text)
+    res = failed_result(case_id, text, requested_profile)
     res.outcome = "uncertain"
     res.message = ("The outcome is UNKNOWN because the application could not present the F1 result (%s). "
                    "No retry was made, the absence of an effect is not established, and only reconciliation is permitted."
@@ -125,38 +149,43 @@ def _load(name: str) -> dict:
 def _build_request(case: RefundCase, config: DeskConfig) -> DispositionRequest:
     if case.authority not in ("valid", "revoked"):
         raise ValueError("authority must be 'valid' or 'revoked'")
-    facts = _load("authority_facts.json")
+    subdir, authority_id = _PROFILE_FIXTURES.get(case.profile, ("", AUTHORITY_ID)) if isinstance(case.profile, str) else ("", AUTHORITY_ID)
+    prefix = subdir + "/" if subdir else ""
+    facts = _load(prefix + "authority_facts.json")
     observed_at = datetime.fromisoformat(facts["evaluation"]["observed_at"])
     if observed_at.tzinfo is None:
         raise ValueError("facts fixture evaluation.observed_at must be timezone-aware")
-    lineage = _load("authority_valid.json" if case.authority == "valid" else "authority_revoked.json")
+    lineage = _load(prefix + ("authority_valid.json" if case.authority == "valid" else "authority_revoked.json"))
     return DispositionRequest(
         proposal=RefundProposal(tenant_id=case.tenant_id, customer_id=case.customer_account,
-                                refund_reason=case.reason, amount=case.amount, unit=case.currency),
-        authority=AuthorityFacts(authority_id=AUTHORITY_ID, lineage_bundle=lineage, facts=facts),
+                                refund_reason=case.reason, amount=case.amount, unit=case.currency, case_reference=case.case_reference),
+        authority=AuthorityFacts(authority_id=authority_id, lineage_bundle=lineage, facts=facts),
         correlation_id=case.case_id,
         evaluation_time=observed_at,
-        environment=SyntheticEnvironment(stack_root=Path(config.stack_root), state_dir=Path(config.state_dir)))
+        environment=SyntheticEnvironment(stack_root=Path(config.stack_root), state_dir=Path(config.state_dir)),
+        profile=case.profile)
 
 
-def _call_and_present(fn: Any, request: DispositionRequest, case_id: str) -> DeskResult:
+def _call_and_present(fn: Any, request: DispositionRequest, case_id: str, requested_profile: str | None = None) -> DeskResult:
     # Request building happens before this point; once F1 is entered, any failure is reported as uncertain, never failed.
     try:
         f1_result = fn(request)
     except Exception as exc:
-        return uncertain_result(case_id, "%s: %s" % (type(exc).__name__, exc))
+        return uncertain_result(case_id, "%s: %s" % (type(exc).__name__, exc), requested_profile)
     try:
-        return present(f1_result, case_id)
+        res = present(f1_result, case_id)
     except Exception as exc:
-        return uncertain_result(case_id, "%s: %s" % (type(exc).__name__, exc))
+        return uncertain_result(case_id, "%s: %s" % (type(exc).__name__, exc), requested_profile)
+    res.requested_profile = requested_profile
+    return res
 
 
 def process_refund(case: RefundCase, config: DeskConfig) -> DeskResult:
-    return _call_and_present(dispose_refund, _build_request(case, config), case.case_id)
+    return _call_and_present(dispose_refund, _build_request(case, config), case.case_id, case.profile)
 
 
 def reconcile_case(case: RefundCase, config: DeskConfig) -> DeskResult:
-    return _call_and_present(reconcile_refund, _build_request(case, config), case.case_id)
+    return _call_and_present(reconcile_refund, _build_request(case, config), case.case_id, case.profile)
 
 
 def _val(x: Any) -> Any:
@@ -258,6 +287,9 @@ def present(f1_result: Any, case_id: str) -> DeskResult:
     labels = dataclasses.asdict(f1_result.labels)
     not_verified = [str(s) for s in labels.get("not_verified", ())]
     labels["not_verified"] = not_verified
+    f1_profile = getattr(f1_result, "profile", None)  # F1's ProfileIdentity (attribute access only: no new F1 import); None when F1 returned none
+    profile_block = dataclasses.asdict(f1_profile) if f1_profile is not None else None
+    notes = _notes_for(profile_block["profile_id"] if profile_block else None)
 
     return DeskResult(
         case_id=case_id, outcome=outcome, message=message, f1_contract_version=f1_result.contract_version,
@@ -276,5 +308,6 @@ def present(f1_result: Any, case_id: str) -> DeskResult:
         retry_permission="not_established",
         effect_absence_established=False,
         labels=labels,
-        limitations=not_verified + list(_APP_NOTES),
-        cleanup={"ok": bool(f1_result.cleanup.ok), "errors": [str(e) for e in f1_result.cleanup.errors]})
+        limitations=not_verified + list(notes),
+        cleanup={"ok": bool(f1_result.cleanup.ok), "errors": [str(e) for e in f1_result.cleanup.errors]},
+        profile=profile_block)

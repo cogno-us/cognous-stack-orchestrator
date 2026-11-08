@@ -325,18 +325,19 @@ def reconcile_refund(request: DispositionRequest) -> DispositionResult:
     if problems:
         return _refused(request, "request_invalid", ";".join(problems), mode="reconcile")
     scratch: Path | None = None
+    probe = _Probe()  # shared with _reconcile so every post-pre-flight result (including handled errors) keeps the validated profile identity and labels
     with _LOCK:
         try:
             scratch = workspace.allocate()
-            result = _reconcile(request)
+            result = _reconcile(request, probe)
         except Exception as exc:  # noqa: BLE001
-            result = _result(request, "unknown", error=f"reconcile_error_outcome_still_unknown: {exc!r}", mode="reconcile")
+            result = _result(request, "unknown", probe=probe, error=f"reconcile_error_outcome_still_unknown: {exc!r}", mode="reconcile")
         finally:
             cleanup = workspace.dispose(scratch)
     return dataclasses.replace(result, cleanup=cleanup)
 
 
-def _reconcile(request: DispositionRequest) -> DispositionResult:
+def _reconcile(request: DispositionRequest, probe: _Probe) -> DispositionResult:
     try:
         S = load_stack(request.environment.stack_root)
     except StackError as exc:
@@ -351,7 +352,6 @@ def _reconcile(request: DispositionRequest) -> DispositionResult:
     shape = profiles.payload_problems(profile, derived, request.proposal.case_reference)
     if shape:
         return _refused(request, "request_invalid", ";".join(shape), mode="reconcile")
-    probe = _Probe()
     probe.profile = profiles.identity(profile, derived)
     probe.labels = Labels(not_verified=NOT_VERIFIED + profiles.DISCLOSURES.get(pid, ()))
     state = request.environment.state_dir

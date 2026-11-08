@@ -62,12 +62,13 @@ class Surface(unittest.TestCase):
 class Negatives(unittest.TestCase):
     def _run(self, make, *, fn=dispose_refund, prefix="m11-n-"):
         root = M.require_stack(self)
-        with tempfile.TemporaryDirectory(prefix=prefix) as td:
-            state = Path(td)
-            req = make(root, state)
-            with M.native_counters(root) as n:
-                r = fn(req)
-            return r, n, state
+        td = tempfile.TemporaryDirectory(prefix=prefix)
+        self.addCleanup(td.cleanup)  # keep the state dir alive until the test ends so post-call "no database / no effect" inspections are real
+        state = Path(td.name)
+        req = make(root, state)
+        with M.native_counters(root) as n:
+            r = fn(req)
+        return r, n, state
 
     def _no_effect(self, r, n, state):
         M.assert_no_native_activity(self, r, n, state)

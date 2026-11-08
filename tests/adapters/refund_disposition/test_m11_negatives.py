@@ -83,12 +83,14 @@ class Negatives(unittest.TestCase):
                 self.assertEqual(sorted(set(r.native.cp_reasons)), want)
                 self._no_effect(r, n, st)
 
-    def test_four_reason_exact_set_cross_profile_facts(self):
-        r, n, st = self._run(lambda root, s: M.make_routine_request(root, s, profile="refund-high-v1", case_reference="CASE-M11-0009"))
-        self.assertEqual(r.disposition, "held")
-        self.assertEqual(sorted(set(r.native.cp_reasons)),
-                         ["authority_requirement_mismatch", "consequence_tier_mismatch", "requirement_scope_mismatch", "review_requirement_not_resolved"])
-        self._no_effect(r, n, st)
+    def test_reason_sets_cross_profile_facts(self):
+        four = ["authority_requirement_mismatch", "consequence_tier_mismatch", "requirement_scope_mismatch", "review_requirement_not_resolved"]
+        for high_lineage, expected in ((True, four), (False, sorted(four + ["grant_scope_mismatch"]))):
+            with self.subTest(high_lineage=high_lineage):
+                r, n, st = self._run(lambda root, s: M.make_high_profile_routine_facts_request(root, s, high_lineage=high_lineage))
+                self.assertEqual(r.disposition, "held")
+                self.assertEqual(sorted(set(r.native.cp_reasons)), expected)
+                self._no_effect(r, n, st)
 
     def test_routine_facts_with_high_manifest_reverse(self):
         # high facts/lineage under the routine profile: held, never executed, no native effect

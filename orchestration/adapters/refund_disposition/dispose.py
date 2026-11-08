@@ -23,17 +23,13 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from . import workspace
-from .contract import (CONTRACT_VERSION, CleanupReport, DispositionRequest, DispositionResult, EvidenceReferences, FileReference, NativeFacts,
-                       Refusal, request_problems)
+from . import profiles, workspace
+from .contract import (CONTRACT_VERSION, NOT_VERIFIED, CleanupReport, DispositionRequest, DispositionResult, EvidenceReferences, FileReference, Labels,
+                       NativeFacts, ProfileIdentity, Refusal, request_problems)
 from .stack import PINS, NativeStack, StackError, load_stack
 
 _LOCK = threading.Lock()
-ACTION_ID = "urn:cognous:action:refund-issue-routine-v1"
-ADAPTER_ID = "urn:cognous:adapter:synthetic-refund-v1"
-REQUIREMENT_ID = "urn:cognous:authority-requirement:refund-routine-v1"
-PERMISSIONS = ["refund.issue.routine"]
-ACCOUNT_PREFIX = "urn:cognous:synthetic-account:"
+ACCOUNT_PREFIX = profiles.ACCOUNT_PREFIX
 RUNTIME_REVISION = PINS["components"]["runtime"]  # caller-asserted in the Runtime export, exactly as in G3
 CP_REVISION = PINS["components"]["control_plane"]
 _STACK_STEP = "operator_inspection_no_retry_established"
@@ -55,6 +51,8 @@ class _Probe:
         self.executions = 0
         self.native: NativeFacts | None = None  # kept so a handler after dispatch still reports what the native path established
         self.source: tuple = ()
+        self.profile: ProfileIdentity | None = None  # set once the approved-profile pre-flight passed
+        self.labels: Labels | None = None
 
 
 def _sha(data: bytes) -> str:
@@ -118,39 +116,42 @@ def _result(request: Any, disposition: str, *, native: NativeFacts | None = None
         tenant_id=getattr(prop, "tenant_id", None) if isinstance(getattr(prop, "tenant_id", None), str) else None,
         native=native or NativeFacts(), runtime_invoked=n > 0, runtime_invocations=n, evidence=evidence or EvidenceReferences(), refusal=refusal,
         error=error, next_step=next_step or _NEXT[disposition], effect_absence_established=False,
-        cleanup=CleanupReport(ok=True, scratch_path=None), mode=mode)
+        cleanup=CleanupReport(ok=True, scratch_path=None), mode=mode, profile=probe.profile if probe else None,
+        labels=probe.labels if (probe and probe.labels is not None) else Labels())
 
 
 def _refused(request: Any, code: str, reason: str, source: str = "adapter", *, mode: str = "dispose", next_step: str | None = None) -> DispositionResult:
     return _result(request, "refused", refusal=Refusal(code, reason, source), mode=mode, next_step=next_step)
 
 
-def _build_proposal(S: NativeStack, request: DispositionRequest):
+def _build_proposal(S: NativeStack, request: DispositionRequest, manifest: dict, profile: profiles.ApprovedProfile, derived: profiles.Derived):
     B = S.B
-    manifest = json.loads(S.cp_manifest_path.read_text(encoding="utf-8"))
     pr, facts = request.proposal, request.authority.facts
     payload = {"customer_id": pr.customer_id, "refund_reason": pr.refund_reason}
+    if "case_reference" in derived.payload_required + derived.payload_optional and pr.case_reference is not None:
+        payload["case_reference"] = pr.case_reference
     base = B.RuntimeProposal(
         manifest_id=manifest["manifest_id"], manifest_version=manifest["manifest_version"], manifest_digest=B.commitment(manifest),
-        actor=pr.actor, principal=pr.principal, action_id=ACTION_ID, adapter_id=ADAPTER_ID, target=ACCOUNT_PREFIX + pr.customer_id,
-        payload=payload, payload_commitment=B.commitment(payload), requested_permissions=list(PERMISSIONS), amount=float(pr.amount), unit=pr.unit,
-        effects=1, authority_context_ref=facts["context_ref"], requirement_id=REQUIREMENT_ID, correlation_id=request.correlation_id,
+        actor=pr.actor, principal=pr.principal, action_id=profile.action_id, adapter_id=derived.adapter_id, target=ACCOUNT_PREFIX + pr.customer_id,
+        payload=payload, payload_commitment=B.commitment(payload), requested_permissions=list(derived.permissions), amount=float(pr.amount), unit=pr.unit,
+        effects=1, authority_context_ref=facts["context_ref"], requirement_id=derived.requirement_id, correlation_id=request.correlation_id,
         run_id=request.correlation_id, evidence_refs=[])
     return manifest, B.TenantRuntimeProposal(**base.model_dump(mode="json", exclude_none=False), tenant_id=pr.tenant_id)
 
 
-def _operation(S: NativeStack, p, binding, bundle: dict):
+def _operation(S: NativeStack, p, binding, derived: profiles.Derived):
+    """Runtime operation + policy, both derived from the native manifest action; the policy can only narrow what the manifest allows."""
     se = S.engine_safe_executor
     fields = {k: getattr(p, k) for k in ["actor", "principal", "manifest_id", "manifest_version", "manifest_digest", "action_id", "adapter_id", "target",
                                           "payload", "payload_commitment", "amount", "unit", "effects", "requirement_id"]}
-    origin = bundle["origins"][0]
-    op = se.ExecutionOperation(**fields, institution_id=origin["institution_id"], authority_domain=origin["authority_domain"],
+    op = se.ExecutionOperation(**fields, institution_id=derived.institution_id, authority_domain=derived.authority_domain,
                                proposal_commitment=S.B.commitment(p.model_dump(mode="json")), requested_permissions=tuple(p.requested_permissions),
                                authority_context_id=p.authority_context_ref, grant_id=binding.grant_id, grant_revision=binding.grant_revision,
                                effective_max_effects=binding.effective_max_effects, tenant_id=p.tenant_id)
-    pol = se.LocalExecutionPolicy(allowed_institutions=frozenset({origin["institution_id"]}), allowed_authority_domains=frozenset({origin["authority_domain"]}),
-                                  allowed_adapters=frozenset({p.adapter_id}), allowed_actions=frozenset({p.action_id}),
-                                  allowed_target_prefixes=(ACCOUNT_PREFIX,), allowed_units=frozenset({"USD"}), max_amount=1000, max_effects=1)
+    pol = se.LocalExecutionPolicy(allowed_institutions=frozenset({derived.institution_id}), allowed_authority_domains=frozenset({derived.authority_domain}),
+                                  allowed_adapters=frozenset({derived.adapter_id}), allowed_actions=frozenset({p.action_id}),
+                                  allowed_target_prefixes=(derived.allowed_target,), allowed_units=frozenset({derived.unit}),
+                                  max_amount=derived.max_amount, max_effects=derived.max_effects, target_match="exact")
     return op, pol
 
 
@@ -163,6 +164,8 @@ def dispose_refund(request: DispositionRequest) -> DispositionResult:
 def _dispose_refund(request: DispositionRequest, injection: _TestInjection | None) -> DispositionResult:
     if injection is not None and injection.simulate != "lost_ack":  # the only native simulate value the frozen C oracle uses
         return _refused(request, "test_injection_unsupported", "only simulate='lost_ack' is supported by the private test hook")
+    if isinstance(request, DispositionRequest) and not profiles.is_supported(request.profile):
+        return _refused(request, "profile_unsupported", "profile is not in the closed approved registry")
     problems = request_problems(request)
     if problems:
         return _refused(request, "request_invalid", ";".join(problems))
@@ -190,11 +193,22 @@ def _dispose(request: DispositionRequest, scratch: Path, probe: _Probe, injectio
     except StackError as exc:
         return _refused(request, "stack_" + exc.code, exc.detail, next_step=_STACK_STEP)
     B, RA = S.B, S.RA
+    pid = profiles.effective_profile_id(request.profile)
+    profile = profiles.REGISTRY[pid]
+    try:  # approved-profile pre-flight: exact source identity + native validation + derivation; no Control Plane decision, Runtime call or write yet
+        manifest, derived = profiles.load_and_check(S, profile)
+    except profiles.ProfileRefusal as exc:
+        return _refused(request, exc.code, exc.reason)
+    shape = profiles.payload_problems(profile, derived, request.proposal.case_reference)
+    if shape:
+        return _refused(request, "request_invalid", ";".join(shape))
+    probe.profile = profiles.identity(profile, derived)
+    probe.labels = Labels(not_verified=NOT_VERIFIED + profiles.DISCLOSURES.get(pid, ()))
     AT = request.evaluation_time.astimezone(timezone.utc)
     state = request.environment.state_dir
     state.mkdir(parents=True, exist_ok=True)
     with mock.patch.object(B, "_now", lambda: AT):  # CP's own tests pin the synthetic clock the same way
-        manifest, p = _build_proposal(S, request)
+        manifest, p = _build_proposal(S, request, manifest, profile, derived)
         auth = request.authority
         facts, bundle = copy.deepcopy(auth.facts), copy.deepcopy(auth.lineage_bundle)
         facts["approval"]["proposal_commitment"] = B.commitment(p.model_dump(mode="json", exclude_none=False))
@@ -250,7 +264,7 @@ def _dispose(request: DispositionRequest, scratch: Path, probe: _Probe, injectio
             return _result(request, "failed", native=native, probe=probe, evidence=EvidenceReferences(source=source),
                            error="effective_grant_digest_mismatch_before_dispatch", next_step=_STACK_STEP)
         probe.native, probe.source = native, source
-        op, pol = _operation(S, p, d.binding, bundle)
+        op, pol = _operation(S, p, d.binding, derived)
         se, ad, pc = S.engine_safe_executor, S.engine_adapter, S.engine_producer
         ex = ad.PinnedControlPlaneExecutor(workflow=wf, destination=dest, policy=pol, observation_clock=lambda: AT)
         env = se.ExecutionEnvelope(se.EXECUTION_ENVELOPE_VERSION, d.decision_id, d.effect_id, op)
@@ -304,6 +318,8 @@ def reconcile_refund(request: DispositionRequest) -> DispositionResult:
     destination state through the Runtime's `observe_historical` (read-only; no authority is renewed, nothing is dispatched).
     `applied` -> `executed` (native status `observed`, newly_executed false). `absent`, `partial`, `unknown` or an unreadable destination
     -> `unknown`: absence right after an ambiguous dispatch never establishes that the effect will not appear."""
+    if isinstance(request, DispositionRequest) and not profiles.is_supported(request.profile):
+        return _refused(request, "profile_unsupported", "profile is not in the closed approved registry", mode="reconcile")
     problems = request_problems(request)
     if problems:
         return _refused(request, "request_invalid", ";".join(problems), mode="reconcile")
@@ -325,6 +341,18 @@ def _reconcile(request: DispositionRequest) -> DispositionResult:
     except StackError as exc:
         return _refused(request, "stack_" + exc.code, exc.detail, mode="reconcile", next_step=_STACK_STEP)
     B = S.B
+    pid = profiles.effective_profile_id(request.profile)
+    profile = profiles.REGISTRY[pid]
+    try:
+        manifest, derived = profiles.load_and_check(S, profile)
+    except profiles.ProfileRefusal as exc:
+        return _refused(request, exc.code, exc.reason, mode="reconcile")
+    shape = profiles.payload_problems(profile, derived, request.proposal.case_reference)
+    if shape:
+        return _refused(request, "request_invalid", ";".join(shape), mode="reconcile")
+    probe = _Probe()
+    probe.profile = profiles.identity(profile, derived)
+    probe.labels = Labels(not_verified=NOT_VERIFIED + profiles.DISCLOSURES.get(pid, ()))
     state = request.environment.state_dir
     cp_path = state / "cp" / f"{request.correlation_id}.json"
     if not cp_path.is_file():
@@ -333,14 +361,14 @@ def _reconcile(request: DispositionRequest) -> DispositionResult:
         return _refused(request, "no_prior_destination", "no destination database exists for this state_dir; reconciliation will not create one", mode="reconcile")
     AT = request.evaluation_time.astimezone(timezone.utc)
     with mock.patch.object(B, "_now", lambda: AT):
-        _, p = _build_proposal(S, request)
+        _, p = _build_proposal(S, request, manifest, profile, derived)
         store = B.BoundedRecordStore(cp_path, request.correlation_id)
         commit = B.commitment(p.model_dump(mode="json", exclude_none=False))
         matches = [x for x in store.load().decisions if x.result == "authorized" and x.binding is not None and x.binding.proposal_commitment == commit]
         if not matches:
             return _refused(request, "no_authorized_decision_for_proposal", "the retained record holds no authorized decision for this exact proposal", mode="reconcile")
         d = matches[-1]
-        op, pol = _operation(S, p, d.binding, request.authority.lineage_bundle)
+        op, pol = _operation(S, p, d.binding, derived)
         se = S.engine_safe_executor
         env = se.ExecutionEnvelope(se.EXECUTION_ENVELOPE_VERSION, d.decision_id, d.effect_id, op)
         native = NativeFacts(cp_result=d.result, cp_reasons=tuple(d.reasons), decision_id=d.decision_id, effect_id=d.effect_id)
@@ -349,10 +377,10 @@ def _reconcile(request: DispositionRequest) -> DispositionResult:
             dest = S.engine_effective_grant.EffectiveGrantDestination(state / "sqlite")
             res = se.LocalDestinationExecutor(dest, pol).observe_historical(env)
         except Exception as exc:  # noqa: BLE001 - an unreadable destination establishes nothing
-            return _result(request, "unknown", native=native, evidence=EvidenceReferences(source=source), mode="reconcile",
+            return _result(request, "unknown", native=native, probe=probe, evidence=EvidenceReferences(source=source), mode="reconcile",
                            refusal=Refusal("observation_unavailable", repr(exc), "runtime"), error="destination_unreadable_outcome_still_unknown")
     native = dataclasses.replace(native, runtime_status=res.status, runtime_error=res.error, acknowledged=res.acknowledged,
                                  newly_executed=res.newly_executed, observed_state=res.observed_state)
-    return _result(request, map_runtime(res.status, res.observed_state, res.acknowledged, res.newly_executed), native=native,
+    return _result(request, map_runtime(res.status, res.observed_state, res.acknowledged, res.newly_executed), native=native, probe=probe,
                    evidence=EvidenceReferences(source=source, replay_state="not_run", replay_note="reconciliation is a read-only observation; no new Replay import"),
                    mode="reconcile")

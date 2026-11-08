@@ -102,3 +102,14 @@ def expected_identity(profile_id: str):
 
 def state_dir_ctx(prefix: str):
     return tempfile.TemporaryDirectory(prefix=prefix)
+
+
+def make_high_profile_routine_facts_request(root: Path, state_dir: Path, *, high_lineage: bool, correlation: str = "m11-check") -> DispositionRequest:
+    """B8a (high_lineage=True): high profile + routine facts + HIGH lineage. B8b (False): high profile + routine facts + routine lineage."""
+    import dataclasses
+    req = make_routine_request(root, state_dir, profile="refund-high-v1", case_reference="CASE-M11-0008", customer="customer-002", amount=150.0,
+                               correlation=correlation)
+    if high_lineage:
+        req = dataclasses.replace(req, authority=AuthorityFacts(authority_id=HIGH_AUTHORITY_ID, lineage_bundle=copy.deepcopy(m11_fixture("high_lineage_valid.json")),
+                                                                 facts=req.authority.facts))
+    return req

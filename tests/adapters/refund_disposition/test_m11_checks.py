@@ -191,14 +191,16 @@ class CheckB(unittest.TestCase):
         self._refuse_or_hold(lambda root, st: M.make_high_request(root, st, lineage="high_lineage_revoked.json"), "held", contains="grant_revoked")
         self._refuse_or_hold(lambda root, st: M.make_routine_request(root, st, bundle="root_lineage_revoked.json"), "held", contains="grant_revoked")
 
-    def test_b8_high_profile_with_routine_facts_and_lineage(self):
-        def mk(root, st):
-            req = M.make_routine_request(root, st, profile="refund-high-v1", case_reference="CASE-M11-0008", customer="customer-002")
-            return req
-        # routine facts/lineage: customer-002 is not their target, but the frozen set below is for customer-001 targets; use customer-001
-        def mk1(root, st):
-            return M.make_routine_request(root, st, profile="refund-high-v1", case_reference="CASE-M11-0008", customer="customer-001", amount=50.0)
-        self._refuse_or_hold(mk1, "held", reasons=["authority_requirement_mismatch", "consequence_tier_mismatch", "requirement_scope_mismatch", "review_requirement_not_resolved"])
+    FOUR = ["authority_requirement_mismatch", "consequence_tier_mismatch", "requirement_scope_mismatch", "review_requirement_not_resolved"]
+
+    def test_b8a_high_profile_routine_facts_high_lineage(self):
+        # Amendment 2026-11-08 (ORACLES_M1_1.md): exactly the four reasons for routine FACTS with the HIGH lineage
+        self._refuse_or_hold(lambda root, st: M.make_high_profile_routine_facts_request(root, st, high_lineage=True), "held", reasons=self.FOUR)
+
+    def test_b8b_high_profile_routine_facts_routine_lineage(self):
+        # Amendment 2026-11-08: the same four plus grant_scope_mismatch when the lineage is also the routine one
+        self._refuse_or_hold(lambda root, st: M.make_high_profile_routine_facts_request(root, st, high_lineage=False), "held",
+                             reasons=sorted(self.FOUR + ["grant_scope_mismatch"]))
 
     def test_b9_institution_mismatch(self):
         def lin(b):

@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 CONTRACT_VERSION = "refund-disposition/0.1.0-dev"
+PROFILE_REGISTRY_VERSION = "refund-profiles/0.1.0-dev"
+DEFAULT_PROFILE = "refund-routine-v1"
 RETRY_PERMISSION = "not_established"  # constant by contract: no result ever grants a retry
 
 Disposition = Literal["executed", "held", "denied", "refused", "unknown", "failed"]
@@ -49,6 +51,7 @@ class RefundProposal:
     unit: str = "USD"
     actor: str = "urn:cognous:identity:refund-agent-1"
     principal: str = "urn:cognous:principal:refund-service"
+    case_reference: str | None = None  # required by profile refund-high-v1, forbidden by refund-routine-v1 (checked against the profile)
 
 
 @dataclass(frozen=True)
@@ -67,6 +70,7 @@ class DispositionRequest:
     correlation_id: str
     evaluation_time: datetime  # explicit and timezone-aware: no default clock is invented
     environment: SyntheticEnvironment
+    profile: str | None = None  # approved profile id from the closed registry; None means the historical fixed profile refund-routine-v1
 
 
 def request_problems(request: Any) -> list[str]:
@@ -104,6 +108,10 @@ def request_problems(request: Any) -> list[str]:
         o = origins[0] if isinstance(origins, list) and origins else None
         if not isinstance(o, dict) or not isinstance(o.get("institution_id"), str) or not isinstance(o.get("authority_domain"), str):
             out.append("authority_lineage_origin_missing_institution_or_domain")
+    if p.case_reference is not None and not isinstance(p.case_reference, str):
+        out.append("proposal_case_reference_invalid")
+    if request.profile is not None and not isinstance(request.profile, str):
+        out.append("profile_not_a_string")
     if not isinstance(request.correlation_id, str) or not _ID.fullmatch(request.correlation_id):
         out.append("correlation_id_invalid")
     t = request.evaluation_time
@@ -171,6 +179,19 @@ class CleanupReport:
 
 
 @dataclass(frozen=True)
+class ProfileIdentity:
+    """Which approved profile and exact native manifest/action a result is bound to. Identification only; it grants nothing."""
+
+    profile_id: str
+    registry_version: str
+    manifest_id: str
+    manifest_version: str
+    manifest_digest: str
+    action_id: str
+    requirement_id: str
+
+
+@dataclass(frozen=True)
 class DispositionResult:
     contract_version: str
     disposition: Disposition
@@ -187,3 +208,4 @@ class DispositionResult:
     cleanup: CleanupReport
     labels: Labels = field(default_factory=Labels)
     mode: str = "dispose"  # dispose | reconcile
+    profile: ProfileIdentity | None = None  # populated once the approved-profile pre-flight passed (including holds and unknown)

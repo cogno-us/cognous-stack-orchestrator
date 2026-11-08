@@ -22,7 +22,8 @@ REPO = PKG.parents[2]
 
 def req(**over):
     base = dict(proposal=RefundProposal(tenant_id="t", customer_id="c", refund_reason="r", amount=5.0),
-                authority=AuthorityFacts("a", {"origins": [{}]}, {"tenant_id": "t"}), correlation_id="c1",
+                authority=AuthorityFacts("a", {"origins": [{"institution_id": "i", "authority_domain": "d"}]},
+                                         {"tenant_id": "t", "context_ref": "urn:x", "approval": {}}), correlation_id="c1",
                 evaluation_time=datetime(2026, 10, 5, 19, tzinfo=timezone.utc),
                 environment=SyntheticEnvironment(Path("/nonexistent-stack"), Path("/nonexistent-state")))
     base.update(over)
@@ -36,7 +37,8 @@ class RequestValidation(unittest.TestCase):
     def test_refused_before_any_native_call(self):
         bad = [req(correlation_id="../x"), req(evaluation_time=datetime(2026, 1, 1)), req(proposal=RefundProposal("t", "c", "r", -1.0)),
                req(proposal=RefundProposal("t", "c", "r", 5.0, unit="usd")), req(proposal=RefundProposal("other", "c", "r", 5.0)),
-               req(dev_fault="nope")]
+               req(dev_fault="nope"), req(authority=AuthorityFacts("a", {"origins": [{}]}, {"tenant_id": "t", "context_ref": "u", "approval": {}})),
+               req(authority=AuthorityFacts("a", {"origins": [{"institution_id": "i", "authority_domain": "d"}]}, {"tenant_id": "t"}))]
         for r in bad:
             res = dispose_refund(r)
             self.assertEqual(res.disposition, "refused", r)

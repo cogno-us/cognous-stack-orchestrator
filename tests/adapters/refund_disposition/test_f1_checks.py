@@ -23,8 +23,8 @@ def labels_ok(tc: unittest.TestCase, r) -> None:
     tc.assertEqual(r.labels.retry_permission, "not_established")
     tc.assertIs(r.effect_absence_established, False)
     tc.assertTrue(r.cleanup.ok, r.cleanup)
-    if r.cleanup.scratch_path:
-        tc.assertFalse(Path(r.cleanup.scratch_path).exists())
+    tc.assertIsNotNone(r.cleanup.scratch_path)
+    tc.assertFalse(Path(r.cleanup.scratch_path).exists())
 
 
 class CheckA(unittest.TestCase):
@@ -42,6 +42,9 @@ class CheckA(unittest.TestCase):
                 self.assertEqual(len(rows), 1)
                 self.assertEqual((rows[0]["state"], rows[0]["amount"], rows[0]["unit"]), ("applied", 50.0, "USD"))
                 self.assertEqual(rows[0]["effect_id"], r1.native.effect_id)
+                cp = json.loads(Path(next(f for f in r1.evidence.source if f.kind == "cp_run_record").path).read_text())
+                authorized = [d for d in cp["decisions"] if d["result"] == "authorized"]
+                self.assertEqual([d["effect_id"] for d in authorized], [rows[0]["effect_id"]])  # CP record, row and result agree independently
                 self.assertEqual(r1.next_step, "none")
                 labels_ok(self, r1)
                 # Replay reference is resolvable and truthful
@@ -53,6 +56,7 @@ class CheckA(unittest.TestCase):
                 self.assertEqual(bundle["status"], "reconstruction_complete")
                 self.assertEqual(ref.detail["status"], "reconstruction_complete")
                 self.assertIn(r1.native.effect_id, json.dumps(bundle))
+                self.assertTrue(any(rec.get("record_type") == "execution_result" for rec in bundle["records"]), "Replay holds executor records")
                 self.assertTrue(any(f.kind == "cp_run_record" and f.sha256 == S.sha256_file(f.path) for f in r1.evidence.source))
                 before = rows
                 # repetition: same request, same state dir -> no second effect
@@ -64,6 +68,8 @@ class CheckA(unittest.TestCase):
                 self.assertIs(r2.native.newly_executed, False)
                 self.assertEqual(r2.native.runtime_status, "reconciled")
                 self.assertEqual(n["commit"], 1)
+                self.assertEqual(r2.disposition, "executed")
+                self.assertEqual(n["execute"], 2)  # the repeat re-enters the Runtime once; the destination's native idempotency absorbs it
                 labels_ok(self, r2)
 
 
@@ -82,6 +88,7 @@ class CheckB(unittest.TestCase):
             self.assertEqual((n["execute"], n["commit"]), (0, 0))
             self.assertEqual(S.effect_rows(state), [])
             self.assertEqual(S.grant_rows(state), [])
+            self.assertFalse(S.db_path(state).exists())  # stronger than the oracle: a hold does not even create the destination database
             self.assertEqual(r.evidence.replay_state, "not_run")
             self.assertIsNone(r.evidence.replay)
             produced = [x.name for x in (state / "evidence").glob("**/*.json")] if (state / "evidence").exists() else []
@@ -93,7 +100,7 @@ class CheckB(unittest.TestCase):
 
 
 class CheckC(unittest.TestCase):
-    def test_post_commit_lost_ack_is_unknown_then_readonly_reconcile(self):
+    def test_post_commit_lost_ack_with_unavailable_observation_is_unknown_then_effect_free_reconcile(self):
         root = S.require_stack(self)
         with tempfile.TemporaryDirectory(prefix="f1-c-") as td:
             state = Path(td)

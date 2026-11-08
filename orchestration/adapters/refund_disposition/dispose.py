@@ -62,6 +62,8 @@ def _persist(state_dir: Path, subdir: str, kind: str, obj: Any, detail: dict | N
     target_dir = state_dir / subdir
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / f"{kind}-{digest[7:23]}.json"
+    if path.exists() and path.read_bytes() != data:
+        raise FileExistsError(f"content-addressed evidence file differs from expected bytes: {path}")
     if not path.exists():
         tmp = path.with_name(path.name + f".tmp{os.getpid()}")
         tmp.write_bytes(data)
@@ -150,18 +152,22 @@ def dispose_refund(request: DispositionRequest) -> DispositionResult:
         return _refused(request, "request_invalid", ";".join(problems))
     scratch: Path | None = None
     result: DispositionResult | None = None
+    probe = _Probe()
     with _LOCK:
         try:
             scratch = workspace.allocate()
-            result = _dispose(request, scratch)
-        except BaseException as exc:  # noqa: BLE001 - unexpected adapter failure BEFORE any dispatch is known; nothing is claimed about effects
-            result = _result(request, "failed", error=f"adapter_error_before_dispatch_unknown: {exc!r}", next_step=_STACK_STEP)
+            result = _dispose(request, scratch, probe)
+        except Exception as exc:  # noqa: BLE001 - unexpected adapter error
+            if probe.executions > 0:  # the Runtime was entered: the effect may exist, so never `failed` and never "not invoked"
+                result = _result(request, "unknown", probe=probe, error=f"adapter_error_after_dispatch_outcome_unknown: {exc!r}")
+            else:
+                result = _result(request, "failed", error=f"adapter_error_no_dispatch_occurred: {exc!r}", next_step=_STACK_STEP)
         finally:
             cleanup = workspace.dispose(scratch)
     return dataclasses.replace(result, cleanup=cleanup)
 
 
-def _dispose(request: DispositionRequest, scratch: Path) -> DispositionResult:
+def _dispose(request: DispositionRequest, scratch: Path, probe: _Probe) -> DispositionResult:
     try:
         S = load_stack(request.environment.stack_root)
     except StackError as exc:
@@ -170,7 +176,6 @@ def _dispose(request: DispositionRequest, scratch: Path) -> DispositionResult:
     AT = request.evaluation_time.astimezone(timezone.utc)
     state = request.environment.state_dir
     state.mkdir(parents=True, exist_ok=True)
-    probe = _Probe()
     with mock.patch.object(B, "_now", lambda: AT):  # CP's own tests pin the synthetic clock the same way
         manifest, p = _build_proposal(S, request)
         auth = request.authority
@@ -179,10 +184,8 @@ def _dispose(request: DispositionRequest, scratch: Path) -> DispositionResult:
         resolver = S.resolver_module.IGRootResolver(B, bundle, auth.authority_id, facts, AT, lineage=S.resolver_module.load_lineage_harness())
         cl = RA.ActionClass(class_id="synthetic-irreversible", irreversible=True, max_status_age_seconds=60, on_unreadable="refuse")
         cfg = RA.RuntimeAuthorityProfile(catalogue_version="synthetic-catalogue/1", actions={p.action_id: cl}, producer_keys={}, allow_synthetic_resolver=True)
-        dest_cls = S.engine_effective_grant.EffectiveGrantDestination
-        if request.dev_fault == "lost_ack_observation_unavailable":
-            dest_cls = make_fault_destination_class(dest_cls)
-        dest = dest_cls(state / "sqlite")
+        # `decide()` only reads the destination's declared capability, so a hold never creates or touches the SQLite file.
+        capability_only = type("CapabilityOnlyDestination", (), {"runtime_authority_capability": S.engine_effective_grant.CAPABILITY})()
         records = B.BoundedRecordStore(state / "cp" / f"{request.correlation_id}.json", request.correlation_id)
 
         def flow(store, destination, profile):
@@ -201,7 +204,7 @@ def _dispose(request: DispositionRequest, scratch: Path) -> DispositionResult:
                                                "evidence_criteria": {}, "expected_effective_grant_digest": expected,
                                                "effective_grant_derivation_version": S.engine_effective_grant.DERIVATION}
         resolver.facts["approval"]["runtime_authority_commitment"] = RA.approval_commitment(cfg, resolver.authority_context(facts["context_ref"]))
-        wf = flow(records, dest, cfg)
+        wf = flow(records, capability_only, cfg)
         d = wf.decide(p, now=AT)
         source = (_cp_snapshot(state, request.correlation_id, records),)
         native = NativeFacts(cp_result=d.result, cp_reasons=tuple(d.reasons), decision_id=d.decision_id, effect_id=d.effect_id)
@@ -210,6 +213,19 @@ def _dispose(request: DispositionRequest, scratch: Path) -> DispositionResult:
             return _result(request, "held", native=native, probe=probe, evidence=EvidenceReferences(source=source, replay_state="not_run",
                            replay_note="Control Plane did not authorize; Runtime and Replay were not run"),
                            refusal=Refusal("control_plane_hold", ",".join(d.reasons) or "hold", "control_plane"))
+        latest: dict[str, str] = {}
+        for a in records.load().attempts:  # attempts are append-only status events; the last event per attempt id is its current status
+            if a.effect_id == d.effect_id:
+                latest[a.attempt_id] = a.status
+        prior = [i for i, st in latest.items() if st in ("attempted", "unknown", "partial")]
+        if prior:  # native rule: absence never grants a retry. An earlier uncertain dispatch of this exact effect must be reconciled, not re-run.
+            return _result(request, "refused", native=native, probe=probe, evidence=EvidenceReferences(source=source, replay_note="Runtime not run"),
+                           refusal=Refusal("prior_uncertain_dispatch", "an earlier attempt for this effect is unknown/partial/unresolved; reconcile first", "adapter"),
+                           next_step="reconcile_read_only")
+        dest_cls = S.engine_effective_grant.EffectiveGrantDestination
+        if request.dev_fault == "lost_ack_observation_unavailable":
+            dest_cls = make_fault_destination_class(dest_cls)
+        dest = dest_cls(state / "sqlite")
         # Authorized: the trusted host mirrors the authorized grant into the destination (as G3 did), then the Runtime executes ONCE.
         mirrored = dest.set_effective_grant(principal=p.principal, grant_id=d.binding.grant_id, revision=d.binding.grant_revision,
                                             permissions=list(p.requested_permissions))
@@ -224,7 +240,7 @@ def _dispose(request: DispositionRequest, scratch: Path) -> DispositionResult:
         probe.executions += 1  # counted before the call: if the call raises, dispatch may have happened
         try:
             res = ex.execute(envelope=env, proposal=p, decision=d, now=AT, simulate=simulate)  # exactly one attempt; never retried
-        except BaseException as exc:  # noqa: BLE001 - the Runtime may have committed: report uncertainty, never failure
+        except Exception as exc:  # noqa: BLE001 - the Runtime may have committed: report uncertainty, never failure
             return _result(request, "unknown", native=native, probe=probe, evidence=EvidenceReferences(source=source),
                            error=f"runtime_raised_after_dispatch_outcome_unknown: {exc!r}")
         if hasattr(dest, "heal"):
@@ -232,8 +248,11 @@ def _dispose(request: DispositionRequest, scratch: Path) -> DispositionResult:
         native = dataclasses.replace(native, runtime_status=res.status, runtime_error=res.error, acknowledged=res.acknowledged,
                                      newly_executed=res.newly_executed, observed_state=res.observed_state)
         disposition = map_runtime(res.status, res.observed_state, res.acknowledged, res.newly_executed)
-        source = (_cp_snapshot(state, request.correlation_id, records),)  # after execute: includes attempt/reconciliation records
-        evidence = _evidence(S, request, p, wf, env, res, dest, source)
+        try:
+            source = (_cp_snapshot(state, request.correlation_id, records),)  # after execute: includes attempt/reconciliation records
+            evidence = _evidence(S, request, p, wf, env, res, dest, source)
+        except Exception as exc:  # noqa: BLE001 - the effect disposition stands; only the evidence reference is lost
+            evidence = EvidenceReferences(source=source, replay_state="not_run", replay_note=f"evidence_persistence_failed: {exc!r}")
         refusal = None
         if disposition in ("denied", "failed", "unknown") and res.error:
             refusal = Refusal("runtime_" + res.status, res.error, "runtime")
@@ -261,7 +280,8 @@ def _evidence(S: NativeStack, request: DispositionRequest, p, wf, env, res, dest
 
 
 def reconcile_refund(request: DispositionRequest) -> DispositionResult:
-    """Effect-free reconciliation of a previously dispatched proposal. Reads the retained Control Plane decision and observes the bound
+    """Effect-free reconciliation of a previously dispatched proposal (no dispatch, no authority, no effect or attempt row written; the native
+    constructors still run idempotent schema-ensure statements on an existing database). Reads the retained Control Plane decision and observes the bound
     destination state through the Runtime's `observe_historical` (read-only; no authority is renewed, nothing is dispatched).
     `applied` -> `executed` (native status `observed`, newly_executed false). `absent`, `partial`, `unknown` or an unreadable destination
     -> `unknown`: absence right after an ambiguous dispatch never establishes that the effect will not appear."""
@@ -275,7 +295,7 @@ def reconcile_refund(request: DispositionRequest) -> DispositionResult:
         try:
             scratch = workspace.allocate()
             result = _reconcile(request)
-        except BaseException as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             result = _result(request, "unknown", error=f"reconcile_error_outcome_still_unknown: {exc!r}", mode="reconcile")
         finally:
             cleanup = workspace.dispose(scratch)
@@ -292,6 +312,8 @@ def _reconcile(request: DispositionRequest) -> DispositionResult:
     cp_path = state / "cp" / f"{request.correlation_id}.json"
     if not cp_path.is_file():
         return _refused(request, "no_prior_dispatch_record", "no retained Control Plane run record for this correlation id", mode="reconcile")
+    if not (state / "sqlite" / "refunds.sqlite3").is_file():
+        return _refused(request, "no_prior_destination", "no destination database exists for this state_dir; reconciliation will not create one", mode="reconcile")
     AT = request.evaluation_time.astimezone(timezone.utc)
     with mock.patch.object(B, "_now", lambda: AT):
         _, p = _build_proposal(S, request)
@@ -309,7 +331,7 @@ def _reconcile(request: DispositionRequest) -> DispositionResult:
         try:
             dest = S.engine_effective_grant.EffectiveGrantDestination(state / "sqlite")
             res = se.LocalDestinationExecutor(dest, pol).observe_historical(env)
-        except BaseException as exc:  # noqa: BLE001 - an unreadable destination establishes nothing
+        except Exception as exc:  # noqa: BLE001 - an unreadable destination establishes nothing
             return _result(request, "unknown", native=native, evidence=EvidenceReferences(source=source), mode="reconcile",
                            refusal=Refusal("observation_unavailable", repr(exc), "runtime"), error="destination_unreadable_outcome_still_unknown")
     native = dataclasses.replace(native, runtime_status=res.status, runtime_error=res.error, acknowledged=res.acknowledged,

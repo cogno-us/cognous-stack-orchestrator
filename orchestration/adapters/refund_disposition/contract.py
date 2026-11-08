@@ -100,6 +100,13 @@ def request_problems(request: Any) -> list[str]:
         out.append("authority_facts_missing")
     elif a.facts.get("tenant_id") != p.tenant_id:
         out.append("tenant_mismatch_between_proposal_and_authority_facts")
+    elif not isinstance(a.facts.get("context_ref"), str) or not isinstance(a.facts.get("approval"), dict):
+        out.append("authority_facts_missing_context_ref_or_approval")
+    if isinstance(a.lineage_bundle, dict) and a.lineage_bundle:
+        origins = a.lineage_bundle.get("origins")
+        o = origins[0] if isinstance(origins, list) and origins else None
+        if not isinstance(o, dict) or not isinstance(o.get("institution_id"), str) or not isinstance(o.get("authority_domain"), str):
+            out.append("authority_lineage_origin_missing_institution_or_domain")
     if not isinstance(request.correlation_id, str) or not _ID.fullmatch(request.correlation_id):
         out.append("correlation_id_invalid")
     t = request.evaluation_time
@@ -114,6 +121,8 @@ def request_problems(request: Any) -> list[str]:
 
 @dataclass(frozen=True)
 class Labels:
+    """Fixed labels by contract; not derived from the resolver's output."""
+
     synthetic_authority: bool = True
     authenticated: bool = False
     evidence_basis: str = "producer_reported"
@@ -173,7 +182,7 @@ class DispositionResult:
     correlation_id: str | None
     tenant_id: str | None
     native: NativeFacts
-    runtime_invoked: bool  # measured at the adapter's only call site of the Runtime executor
+    runtime_invoked: bool  # adapter-counted attempt at its only Runtime call site (self-reported; independent counters live in the tests)
     runtime_invocations: int
     evidence: EvidenceReferences
     refusal: Refusal | None

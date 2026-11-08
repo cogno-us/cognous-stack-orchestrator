@@ -161,6 +161,8 @@ def dispose_refund(request: DispositionRequest) -> DispositionResult:
 
 
 def _dispose_refund(request: DispositionRequest, injection: _TestInjection | None) -> DispositionResult:
+    if injection is not None and injection.simulate != "lost_ack":  # the only native simulate value the frozen C oracle uses
+        return _refused(request, "test_injection_unsupported", "only simulate='lost_ack' is supported by the private test hook")
     problems = request_problems(request)
     if problems:
         return _refused(request, "request_invalid", ";".join(problems))

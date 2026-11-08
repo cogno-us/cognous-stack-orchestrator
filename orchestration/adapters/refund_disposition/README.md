@@ -79,7 +79,7 @@ The request has no fault field and `dispose_refund(request)` / `reconcile_refund
 `dispose.py` has one PRIVATE entry point, `_dispose_refund(request, _TestInjection)`, that is not exported and not reachable through the public call. The injection
 itself lives in the test tree (`tests/adapters/refund_disposition/_fault_injection.py`): a subclass of the pinned `EffectiveGrantDestination` plus the native
 `simulate="lost_ack"` argument. After the durable commit the native path withholds the acknowledgment and the subclass makes the destination read path unavailable
-until the call returns, so the native result is genuinely `unknown` while one row is committed. No Runtime source or semantics change. Check C is therefore a lost
+until the call returns, so the native result is genuinely `unknown` while one row is committed. The private hook is import-reachable by a deliberate caller (it is not sandboxed); it accepts only `simulate="lost_ack"` and a destination-class wrapper. No Runtime source or semantics change. Check C is therefore a lost
 acknowledgment **plus** an unavailable observation. A lost acknowledgment alone is different: the native Runtime re-observes the applied row and reports
 `reconciled`, which this adapter maps to `executed` with `acknowledged=false` and `runtime_error` set. That mapping is a native validated observation, not an adapter
 assumption, and is Architect-approved for F1: `acknowledged=false` stays visible in `native`.

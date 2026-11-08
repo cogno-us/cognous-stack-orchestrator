@@ -166,6 +166,9 @@ class ScopeAndPins(unittest.TestCase):
         self.assertFalse(hasattr(contract, "DEV_FAULTS"))
         self.assertFalse((PKG / "fault_seam.py").exists())
         self.assertNotIn("simulate", (PKG / "contract.py").read_text())
+        with tempfile.TemporaryDirectory() as td:
+            r = D._dispose_refund(req(environment=SyntheticEnvironment(Path(td), Path(td) / "s")), D._TestInjection(wrap_destination=lambda c: c, simulate="partial"))
+        self.assertEqual(r.refusal.code, "test_injection_unsupported")
 
 
 if __name__ == "__main__":

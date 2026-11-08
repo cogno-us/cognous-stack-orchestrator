@@ -302,6 +302,60 @@ class ReviewAdditions(Base):
             self.assertEqual(cli._EXIT["uncertain"], 3)
             self.assertEqual(cli._EXIT["failed"], 1)
 
+    def _run_main_in_process(self, root, state, patches):
+        import contextlib
+        import io
+        from unittest import mock
+
+        import refund_desk.cli as cli
+
+        buf = io.StringIO()
+        with contextlib.ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(contextlib.redirect_stdout(buf))
+            rc = cli.main(S.cli_args("process", S.CASE_A, state) + ["--stack-root", str(root)])
+        out = buf.getvalue()
+        d = json.loads(out)  # stdout is exactly one JSON object
+        self.assertIsInstance(d, dict)
+        return rc, d
+
+    def assert_uncertain_exit3(self, rc: int, d: dict) -> None:
+        self.assertEqual(rc, 3, d)
+        self.assertEqual(d["outcome"], "uncertain", d)
+        self.assertEqual(d["permitted_next_actions"], ["reconcile"])
+        self.assertIs(d["execution_claim"]["supported"], False)
+        self.assertIs(d["effect_absence_established"], False)
+
+    def test_cli_main_present_failure_after_real_f1_call_exits_3(self):
+        root = S.require_stack(self)
+        from unittest import mock
+
+        import refund_desk.desk as desk
+
+        def boom(*a, **k):
+            raise RuntimeError("synthetic presentation failure")
+
+        with S.tempdir("f3-r2b-") as td:
+            state = Path(td)
+            rc, d = self._run_main_in_process(root, state, [mock.patch.object(desk, "present", boom)])
+            self.assert_uncertain_exit3(rc, d)
+            self.assertEqual(len(S.effect_rows(state)), 1, "the effect committed")
+
+    def test_cli_main_f1_call_raising_is_uncertain_exit_3(self):
+        from unittest import mock
+
+        import refund_desk.desk as desk
+
+        def boom(*a, **k):
+            raise RuntimeError("synthetic F1 failure")
+
+        with S.tempdir("f3-r2c-") as td, S.tempdir("f3-r2c-stack-") as fake_stack:
+            state = Path(td)
+            rc, d = self._run_main_in_process(Path(fake_stack), state, [mock.patch.object(desk, "dispose_refund", boom)])
+            self.assert_uncertain_exit3(rc, d)
+            self.assertEqual(S.effect_rows(state), [], "the patched call dispatched nothing")
+
     def test_missing_stack_root_cli_is_failed_exit_1_with_json(self):
         with S.tempdir("f3-r3-") as td:
             p = S.run_cli(S.cli_args("process", S.CASE_A, Path(td)), root=None)

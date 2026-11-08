@@ -216,7 +216,7 @@ The `reconcile` command needs a prior unresolved attempt for the same case (it r
 ```bash
 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_static.py' -v   # 5 tests, no stack needed
 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_present_unit.py' -v   # 7 tests, no stack needed
-F3_STACK_ROOT="$STACK" F3_REQUIRE=1 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_checks.py' -v   # 11 tests: checks A, B, C and review additions
+F3_STACK_ROOT="$STACK" F3_REQUIRE=1 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_checks.py' -v   # 13 tests: checks A, B, C and review additions
 ```
 The UNKNOWN used by check C is produced by a test-owned fixture that borrows the F1 **test-tree** fault injection; the application itself contains no fault injection.
 `F3_REQUIRE=1` turns a missing stack into a failure (a skip is not a pass).
@@ -233,6 +233,8 @@ No workflow is added or changed. Existing path-matched workflows do not collect 
 - A lost acknowledgment alone maps to `executed` with `acknowledged=false`.
 - A repeat after an unresolved uncertain attempt is refused (`prior_uncertain_dispatch`) and shown as `uncertain`; this stays true even after a `reconcile` has observed the effect as applied (the F1 conservative rule), so the same case can show `executed` from `reconcile` and then `uncertain` from a repeat `process`. No result grants a retry (`retry_permission=not_established`).
 - If the application cannot present an F1 result (or F1 raises), it fails closed: `outcome=uncertain`, reconcile only, exit 3. A held/refused/denied message describes only the current request and says nothing about earlier attempts for the case. `failed` is used only for errors before any F1 call.
+- If F1 ever reported `executed` without an applied native observation, the application would still print `outcome=executed` (one-to-one mapping, exit 0) but with `execution_claim.supported=false` and a hedged message; F1 currently prevents this case. Consumers should read `execution_claim.supported`, not only `outcome`.
+- A `denied` result comes from the Runtime call, so its message does not say the request was "not dispatched".
 - No fault injection in the application.
 - No Pack, Verifier, Attestation or Registry. No independent qualification, certification or production claim.
 

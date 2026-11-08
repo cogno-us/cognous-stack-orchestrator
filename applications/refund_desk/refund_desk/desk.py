@@ -229,8 +229,12 @@ def present(f1_result: Any, case_id: str) -> DeskResult:
             why = (refusal.reason if refusal is not None else None) or "the request was refused"
         else:
             why = "the runtime policy denied it"
-        message = ("This request was not dispatched (%s). This result says nothing about any earlier attempt for this case."
-                   % why)
+        if outcome == "denied":
+            message = ("The runtime policy denied this request. This result says nothing about any earlier attempt "
+                       "for this case.")
+        else:
+            message = ("This request was not dispatched (%s). This result says nothing about any earlier attempt "
+                       "for this case." % why)
     else:
         message = ("The refund could not be completed: %s. Nothing is reported as applied."
                    % (f1_result.error or native.runtime_error or "an error was reported"))

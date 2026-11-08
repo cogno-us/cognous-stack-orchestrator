@@ -120,8 +120,9 @@ def _result(request: Any, disposition: str, *, native: NativeFacts | None = None
         labels=probe.labels if (probe and probe.labels is not None) else Labels())
 
 
-def _refused(request: Any, code: str, reason: str, source: str = "adapter", *, mode: str = "dispose", next_step: str | None = None) -> DispositionResult:
-    return _result(request, "refused", refusal=Refusal(code, reason, source), mode=mode, next_step=next_step)
+def _refused(request: Any, code: str, reason: str, source: str = "adapter", *, mode: str = "dispose", next_step: str | None = None,
+             probe: _Probe | None = None) -> DispositionResult:
+    return _result(request, "refused", refusal=Refusal(code, reason, source), mode=mode, next_step=next_step, probe=probe)
 
 
 def _build_proposal(S: NativeStack, request: DispositionRequest, manifest: dict, profile: profiles.ApprovedProfile, derived: profiles.Derived):
@@ -181,7 +182,7 @@ def _dispose_refund(request: DispositionRequest, injection: _TestInjection | Non
                 result = _result(request, "unknown", native=probe.native, probe=probe, evidence=EvidenceReferences(source=probe.source),
                                  error=f"adapter_error_after_dispatch_outcome_unknown: {exc!r}")
             else:
-                result = _result(request, "failed", error=f"adapter_error_no_dispatch_occurred: {exc!r}", next_step=_STACK_STEP)
+                result = _result(request, "failed", probe=probe, error=f"adapter_error_no_dispatch_occurred: {exc!r}", next_step=_STACK_STEP)
         finally:
             cleanup = workspace.dispose(scratch)
     return dataclasses.replace(result, cleanup=cleanup)
@@ -356,9 +357,9 @@ def _reconcile(request: DispositionRequest) -> DispositionResult:
     state = request.environment.state_dir
     cp_path = state / "cp" / f"{request.correlation_id}.json"
     if not cp_path.is_file():
-        return _refused(request, "no_prior_dispatch_record", "no retained Control Plane run record for this correlation id", mode="reconcile")
+        return _refused(request, "no_prior_dispatch_record", "no retained Control Plane run record for this correlation id", mode="reconcile", probe=probe)
     if not (state / "sqlite" / "refunds.sqlite3").is_file():
-        return _refused(request, "no_prior_destination", "no destination database exists for this state_dir; reconciliation will not create one", mode="reconcile")
+        return _refused(request, "no_prior_destination", "no destination database exists for this state_dir; reconciliation will not create one", mode="reconcile", probe=probe)
     AT = request.evaluation_time.astimezone(timezone.utc)
     with mock.patch.object(B, "_now", lambda: AT):
         _, p = _build_proposal(S, request, manifest, profile, derived)
@@ -366,7 +367,7 @@ def _reconcile(request: DispositionRequest) -> DispositionResult:
         commit = B.commitment(p.model_dump(mode="json", exclude_none=False))
         matches = [x for x in store.load().decisions if x.result == "authorized" and x.binding is not None and x.binding.proposal_commitment == commit]
         if not matches:
-            return _refused(request, "no_authorized_decision_for_proposal", "the retained record holds no authorized decision for this exact proposal", mode="reconcile")
+            return _refused(request, "no_authorized_decision_for_proposal", "the retained record holds no authorized decision for this exact proposal", mode="reconcile", probe=probe)
         d = matches[-1]
         op, pol = _operation(S, p, d.binding, derived)
         se = S.engine_safe_executor

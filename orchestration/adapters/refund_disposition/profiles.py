@@ -97,7 +97,8 @@ def _str(value: Any, what: str) -> str:
 def derive(manifest: dict, profile: ApprovedProfile) -> Derived:
     """Read every profile-dependent value from the native manifest action. Fails closed (raises ProfileRefusal) on anything missing or ambiguous."""
     action = _one([a for a in manifest.get("actions", []) if isinstance(a, dict) and a.get("action_id") == profile.action_id], "action " + profile.action_id)
-    tool = _one([t for t in manifest.get("tools", []) if isinstance(t, dict) and t.get("tool_name") == action.get("tool_name") and t.get("allowed") is True],
+    tool_name = _str(action.get("tool_name"), "action tool_name")
+    tool = _one([t for t in manifest.get("tools", []) if isinstance(t, dict) and t.get("tool_name") == tool_name and t.get("allowed") is True],
                 "allowed tool for the action")
     scopes = tuple(_str(r.get("scope"), "authority_required scope") for r in action.get("authority_required", []) if isinstance(r, dict) and r.get("required", True))
     if not scopes:

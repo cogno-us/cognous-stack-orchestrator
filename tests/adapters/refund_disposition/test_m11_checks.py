@@ -51,16 +51,7 @@ def check_executed(tc, root, state, n, r, profile_id, amount, customer):
     tc.assertIsNotNone(r.profile)
     tc.assertEqual(r.profile, M.expected_identity(profile_id))
     tc.assertEqual(r.profile.registry_version, PROFILE_REGISTRY_VERSION)
-    texts = {"cp": M.src_text(r, "cp_run_record"), "export": M.src_text(r, "runtime_export")}
-    if r.evidence.replay is not None:
-        texts["replay"] = Path(r.evidence.replay.path).read_text(encoding="utf-8")
-    for name, t in texts.items():
-        if t is None:
-            continue
-        for needle in (M.MANIFEST_ID, M.MANIFEST_VERSION, M.MANIFEST_DIGEST, r.profile.action_id):
-            tc.assertIn(needle, t, f"{name} lacks {needle}")
-    tc.assertIn(M.MANIFEST_DIGEST, texts["cp"])
-    tc.assertIn(r.profile.action_id, texts["cp"])
+    M.assert_manifest_bindings(tc, r)
     # replay
     tc.assertEqual(r.evidence.replay_state, "imported", r.evidence)
     ref = r.evidence.replay
@@ -259,9 +250,7 @@ class CheckC(unittest.TestCase):
                 self.assertIs(r.effect_absence_established, False)
                 self.assertEqual(r.next_step, "reconcile_read_only")
                 self.assertEqual(r.profile, M.expected_identity("refund-high-v1"))
-                cp = M.src_text(r, "cp_run_record")
-                self.assertIn(r.profile.manifest_digest, cp)
-                self.assertIn(r.profile.action_id, cp)
+                M.assert_manifest_bindings(self, r)
                 M.assert_common_labels(self, r)
                 M.assert_cleanup_ok(self, r)
                 # re-dispose: refused prior_uncertain_dispatch, nothing dispatched

@@ -113,3 +113,80 @@ def make_high_profile_routine_facts_request(root: Path, state_dir: Path, *, high
         req = dataclasses.replace(req, authority=AuthorityFacts(authority_id=HIGH_AUTHORITY_ID, lineage_bundle=copy.deepcopy(m11_fixture("high_lineage_valid.json")),
                                                                  facts=req.authority.facts))
     return req
+
+
+def assert_manifest_bindings(tc: unittest.TestCase, r) -> None:
+    """Structure-aware: CP authorized decision binding, Runtime export operation and Replay bundle records all carry the result.profile identity."""
+    p = r.profile
+    tc.assertIsNotNone(p)
+    want = {"manifest_id": p.manifest_id, "manifest_version": p.manifest_version, "manifest_digest": p.manifest_digest,
+            "action_id": p.action_id, "requirement_id": p.requirement_id}
+    cp = json.loads(src_text(r, "cp_run_record"))
+    auth = [d for d in cp["decisions"] if d["result"] == "authorized"]
+    tc.assertTrue(auth)
+    for d in auth:
+        tc.assertEqual({k: d["binding"][k] for k in want}, want)
+    export_text = src_text(r, "runtime_export")
+    tc.assertIsNotNone(export_text, "runtime export must be present")
+    op = json.loads(export_text)["execution_envelope"]["operation"]
+    tc.assertEqual({k: op[k] for k in want}, want)
+    if r.evidence.replay is not None:
+        bundle = json.loads(Path(r.evidence.replay.path).read_text(encoding="utf-8"))
+        hits = 0
+        for rec in bundle["records"]:
+            data = rec.get("data", {})
+            for holder in (data, data.get("binding"), data.get("operation")):
+                if isinstance(holder, dict) and "manifest_digest" in holder:
+                    tc.assertEqual({k: holder[k] for k in want}, want)
+                    hits += 1
+        tc.assertGreaterEqual(hits, 3)  # decision record, CP binding record and Runtime operation record
+
+
+class PolicySpy:
+    """Captures the keyword arguments of every native LocalExecutionPolicy construction made through the Runtime stack."""
+
+    def __init__(self, root: Path):
+        from unittest import mock
+        from orchestration.adapters.refund_disposition.stack import load_stack
+        self.S = load_stack(root)
+        self.seen: list[dict] = []
+        real = self.S.engine_safe_executor.LocalExecutionPolicy
+
+        def spy(*a, **k):
+            self.seen.append(k)
+            return real(*a, **k)
+        self._patch = mock.patch.object(self.S.engine_safe_executor, "LocalExecutionPolicy", spy)
+
+    def __enter__(self):
+        self._patch.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._patch.stop()
+
+
+def manifest_action(manifest: dict, action_id: str) -> dict:
+    return next(a for a in manifest["actions"] if a["action_id"] == action_id)
+
+
+def expected_policy(manifest: dict, action_id: str) -> dict:
+    a = manifest_action(manifest, action_id)
+    tool = next(t for t in manifest["tools"] if t["tool_name"] == a["tool_name"])
+    ctx, lim = a["authority_context"], a["effect_limits"]
+    return dict(max_amount=float(lim["max_amount"]), max_effects=lim["max_effects"], target_match="exact",
+                allowed_target_prefixes=(a["target_policy"]["allowed_targets"][0],), allowed_units=frozenset({lim["unit"]}),
+                allowed_institutions=frozenset({ctx["institution_id"]}), allowed_authority_domains=frozenset({ctx["authority_domain"]}),
+                allowed_adapters=frozenset({tool["adapter_id"]}), allowed_actions=frozenset({action_id}))
+
+
+def assert_policy_equals(tc: unittest.TestCase, got: dict, want: dict) -> None:
+    tc.assertEqual(float(got["max_amount"]), want["max_amount"])
+    tc.assertEqual(got["max_effects"], want["max_effects"])
+    tc.assertEqual(got["target_match"], "exact")
+    tc.assertEqual(tuple(got["allowed_target_prefixes"]), want["allowed_target_prefixes"])
+    for k in ("allowed_units", "allowed_institutions", "allowed_authority_domains", "allowed_adapters", "allowed_actions"):
+        tc.assertEqual(set(got[k]), set(want[k]), k)
+
+
+def load_pinned_manifest(root: Path) -> dict:
+    return json.loads((root / "control_plane/tests/fixtures/refund_integration_v1_1.manifest.json").read_text(encoding="utf-8"))

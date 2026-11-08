@@ -175,18 +175,11 @@ class Negatives(unittest.TestCase):
                 self._no_effect(r, n, st)
 
     def test_manifest_errors_nonempty_is_profile_manifest_invalid(self):
-        from orchestration.adapters.refund_disposition import profiles
         root = M.require_stack(self)
         from orchestration.adapters.refund_disposition.stack import load_stack
         S_ = load_stack(root)
-        target = None
-        for owner in (S_.B, getattr(S_, "control_plane", None)):
-            if owner is not None and hasattr(owner, "manifest_errors"):
-                target = owner
-                break
-        if target is None:
-            self.skipTest("manifest_errors seam not reachable as S.B.manifest_errors in this stack handle")
-        with mock.patch.object(target, "manifest_errors", return_value=["synthetic_error"]):
+        self.assertTrue(hasattr(S_.B, "manifest_errors"), "native manifest_errors seam must exist on the stack handle")
+        with mock.patch.object(S_.B, "manifest_errors", return_value=["synthetic_error"]):
             r, n, st = self._run(lambda root, s: M.make_high_request(root, s))
         self.assertEqual(r.disposition, "refused", r)
         self.assertEqual(r.refusal.code, "profile_manifest_invalid")
@@ -206,36 +199,21 @@ class Negatives(unittest.TestCase):
         for mk in (lambda root, s: M.make_high_request(root, s, amount=1000.01, facts_mutator=wide_f, lineage_mutator=wide_l),
                    lambda root, s: M.make_routine_request(root, s, profile="refund-routine-v1", amount=100.01, facts_mutator=wide_f, lineage_mutator=wide_l)):
             r, n, st = self._run(mk)
-            self.assertNotEqual(r.disposition, "executed", r)
-            self.assertEqual(M.effect_rows(st), [])
-            self.assertEqual((n["execute"], n["commit"]), (0, 0)) if r.runtime_invocations == 0 else self.assertEqual(n["commit"], 0)
+            self.assertEqual(r.disposition, "held", r)
+            # facts and lineage are widened to 5000, so only the manifest cap (native CP check) is exceeded
+            self.assertEqual(sorted(set(r.native.cp_reasons)), ["amount_exceeded"], r.native.cp_reasons)
+            self._no_effect(r, n, st)
 
     def test_derived_runtime_policy_equals_manifest_values(self):
         root = M.require_stack(self)
-        from orchestration.adapters.refund_disposition import dispose as D
-        from orchestration.adapters.refund_disposition.stack import load_stack
-        S_ = load_stack(root)
-        seen = []
-        real = S_.engine_safe_executor.LocalExecutionPolicy
-
-        def spy(*a, **k):
-            seen.append(k)
-            return real(*a, **k)
-        manifest = json.loads((root / "control_plane/tests/fixtures/refund_integration_v1_1.manifest.json").read_text())
-        for pid, action_id, cust, amount in (("refund-routine-v1", M.ROUTINE_ACTION, "customer-001", 50.0), ("refund-high-v1", M.HIGH_ACTION, "customer-002", 150.0)):
-            act = next(a for a in manifest["actions"] if a["action_id"] == action_id)
-            seen.clear()
-            with tempfile.TemporaryDirectory(prefix="m11-pol-") as td:
-                req = (M.make_high_request(root, Path(td), customer=cust, amount=amount) if pid == "refund-high-v1"
-                       else M.make_routine_request(root, Path(td), profile=pid))
-                with mock.patch.object(S_.engine_safe_executor, "LocalExecutionPolicy", spy):
-                    r = dispose_refund(req)
-            self.assertEqual(r.disposition, "executed", r)
-            self.assertTrue(seen, "policy constructed")
-            k = seen[-1]
-            self.assertEqual(float(k["max_amount"]), float(act["effect_limits"]["max_amount"]))
-            self.assertEqual(set(k["allowed_units"]), {act["effect_limits"]["unit"]})
-            self.assertEqual(k["max_effects"], act["effect_limits"]["max_effects"])
+        manifest = M.load_pinned_manifest(root)
+        for pid, action_id in (("refund-routine-v1", M.ROUTINE_ACTION), ("refund-high-v1", M.HIGH_ACTION)):
+            with self.subTest(pid), tempfile.TemporaryDirectory(prefix="m11-pol-") as td, M.PolicySpy(root) as spy:
+                req = (M.make_high_request(root, Path(td)) if pid == "refund-high-v1" else M.make_routine_request(root, Path(td), profile=pid))
+                r = dispose_refund(req)
+                self.assertEqual(r.disposition, "executed", r)
+                self.assertTrue(spy.seen, "policy constructed")
+                M.assert_policy_equals(self, spy.seen[-1], M.expected_policy(manifest, action_id))
 
     def test_cross_profile_reuse_on_reconcile(self):
         root = M.require_stack(self)
@@ -278,6 +256,127 @@ class Negatives(unittest.TestCase):
             with self.subTest(i), tempfile.TemporaryDirectory(prefix="m11-w-") as td:
                 r = dispose_refund(mk(Path(td)))
                 M.assert_cleanup_ok(self, r)
+
+
+class TamperedManifest(unittest.TestCase):
+    """Test-injected COPY of the pinned manifest (the pinned file is never modified). Registry entry is repointed with mock.patch.dict."""
+
+    def _copy(self, root, td, mutate):
+        from orchestration.adapters.refund_disposition.stack import load_stack
+        m = M.load_pinned_manifest(root)
+        mutate(M.manifest_action(m, M.HIGH_ACTION), m)
+        path = Path(td) / "tampered.manifest.json"
+        path.write_text(json.dumps(m), encoding="utf-8")
+        return m, path, load_stack(root).B.commitment(m)
+
+    def _patched(self, path, digest):
+        from orchestration.adapters.refund_disposition import profiles
+        entry = dataclasses.replace(profiles.REGISTRY["refund-high-v1"], manifest_relpath=str(path), **({"manifest_digest": digest} if digest else {}))
+        return mock.patch.dict(profiles.REGISTRY, {"refund-high-v1": entry})
+
+    def _go(self, root, mk, path, digest):
+        with tempfile.TemporaryDirectory(prefix="m11-t-") as sd, self._patched(path, digest):
+            state = Path(sd)
+            with M.native_counters(root) as n:
+                r = dispose_refund(mk(state))
+            return r, n, state
+
+    def test_a_tamper_with_stale_registry_digest_is_detected(self):
+        root = M.require_stack(self)
+        with tempfile.TemporaryDirectory(prefix="m11-tm-") as td:
+            _, path, _ = self._copy(root, td, lambda a, m: a["effect_limits"].__setitem__("max_amount", 5000.0))
+            with tempfile.TemporaryDirectory(prefix="m11-t-") as sd, self._patched(path, None):
+                with M.native_counters(root) as n:
+                    r = dispose_refund(M.make_high_request(root, Path(sd)))
+                self.assertEqual((r.disposition, r.refusal.code), ("refused", "profile_manifest_digest_mismatch"))
+                self.assertIsNone(r.profile)
+                M.assert_no_native_activity(self, r, n, Path(sd))
+
+    def test_b_extra_allowed_target_is_manifest_invalid(self):
+        root = M.require_stack(self)
+        with tempfile.TemporaryDirectory(prefix="m11-tm-") as td:
+            _, path, dig = self._copy(root, td, lambda a, m: a["target_policy"]["allowed_targets"].append(M.ACCOUNT + "customer-001"))
+            r, n, st = self._go(root, lambda s: M.make_high_request(root, s), path, dig)
+            self.assertEqual((r.disposition, r.refusal.code), ("refused", "profile_manifest_invalid"))
+            M.assert_no_native_activity(self, r, n, st)
+
+    def test_c_raised_cap_with_updated_digest_cannot_exceed_facts_and_lineage(self):
+        root = M.require_stack(self)
+        with tempfile.TemporaryDirectory(prefix="m11-tm-") as td:
+            _, path, dig = self._copy(root, td, lambda a, m: a["effect_limits"].__setitem__("max_amount", 5000.0))
+            r, n, st = self._go(root, lambda s: M.make_high_request(root, s, amount=1500.0), path, dig)
+            self.assertEqual(r.disposition, "held", r)
+            self.assertEqual(r.native.cp_result, "hold")
+            self.assertEqual(sorted(set(r.native.cp_reasons)), ["grant_scope_mismatch", "requirement_scope_mismatch"], r.native.cp_reasons)
+            M.assert_no_native_activity(self, r, n, st)
+
+    def test_d_narrowed_cap_derives_narrower_runtime_policy(self):
+        root = M.require_stack(self)
+        with tempfile.TemporaryDirectory(prefix="m11-tm-") as td:
+            m, path, dig = self._copy(root, td, lambda a, m: a["effect_limits"].__setitem__("max_amount", 120.0))
+            with tempfile.TemporaryDirectory(prefix="m11-t-") as sd, self._patched(path, dig), M.PolicySpy(root) as spy:
+                r = dispose_refund(M.make_high_request(root, Path(sd), amount=100.0))
+                self.assertEqual(r.disposition, "executed", r)
+                self.assertEqual(spy.seen[-1]["max_amount"], 120.0)
+                M.assert_policy_equals(self, spy.seen[-1], M.expected_policy(m, M.HIGH_ACTION))
+                self.assertEqual(r.profile.manifest_digest, dig)
+            r, n, st = self._go(root, lambda s: M.make_high_request(root, s, amount=130.0), path, dig)
+            self.assertEqual(r.disposition, "held", r)
+            self.assertIn("amount_exceeded", r.native.cp_reasons)
+            M.assert_no_native_activity(self, r, n, st)
+
+    def test_pinned_file_unmodified(self):
+        root = M.require_stack(self)
+        import hashlib
+        data = (root / "control_plane/tests/fixtures/refund_integration_v1_1.manifest.json").read_bytes()
+        # git blob sha1 of the pinned manifest (frozen oracle)
+        self.assertEqual(hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest(), "8f5c0788edf2f6940fa6012365b676ba2b0a32be")
+
+
+class AfterPreflight(unittest.TestCase):
+    def test_reconcile_refusals_carry_profile(self):
+        root = M.require_stack(self)
+        for pid, mk in (("refund-high-v1", lambda s, c: M.make_high_request(root, s, correlation=c)),
+                        ("refund-routine-v1", lambda s, c: M.make_routine_request(root, s, profile="refund-routine-v1", correlation=c))):
+            with self.subTest(pid), tempfile.TemporaryDirectory(prefix="m11-rr-") as td:
+                st = Path(td)
+                r = reconcile_refund(mk(st, "m11-none"))
+                self.assertEqual(r.refusal.code, "no_prior_dispatch_record")
+                self.assertEqual(r.profile, M.expected_identity(pid))
+                # a held dispose leaves a run record but no destination database
+                held_req = (M.make_high_request(root, st, amount=1000.01, correlation="m11-held") if pid == "refund-high-v1"
+                            else M.make_routine_request(root, st, profile=pid, amount=100.01, correlation="m11-held"))
+                self.assertEqual(dispose_refund(held_req).disposition, "held")
+                r = reconcile_refund(held_req)
+                self.assertEqual(r.refusal.code, "no_prior_destination", r)
+                self.assertEqual(r.profile, M.expected_identity(pid))
+                self.assertEqual(r.disposition, "refused")
+        with tempfile.TemporaryDirectory(prefix="m11-rr-") as td:
+            st = Path(td)
+            self.assertEqual(dispose_refund(M.make_high_request(root, st, correlation="m11-x")).disposition, "executed")
+            r = reconcile_refund(M.make_high_request(root, st, correlation="m11-x", amount=151.0))
+            self.assertEqual(r.refusal.code, "no_authorized_decision_for_proposal")
+            self.assertEqual(r.profile, M.expected_identity("refund-high-v1"))
+            r = reconcile_refund(M.make_routine_request(root, st, profile="refund-routine-v1", correlation="m11-x"))
+            self.assertEqual(r.refusal.code, "no_authorized_decision_for_proposal")
+            self.assertEqual(r.profile, M.expected_identity("refund-routine-v1"))
+
+    def test_zz_exception_after_preflight_before_dispatch_is_failed_with_profile_and_disclosures(self):
+        root = M.require_stack(self)
+        from orchestration.adapters.refund_disposition import dispose as D
+        from orchestration.adapters.refund_disposition.contract import NOT_VERIFIED
+        with tempfile.TemporaryDirectory(prefix="m11-pf-") as td:
+            state = Path(td)
+            with M.native_counters(root) as n, mock.patch.object(D, "_build_proposal", side_effect=RuntimeError("synthetic pre-dispatch fault")):
+                r = dispose_refund(M.make_high_request(root, state))
+            self.assertEqual(r.disposition, "failed", r)
+            self.assertEqual(r.runtime_invocations, 0)
+            self.assertEqual((n["execute"], n["commit"]), (0, 0))
+            self.assertFalse(M.S.db_path(state).exists())
+            self.assertEqual(r.profile, M.expected_identity("refund-high-v1"))
+            extra = [x for x in r.labels.not_verified if x not in NOT_VERIFIED]
+            self.assertEqual(len(extra), 2, r.labels.not_verified)
+            M.assert_common_labels(self, r)
 
 
 if __name__ == "__main__":

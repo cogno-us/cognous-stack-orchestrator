@@ -177,6 +177,9 @@ def _call_and_present(fn: Any, request: DispositionRequest, case_id: str, reques
     except Exception as exc:
         return uncertain_result(case_id, "%s: %s" % (type(exc).__name__, exc), requested_profile)
     res.requested_profile = requested_profile
+    if res.profile is None and requested_profile not in (None, DEFAULT_PROFILE_ID):
+        # F1 returned no profile block (e.g. a pre-flight refusal) for a non-default REQUESTED profile: do not present the routine profile's limits as if they applied.
+        res.limitations = [_PROFILE_NEUTRAL_NOTE if note == _APP_NOTES[2] else note for note in res.limitations]
     return res
 
 

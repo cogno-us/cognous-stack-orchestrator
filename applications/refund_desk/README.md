@@ -234,6 +234,10 @@ python3 -m unittest discover -s tests/applications/refund_desk -p 'test_static.p
 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_present_unit.py' -v   # 7 tests, no stack needed
 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_unsupported_executed.py' -v   # focused R1 regression, no stack needed
 F3_STACK_ROOT="$STACK" F3_REQUIRE=1 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_checks.py' -v   # 13 tests: checks A, B, C and review additions
+python3 -m unittest discover -s tests/applications/refund_desk -p 'test_scope_windows.py' -v   # scope-window rules R2 (stack-free)
+python3 -m unittest discover -s tests/applications/refund_desk -p 'test_scope_windows_m12.py' -v   # scope windows after M1-2, R3 (stack-free)
+python3 -m unittest discover -s tests/applications/refund_desk -p 'test_m12_unit.py' -v   # M1-2 profile contract and forwarding (stack-free)
+F3_STACK_ROOT="$STACK" F3_REQUIRE=1 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_m12_checks.py' -v   # M1-2 primary checks A, B, C (API + CLI)
 ```
 The UNKNOWN used by check C is produced by a test-owned fixture that borrows the F1 **test-tree** fault injection; the application itself contains no fault injection.
 `F3_REQUIRE=1` turns a missing stack into a failure (a skip is not a pass).
@@ -257,6 +261,7 @@ No workflow is added or changed. Existing path-matched workflows do not collect 
 - No Pack, Verifier, Attestation or Registry. No independent qualification, certification or production claim.
 
 ## Architect decisions recorded (PR #156)
+*(Historical record of the PR #156 decisions. Decision 1 describes the single fixed profile of F1 `09e1ba3`; it is superseded for the bounded development profile by the two approved F1 profiles consumed in M1-2. Nothing in this section authorizes anything beyond its original scope.)*
 1. F3's fixed synthetic manifest (customer-001, <=100 USD, fixed institution) is accepted for the bounded F4 developer-consumption profile; caller-selectable manifests are deferred to a separately authorized F2. 2. An application outcome must be UNCERTAIN whenever a native execution-success disposition lacks sufficient applied-effect observation (implemented as Amendment R1). 3. No new CI workflow is introduced here. 4. Independent F1/F3 security qualification is not required before F4 planning, but all existing assurance obligations remain. These decisions do not authorize F2, F4 implementation, deployment, certification or production use.
 
 ## Governance note

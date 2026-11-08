@@ -51,4 +51,5 @@ Through `process_refund` (and once via CLI): `outcome=held`; `control_plane.resu
 AST import check of the application package against the independence rules; no `fault`/`inject`/`simulate` identifier in the application; the shipped fixtures contain none of the G3 identifiers (`g2-synthetic`, `tenant-alpha`, `ocs-vnext-ig`); no file outside `applications/refund_desk/` and `tests/applications/refund_desk/` is touched.
 
 ## Amendments
-(none)
+- 2026-11-08 (clarification only; **no expectation changed**): the general sentence "`outcome` maps from the F1 disposition one-to-one" has one exception that Check C step 3 already requires: an F1 `refused` result with refusal code `prior_uncertain_dispatch` is shown as `outcome=uncertain` (with `native.disposition=refused`, the refusal block kept and `permitted_next_actions=["reconcile"]`), because it reports an unresolved uncertain prior attempt. The specific check text governs.
+- 2026-11-08: the CLI exits 0 for `--help` (it previously mapped every argparse exit to 1). Not covered by any frozen expectation.

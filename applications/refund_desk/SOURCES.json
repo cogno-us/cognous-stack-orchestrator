@@ -1,0 +1,28 @@
+{
+  "notice": "DEVELOPMENT ONLY / SYNTHETIC / NONPRODUCTION / NOT A SOURCE LOCK. Pins copied from F1 orchestration/adapters/refund_disposition/source_pins.json. Does not replace or migrate any component-lock.json.",
+  "application": {
+    "name": "refund_desk",
+    "contract": "refund-desk/0.1.0-dev",
+    "path": "applications/refund_desk"
+  },
+  "f1": {
+    "repository": "cogno-us/cognous-stack-orchestrator",
+    "commit": "09e1ba3d33aa64dd7054746838d16b64d868cf9f",
+    "contract": "refund-disposition/0.1.0-dev",
+    "pr": "https://github.com/cogno-us/cognous-stack-orchestrator/pull/155"
+  },
+  "native_components_used": {
+    "control_plane": {"repository": "cogno-us/cognous-control-plane", "commit": "484fdbd297235dd24148ddb0703f2055a31eabff"},
+    "runtime": {"repository": "cogno-us/cognous-execution-runtime", "commit": "f7a55e2a8494801e49193f9f46935f0a971c248d"},
+    "replay": {"repository": "cogno-us/cognous-replay-bundle", "commit": "7eb7d76eda10ca1ff997bb86853e903e57da625c"},
+    "institutional_governance": {"repository": "cogno-us/cognous-institutional-governance", "commit": "1ebe85be4cfe9e221ebd2618120687eb0b325d24"}
+  },
+  "not_used": ["manifest", "evidence_pack", "verifier", "evidence_attestation", "evidence_registry"],
+  "runtime_environment": {
+    "os": "Linux",
+    "python": ">=3.11 (developed on 3.13)",
+    "packages": ["pydantic>=2", "cryptography", "jsonschema"],
+    "note": "Inherited from F1; dependency versions are not locked here."
+  },
+  "application_source_commit": "TO_BE_FILLED_AT_PR_HEAD"
+}

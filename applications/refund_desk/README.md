@@ -18,6 +18,13 @@ python3 -m refund_desk process --case-id HV-M12-0002 --tenant harborview-retail 
 ```
 `--case` remains accepted as an explicit alias of `--case-id`.
 
+## Replay evidence note (M1-3; Issue #157, Amendment M3)
+`evidence` now also carries `replay_note`: F1's `EvidenceReferences.replay_note` copied **verbatim**, or `null` when F1 gave none (the example outputs above predate this additive field). It is informational only: it never changes `outcome`, `native`, `execution_claim`, `effect`, `retry_permission` or `effect_absence_established`, and the application neither interprets nor adds to it. `evidence.replay_state` is still exactly F1's value (`imported | not_run | import_failed`).
+
+Observed with the pinned stack (Replay `7eb7d76e`): repeating an identical authorized request against the same state directory returns `outcome: executed`, `native.newly_executed: false`, still one `applied` effect row with the same `effect_id`, and no additional native commit, but `evidence.replay_state: "import_failed"`, `evidence.replay: null` and
+`evidence.replay_note: "replay_import_failed: ImportContractError('single-proposal importer does not support multiple authorization bindings')"`.
+The repeat re-runs the Control Plane decision and appends a second decision to the append-only per-correlation record; the pinned Replay single-proposal importer rejects more than one bound decision. This is a Replay evidence limitation, not an execution failure: the effect and its disposition are unchanged. It was reproduced here for both the routine and the high profile; the application reports whatever F1 returns and does not assume every repeat yields this note. Whether a repeat should report `not_run` instead is an F1-owner decision and is not changed here.
+
 ## Installation
 Reuse the F1 recipe exactly. Requirements: Linux, bash, git, Python >= 3.11 (developed on 3.13), `pydantic` 2.x, `cryptography`, `jsonschema` (versions not locked here). Assemble a stack root with the four pinned checkouts:
 
@@ -238,6 +245,12 @@ python3 -m unittest discover -s tests/applications/refund_desk -p 'test_scope_wi
 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_scope_windows_m12.py' -v   # scope windows after M1-2, R3 (stack-free)
 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_m12_unit.py' -v   # M1-2 profile contract and forwarding (stack-free)
 F3_STACK_ROOT="$STACK" F3_REQUIRE=1 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_m12_checks.py' -v   # M1-2 primary checks A, B, C (API + CLI)
+python3 -m unittest discover -s tests/applications/refund_desk -p 'test_m13_unit.py' -v   # M1-3 replay_note passthrough (stack-free)
+F3_STACK_ROOT="$STACK" F3_REQUIRE=1 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_m13_checks.py' -v   # M1-3 initial/repeat/uncertain/reconcile, both profiles
+python3 -m unittest discover -s tests/applications/refund_desk -p 'test_scope_windows_m13.py' -v   # scope windows after M1-3, R4 (stack-free)
+python3 -m unittest discover -s tests/applications/refund_desk -p 'test_m13_unit.py' -v   # M1-3 replay_note passthrough (stack-free)
+F3_STACK_ROOT="$STACK" F3_REQUIRE=1 python3 -m unittest discover -s tests/applications/refund_desk -p 'test_m13_checks.py' -v   # M1-3 initial/repeat/uncertain/reconcile, both profiles
+python3 -m unittest discover -s tests/applications/refund_desk -p 'test_scope_windows_m13.py' -v   # scope windows after M1-3, R4 (stack-free)
 ```
 The UNKNOWN used by check C is produced by a test-owned fixture that borrows the F1 **test-tree** fault injection; the application itself contains no fault injection.
 `F3_REQUIRE=1` turns a missing stack into a failure (a skip is not a pass).

@@ -53,7 +53,7 @@ class WindowRules(unittest.TestCase):
                  "tests/applications/refund_desk/_scope_windows.py", "tests/applications/refund_desk/test_scope_windows.py"]
         self.assertEqual(W.scope_violations(legit, W.W_M1_1), [])
         # window selection by explicit source identity
-        self.assertIs(W.select_window(lambda sha: True), W.W_M1_2)  # lifecycle advanced in M1-2 (was W-M1-1 before; see Amendment M2.5); the LAST window whose base is an ancestor wins
+        self.assertIs(W.select_window(lambda sha: True), W.W_M1_3)  # lifecycle advanced in M1-3 (was W-M1-2 in M1-2; Amendment M3.6)  # lifecycle advanced in M1-2 (was W-M1-1 before; see Amendment M2.5); the LAST window whose base is an ancestor wins
         self.assertIs(W.select_window(lambda sha: sha in (W.W_F3.base, W.W_M1_1.base)), W.W_M1_1)
         self.assertIs(W.select_window(lambda sha: sha == W.W_F3.base), W.W_F3)  # only 09e1ba3 is
         self.assertIsNone(W.select_window(lambda sha: False))  # neither: no declared window applies -> caller must fail closed
@@ -77,7 +77,7 @@ class WindowRules(unittest.TestCase):
             W.scope_violations(["a"], None)
         with self.assertRaises(ValueError):
             W.window_by_id("W-UNDECLARED")
-        self.assertEqual([w.id for w in W.WINDOWS], ["W-F3", "W-M1-1", "W-M1-2"])  # M1-2 added the third window (Amendment M2.5)
+        self.assertEqual([w.id for w in W.WINDOWS], ["W-F3", "W-M1-1", "W-M1-2", "W-M1-3"])  # M1-3 added the fourth window (Amendment M3.6); M1-2 added the third window (Amendment M2.5)
         self.assertTrue(all(isinstance(w.base, str) and len(w.base) == 40 for w in W.WINDOWS))
 
 

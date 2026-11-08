@@ -28,12 +28,17 @@ W_M1_1 = Window("W-M1-1", "77701cfcc46d52658ffcec10b6a38516c82feeaf", "2d4999b75
                 ("orchestration/adapters/refund_disposition/", "tests/adapters/refund_disposition/"),
                 ("applications/refund_desk/CONTRACT_AND_EXPECTATIONS.md", "tests/applications/refund_desk/test_static.py",
                  "tests/applications/refund_desk/_scope_windows.py", "tests/applications/refund_desk/test_scope_windows.py"))
-# M1-2 window (this PR): the Refund Desk application itself - code and its fixtures, the three exact documentation/manifest files, and its tests. OPEN (current checkout).
+# M1-2 window (PR #159): the Refund Desk application itself - code and its fixtures, the three exact documentation/manifest files, and its tests. CLOSED at its integration commit (the PR #159 merge).
 # F1 (orchestration/**, tests/adapters/**), native components, workflows and every other path are NOT allowed: F1 implementation changes are not authorized in M1-2.
-W_M1_2 = Window("W-M1-2", "2d4999b752e53d26f1a5e89b2310e9417d931043", None,
+W_M1_2 = Window("W-M1-2", "2d4999b752e53d26f1a5e89b2310e9417d931043", "ffd97cda085ea9afd5bf14a9c3de4c9d0ae0f2b1",
                 ("applications/refund_desk/refund_desk/", "tests/applications/refund_desk/"),
                 ("applications/refund_desk/README.md", "applications/refund_desk/SOURCES.json", "applications/refund_desk/CONTRACT_AND_EXPECTATIONS.md"))
-WINDOWS = (W_F3, W_M1_1, W_M1_2)
+# M1-3 window (this PR; Issue #157, Amendment M3): ONLY the exact F3 files needed for the evidence.replay_note passthrough, the F3 docs, and the F3 tests. OPEN (current checkout).
+# Everything else (F1, native components, workflows, fixtures, cli.py, SOURCES.json) is a violation.
+W_M1_3 = Window("W-M1-3", "ffd97cda085ea9afd5bf14a9c3de4c9d0ae0f2b1", None,
+                ("tests/applications/refund_desk/",),
+                ("applications/refund_desk/refund_desk/desk.py", "applications/refund_desk/README.md", "applications/refund_desk/CONTRACT_AND_EXPECTATIONS.md"))
+WINDOWS = (W_F3, W_M1_1, W_M1_2, W_M1_3)
 
 
 def window_by_id(window_id: str) -> Window:

@@ -1,0 +1,9 @@
+# T-OCS-D on-disk pin/manifest tamper probes (exact main 41f651d code; stack copies)
+baseline exit=0 outcome=executed
+rows before: [('sha256:81369703e44859039289d11ed11aaa4f6c54cf314cb2f48c36e45a30d76310b8', 'applied', 12.0)]
+drift: exit=2 outcome= refused refusal= stack_component_not_pinned_revision | runtime_invoked= False | exec_claim= False
+   rows unchanged: [('sha256:81369703e44859039289d11ed11aaa4f6c54cf314cb2f48c36e45a30d76310b8', 'applied', 12.0)]
+dirty: exit=2 outcome= refused refusal= stack_component_tree_modified | runtime_invoked= False | exec_claim= False
+   rows unchanged: [('sha256:81369703e44859039289d11ed11aaa4f6c54cf314cb2f48c36e45a30d76310b8', 'applied', 12.0)]
+commit: exit=2 outcome= refused refusal= stack_component_not_pinned_revision | runtime_invoked= False | exec_claim= False
+   rows unchanged: [('sha256:81369703e44859039289d11ed11aaa4f6c54cf314cb2f48c36e45a30d76310b8', 'applied', 12.0)]

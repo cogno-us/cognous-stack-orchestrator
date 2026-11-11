@@ -2,8 +2,11 @@
 
 An append-only, content-addressed, hash-chained directory of observations the Orchestrator records
 about what it handed off and observed. An observation is a fact with a source and a time; it is
-not a verdict, pin, expectation, grant or authority, and every record carries the fixed
-disposition "hold". Members that look like any of those are refused by name. There is no hidden
+not a verdict, pin, expectation, grant or authority, and every record carries the member
+execution_standing, whose only permitted value is "hold" (a statement about the record, never
+about the world: nothing is executed, authorized, released or reviewed on its strength; it is not
+a workflow coordination status, an authority outcome, an effect observation or a review decision,
+each of which keeps its own name elsewhere). Members that look like any of those are refused by name. There is no hidden
 clock (observed_at is caller-supplied), no network, no subprocess, and no file is written outside
 the one directory the caller names. Whether Qualification ingests observations is Qualification's
 own decision; no ingestion job lives here.
@@ -37,14 +40,17 @@ MAX_REVISIONS = 64
 
 FIELDS = {
     "profile", "schema_version", "canonical_profile", "digest", "observation_id", "kind", "subject",
-    "source_revisions", "lock_digest", "observed_at", "sequence", "predecessor", "disposition",
+    "source_revisions", "lock_digest", "observed_at", "sequence", "predecessor", "execution_standing",
 }
 # Closed set. Lock-bound kinds must carry the lock digest they were observed against; the rest must
 # carry null (an observation is never bound to a lock it was not made against).
 LOCK_BOUND_KINDS = frozenset({"handoff_envelope_produced", "handoff_envelope_checked"})
 OTHER_KINDS = frozenset({"source_revision_observed", "ci_run_observed"})
 KINDS = LOCK_BOUND_KINDS | OTHER_KINDS
-FIXED_DISPOSITION = "hold"
+# Exact closed set of execution_standing values. "hold" is the only member: the record carries no
+# execution, authorization, effect success or review approval. Adding a value is a profile change.
+EXECUTION_STANDINGS = frozenset({"hold"})
+FIXED_EXECUTION_STANDING = "hold"
 # Member names refused as verdict/pin/expectation/grant/authority-like. Matched on lowercase
 # substrings so renamed variants of the same idea are still refused, distinctly from plain unknowns.
 FORBIDDEN_MARKERS = (
@@ -162,8 +168,9 @@ def validate(observation) -> str:
         _refuse("schema_invalid", "unsupported profile or schema version")
     if observation["canonical_profile"] != CANONICAL_PROFILE:
         _refuse("schema_invalid", "unknown canonical profile")
-    if type(observation["disposition"]) is not str or observation["disposition"] != FIXED_DISPOSITION:
-        _refuse("fixed_field_changed", "disposition")
+    standing = observation["execution_standing"]
+    if type(standing) is not str or standing not in EXECUTION_STANDINGS:
+        _refuse("fixed_field_changed", "execution_standing")
     kind = observation["kind"]
     if type(kind) is not str or kind not in KINDS:
         _refuse("unknown_kind", str(kind)[:40])
@@ -228,7 +235,7 @@ def build(*, kind: str, subject: str, source_revisions: list, lock_digest, obser
         "digest": "sha256:" + "0" * 64, "observation_id": "obs_" + "0" * 64, "kind": kind,
         "subject": subject, "source_revisions": copy.deepcopy(source_revisions),
         "lock_digest": lock_digest, "observed_at": observed_at, "sequence": sequence,
-        "predecessor": predecessor, "disposition": FIXED_DISPOSITION,
+        "predecessor": predecessor, "execution_standing": FIXED_EXECUTION_STANDING,
     }
     obs["digest"] = observation_digest(obs)
     obs["observation_id"] = observation_id_for(obs["digest"])

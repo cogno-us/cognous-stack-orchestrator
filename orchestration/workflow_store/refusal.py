@@ -15,6 +15,8 @@ CODES = frozenset({
     'torn_tail', 'leftover_temp', 'unrecorded_quarantine', 'nothing_to_recover',
     # recovery guards and ambiguous outcomes
     'complete_event_in_tail', 'outcome_ambiguous', 'lock_break_incomplete',
+    # archival (never deletion)
+    'not_archivable', 'archive_incomplete', 'archive_root_invalid', 'archive_exists',
 })
 
 
